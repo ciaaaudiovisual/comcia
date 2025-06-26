@@ -156,7 +156,14 @@ SCOPES = [
 def connect_to_sheets():
     try:
         credentials = Credentials.from_service_account_file(
-            'credentials.json', scopes=SCOPES)
+            st.secrets["gcp_service_account"], scopes=SCOPES)
+
+                   
+
+
+        
+
+        
         client = gspread.authorize(credentials)
         return client
     except Exception as e:
