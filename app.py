@@ -3,14 +3,22 @@ import pandas as pd
 from datetime import datetime
 from database import load_data, save_data, init_local_db, sync_with_sheets
 
+print("DEBUG: app.py - Início do script")
+st.write("DEBUG: app.py - Iniciando o aplicativo...")
+
 # Inicializa o banco de dados local na primeira execução
 init_local_db()
+print("DEBUG: app.py - init_local_db() chamado")
+st.write("DEBUG: app.py - Banco de dados local inicializado.")
 
 def show_ordens():
+    print("DEBUG: app.py - show_ordens() chamada")
+    st.write("DEBUG: app.py - Renderizando Ordens e Tarefas...")
     st.title("Ordens Diárias e Tarefas")
     
     # Botão de sincronização manual
     if st.button("🔄 Sincronizar com Google Sheets"):
+        print("DEBUG: app.py - Botão Sincronizar clicado")
         sync_with_sheets()
         st.rerun()
 
@@ -24,10 +32,12 @@ def show_ordens():
         show_tarefas()
 
 def show_ordens_diarias():
+    print("DEBUG: app.py - show_ordens_diarias() chamada")
     st.subheader("Ordens do Dia")
     
     # Carregar ordens
     ordens_df = load_data("Sistema_Acoes_Militares", "Ordens_Diarias")
+    print(f"DEBUG: app.py - ordens_df carregado: {len(ordens_df)} linhas")
     
     # Adicionar nova ordem
     with st.form("nova_ordem"):
@@ -52,7 +62,7 @@ def show_ordens_diarias():
                 'id': novo_id,
                 'data': datetime.now().strftime('%Y-%m-%d'),
                 'texto': texto,
-                'autor_id': st.session_state.username
+                'autor_id': st.session_state.username if 'username' in st.session_state else 'desconhecido'
             }
             
             # Adicionar à DataFrame
@@ -92,15 +102,19 @@ def show_ordens_diarias():
         st.info("Nenhuma ordem registrada.")
 
 def show_tarefas():
+    print("DEBUG: app.py - show_tarefas() chamada")
     st.subheader("Tarefas")
     
     # Carregar tarefas
     tarefas_df = load_data("Sistema_Acoes_Militares", "Tarefas")
     usuarios_df = load_data("Sistema_Acoes_Militares", "Usuarios")
+    print(f"DEBUG: app.py - tarefas_df carregado: {len(tarefas_df)} linhas")
+    print(f"DEBUG: app.py - usuarios_df carregado: {len(usuarios_df)} linhas")
     
     # Garantir que tarefas_df tenha as colunas esperadas, mesmo que vazio
     expected_cols = ['id', 'texto', 'status', 'responsavel', 'data_criacao', 'data_conclusao', 'concluida_por']
     if tarefas_df.empty or not all(col in tarefas_df.columns for col in expected_cols):
+        print("DEBUG: app.py - tarefas_df vazio ou colunas faltando, recriando DataFrame.")
         tarefas_df = pd.DataFrame(columns=expected_cols)
 
     # Adicionar nova tarefa
@@ -243,6 +257,7 @@ def show_tarefas():
         st.info("Nenhuma tarefa registrada.")
 
 def adicionar_como_tarefa(texto):
+    print("DEBUG: app.py - adicionar_como_tarefa() chamada")
     # Carregar tarefas existentes
     tarefas_df = load_data("Sistema_Acoes_Militares", "Tarefas")
     usuarios_df = load_data("Sistema_Acoes_Militares", "Usuarios")
@@ -289,5 +304,10 @@ def adicionar_como_tarefa(texto):
         st.rerun()
     else:
         st.error("Erro ao salvar a tarefa. Verifique a conexão com o Google Sheets.")
+
+# Chame a função principal do seu aplicativo
+show_ordens()
+print("DEBUG: app.py - Fim do script")
+st.write("DEBUG: app.py - Aplicativo carregado.")
 
 
