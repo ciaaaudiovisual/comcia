@@ -1,58 +1,50 @@
 import streamlit as st
-from auth import check_authentication, login
-from database import init_local_db, sync_with_sheets
+from auth import check_authentication
+from database import init_local_db
 from dashboard import show_dashboard
 from alunos import show_alunos
 from acoes import show_lancamentos_page
-from ordens import show_ordens as show_ordens_e_tarefas # Renomeado para evitar conflito
+from programacao import show_programacao
+from ordens import show_ordens_e_tarefas 
 from relatorios import show_relatorios
 from config import show_config
 
-print("DEBUG: app.py - Início do script principal")
-st.write("DEBUG: app.py - Iniciando o aplicativo...")
-
-# Inicializa o banco de dados local na primeira execução
+# Inicializa o banco de dados local (se houver)
 init_local_db()
-print("DEBUG: app.py - init_local_db() chamado")
-st.write("DEBUG: app.py - Banco de dados local inicializado.")
 
 # Verifica autenticação
 if not check_authentication():
-    print("DEBUG: app.py - Usuário não autenticado, exibindo tela de login.")
-    st.stop() # Para a execução se não autenticado
+    st.stop()
 
-print(f"DEBUG: app.py - Usuário autenticado: {st.session_state.username}, Role: {st.session_state.role}")
-st.write(f"DEBUG: app.py - Bem-vindo, {st.session_state.username}!")
-
-# Layout da barra lateral para navegação
 st.sidebar.title("Navegação")
 
-# Adicionar botão de sincronização na sidebar
-if st.sidebar.button("🔄 Sincronizar com Google Sheets"):
-    print("DEBUG: app.py - Botão Sincronizar clicado na sidebar")
-    sync_with_sheets()
+# --- NOVO BOTÃO DE RECARREGAMENTO MANUAL ---
+# Este botão permite que o usuário force a busca por dados atualizados
+# da planilha, sem precisar salvar nada. É útil se múltiplos
+# usuários estiverem a editar a planilha diretamente.
+if st.sidebar.button("🔄 Recarregar Dados do Sheets"):
+    st.cache_data.clear()
+    st.toast("Os dados foram recarregados com sucesso a partir da planilha!", icon="✅")
     st.rerun()
+# --- FIM DA ADIÇÃO ---
 
+
+# Dicionário com as opções do menu de navegação
 menu_options = {
     "Dashboard": show_dashboard,
+    "Programação": show_programacao,
     "Alunos": show_alunos,
     "Lançamento de Ações": show_lancamentos_page,
     "Ordens e Tarefas": show_ordens_e_tarefas,
     "Relatórios": show_relatorios,
 }
 
-# Adicionar Configurações apenas para admin
-if st.session_state.role == "admin":
+# Adicionar a página de Configurações apenas para administradores
+if st.session_state.get('role') == "admin":
     menu_options["Configurações"] = show_config
 
 # Seleção de página na barra lateral
 selected_page = st.sidebar.radio("Ir para:", list(menu_options.keys()))
 
 # Exibir a página selecionada
-print(f"DEBUG: app.py - Página selecionada: {selected_page}")
 menu_options[selected_page]()
-
-print("DEBUG: app.py - Fim do script principal")
-st.write("DEBUG: app.py - Aplicativo carregado completamente.")
-
-
