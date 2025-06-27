@@ -72,40 +72,26 @@ def show_config_gerais():
         submitted = st.form_submit_button("Salvar Configurações")
         
         if submitted:
-            # Preparar novas configurações
-            novas_configs = [
+            novas_configs_df = pd.DataFrame([
                 {'chave': 'pontuacao_inicial', 'valor': str(nova_pontuacao_inicial), 'descricao': 'Pontuação inicial dos alunos'},
                 {'chave': 'periodo_adaptacao_inicio', 'valor': novo_periodo_inicio.strftime('%Y-%m-%d'), 'descricao': 'Data de início do período de adaptação'},
                 {'chave': 'periodo_adaptacao_fim', 'valor': novo_periodo_fim.strftime('%Y-%m-%d'), 'descricao': 'Data de fim do período de adaptação'},
                 {'chave': 'fator_adaptacao', 'valor': str(novo_fator), 'descricao': 'Fator de multiplicação para pontuação no período de adaptação'}
-            ]
+            ])
             
-            # Criar ou atualizar DataFrame
-            if config_df.empty:
-                config_df = pd.DataFrame(novas_configs)
-            else:
-                # Atualizar valores existentes
-                for config in novas_configs:
-                    if config['chave'] in config_df['chave'].values:
-                        idx = config_df[config_df['chave'] == config['chave']].index
-                        config_df.loc[idx, 'valor'] = config['valor']
-                    else:
-                        config_df = pd.concat([config_df, pd.DataFrame([config])], ignore_index=True)
-            
-            # Salvar no Google Sheets
-            if save_data("Sistema_Acoes_Militares", "Config", config_df):
+            if save_data("Sistema_Acoes_Militares", "Config", novas_configs_df):
                 st.success("Configurações salvas com sucesso!")
             else:
-                st.error("Erro ao salvar configurações. Verifique a conexão com o Google Sheets.")
+                st.error("Erro ao salvar configurações.")
 
 def show_config_usuarios():
     st.subheader("Gestão de Usuários")
     
     # Carregar usuários existentes
-    usuarios_df = load_data("Sistema_Acoes_Militares", "Usuarios")
+    usuarios_df = load_data("Sistema_Acoes_Militares", "Users") # CORRIGIDO PARA 'Users'
     
     # Formulário para novo usuário
-    with st.form("novo_usuario"):
+    with st.form("novo_usuario", clear_on_submit=True):
         st.write("Adicionar Novo Usuário")
         
         username = st.text_input("Nome de Usuário")
@@ -116,91 +102,63 @@ def show_config_usuarios():
         submitted = st.form_submit_button("Adicionar Usuário")
         
         if submitted:
-            if not username or not password or not nome:
+            if not all([username, password, nome]):
                 st.error("Todos os campos são obrigatórios.")
+            elif not usuarios_df.empty and username in usuarios_df['username'].values:
+                st.error("Este nome de usuário já existe.")
             else:
-                # Verificar se usuário já existe
-                if not usuarios_df.empty and username in usuarios_df['username'].values:
-                    st.error("Este nome de usuário já existe.")
+                novo_id = 1
+                if not usuarios_df.empty and 'id' in usuarios_df.columns:
+                    novo_id = int(pd.to_numeric(usuarios_df['id'], errors='coerce').max()) + 1
+                
+                novo_usuario = {
+                    'id': novo_id,
+                    'username': username,
+                    'password': password, # Idealmente, esta senha deveria ser "hashed"
+                    'nome': nome,
+                    'role': role
+                }
+                
+                novo_usuario_df = pd.DataFrame([novo_usuario])
+
+                if save_data("Sistema_Acoes_Militares", "Users", novo_usuario_df):
+                    st.success("Usuário adicionado com sucesso!")
+                    st.rerun()
                 else:
-                    # Criar novo ID
-                    novo_id = 1
-                    if not usuarios_df.empty and 'id' in usuarios_df.columns:
-                        novo_id = int(usuarios_df['id'].max()) + 1
-                    
-                    # Criar novo usuário
-                    novo_usuario = {
-                        'id': novo_id,
-                        'username': username,
-                        'password': password,
-                        'nome': nome,
-                        'role': role
-                    }
-                    
-                    # Adicionar à DataFrame
-                    if usuarios_df.empty:
-                        usuarios_df = pd.DataFrame([novo_usuario])
-                    else:
-                        usuarios_df = pd.concat([usuarios_df, pd.DataFrame([novo_usuario])], ignore_index=True)
-                    
-                    # Salvar no Google Sheets
-                    if save_data("Sistema_Acoes_Militares", "Usuarios", usuarios_df):
-                        st.success("Usuário adicionado com sucesso!")
-                        st.rerun()
-                    else:
-                        st.error("Erro ao salvar usuário. Verifique a conexão com o Google Sheets.")
+                    st.error("Erro ao salvar usuário.")
     
-    # Exibir usuários existentes
     st.subheader("Usuários Cadastrados")
     
     if usuarios_df.empty:
         st.info("Nenhum usuário cadastrado ainda.")
     else:
-        # Ocultar senhas na exibição
         usuarios_display = usuarios_df.copy()
         if 'password' in usuarios_display.columns:
             usuarios_display['password'] = '********'
         
-        # Exibir usuários
         for _, usuario in usuarios_display.iterrows():
             col1, col2, col3 = st.columns([3, 2, 1])
-            
             with col1:
-                st.write(f"**{usuario['nome']}**")
-                st.write(f"Username: {usuario['username']}")
-            
+                st.write(f"**{usuario['nome']}** (`{usuario['username']}`)")
             with col2:
-                st.write(f"Tipo: {usuario['role']}")
-            
+                st.write(f"Permissão: {usuario.get('role', 'N/A')}")
             with col3:
-                if st.button(f"Excluir #{usuario['id']}"):
-                    # Confirmar exclusão
-                    if 'confirmar_exclusao' not in st.session_state:
-                        st.session_state.confirmar_exclusao = usuario['id']
-                        st.warning(f"Tem certeza que deseja excluir o usuário {usuario['nome']}?")
-                        st.button(f"Confirmar Exclusão #{usuario['id']}", key=f"confirm_{usuario['id']}")
-                    elif st.session_state.confirmar_exclusao == usuario['id']:
-                        # Excluir usuário
-                        usuarios_df = usuarios_df[usuarios_df['id'] != usuario['id']]
-                        
-                        # Salvar no Google Sheets
-                        if save_data("Sistema_Acoes_Militares", "Usuarios", usuarios_df):
-                            st.success("Usuário excluído com sucesso!")
-                            del st.session_state.confirmar_exclusao
-                            st.rerun()
-                        else:
-                            st.error("Erro ao excluir usuário. Verifique a conexão com o Google Sheets.")
-            
+                # CORREÇÃO: Adicionada uma chave única ao botão
+                if st.button("Excluir", key=f"delete_user_{usuario['id']}"):
+                    usuarios_df_updated = usuarios_df[usuarios_df['id'] != usuario['id']]
+                    if save_data("Sistema_Acoes_Militares", "Users", usuarios_df_updated):
+                        st.success(f"Usuário {usuario['nome']} excluído.")
+                        st.rerun()
+                    else:
+                        st.error("Erro ao excluir usuário.")
             st.divider()
 
 def show_config_tipos_acao():
     st.subheader("Tipos de Ação")
     
-    # Carregar tipos de ação existentes
     tipos_acao_df = load_data("Sistema_Acoes_Militares", "Tipos_Acao")
     
-    # Formulário para novo tipo de ação
-    with st.form("novo_tipo_acao"):
+    with st.form("novo_tipo_acao", clear_on_submit=True):
         st.write("Adicionar Novo Tipo de Ação")
         
         nome = st.text_input("Nome")
@@ -214,12 +172,10 @@ def show_config_tipos_acao():
             if not nome or not codigo:
                 st.error("Nome e Código são obrigatórios.")
             else:
-                # Criar novo ID
                 novo_id = 1
                 if not tipos_acao_df.empty and 'id' in tipos_acao_df.columns:
-                    novo_id = int(tipos_acao_df['id'].max()) + 1
+                    novo_id = int(pd.to_numeric(tipos_acao_df['id'], errors='coerce').max()) + 1
                 
-                # Criar novo tipo de ação
                 novo_tipo = {
                     'id': novo_id,
                     'nome': nome,
@@ -228,97 +184,70 @@ def show_config_tipos_acao():
                     'codigo': codigo
                 }
                 
-                # Adicionar à DataFrame
-                if tipos_acao_df.empty:
-                    tipos_acao_df = pd.DataFrame([novo_tipo])
-                else:
-                    tipos_acao_df = pd.concat([tipos_acao_df, pd.DataFrame([novo_tipo])], ignore_index=True)
+                novo_tipo_df = pd.DataFrame([novo_tipo])
                 
-                # Salvar no Google Sheets
-                if save_data("Sistema_Acoes_Militares", "Tipos_Acao", tipos_acao_df):
+                if save_data("Sistema_Acoes_Militares", "Tipos_Acao", novo_tipo_df):
                     st.success("Tipo de ação adicionado com sucesso!")
                     st.rerun()
                 else:
-                    st.error("Erro ao salvar tipo de ação. Verifique a conexão com o Google Sheets.")
+                    st.error("Erro ao salvar tipo de ação.")
     
-    # Exibir tipos de ação existentes
     st.subheader("Tipos de Ação Cadastrados")
     
     if tipos_acao_df.empty:
         st.info("Nenhum tipo de ação cadastrado ainda.")
     else:
-        # Exibir tipos de ação
         for _, tipo in tipos_acao_df.iterrows():
-            col1, col2, col3 = st.columns([2, 2, 1])
-            
-            with col1:
-                st.write(f"**{tipo['nome']} ({tipo['codigo']})**")
-                st.write(tipo['descricao'])
-            
-            with col2:
-                pontuacao = float(tipo['pontuacao'])
-                cor = "green" if pontuacao > 0 else "red" if pontuacao < 0 else "gray"
-                st.markdown(f"Pontuação: <span style='color:{cor};font-weight:bold'>{pontuacao:+g}</span>", unsafe_allow_html=True)
-            
-            with col3:
-                if st.button(f"Editar #{tipo['id']}"):
-                    st.session_state.editar_tipo = tipo['id']
+            with st.container(border=True):
+                col1, col2, col3 = st.columns([3, 2, 2])
                 
-                if st.button(f"Excluir #{tipo['id']}"):
-                    # Confirmar exclusão
-                    if 'confirmar_exclusao_tipo' not in st.session_state:
-                        st.session_state.confirmar_exclusao_tipo = tipo['id']
-                        st.warning(f"Tem certeza que deseja excluir o tipo de ação {tipo['nome']}?")
-                        st.button(f"Confirmar Exclusão Tipo #{tipo['id']}", key=f"confirm_tipo_{tipo['id']}")
-                    elif st.session_state.confirmar_exclusao_tipo == tipo['id']:
-                        # Excluir tipo de ação
-                        tipos_acao_df = tipos_acao_df[tipos_acao_df['id'] != tipo['id']]
-                        
-                        # Salvar no Google Sheets
-                        if save_data("Sistema_Acoes_Militares", "Tipos_Acao", tipos_acao_df):
-                            st.success("Tipo de ação excluído com sucesso!")
-                            del st.session_state.confirmar_exclusao_tipo
+                with col1:
+                    st.write(f"**{tipo['nome']}** (`{tipo['codigo']}`)")
+                    st.caption(tipo['descricao'])
+                
+                with col2:
+                    pontuacao_val = float(tipo.get('pontuacao', 0))
+                    cor = "green" if pontuacao_val > 0 else "red" if pontuacao_val < 0 else "gray"
+                    st.markdown(f"Pontuação: <span style='color:{cor};font-weight:bold'>{pontuacao_val:+.1f}</span>", unsafe_allow_html=True)
+                
+                with col3:
+                    # CORREÇÃO: Adicionadas chaves únicas aos botões
+                    if st.button("Editar", key=f"edit_tipo_{tipo['id']}"):
+                        st.session_state.editar_tipo_id = tipo['id']
+                    
+                    if st.button("Excluir", key=f"delete_tipo_{tipo['id']}"):
+                        tipos_acao_df_updated = tipos_acao_df[tipos_acao_df['id'] != tipo['id']]
+                        if save_data("Sistema_Acoes_Militares", "Tipos_Acao", tipos_acao_df_updated):
+                            st.success(f"Tipo '{tipo['nome']}' excluído.")
                             st.rerun()
                         else:
-                            st.error("Erro ao excluir tipo de ação. Verifique a conexão com o Google Sheets.")
+                            st.error("Erro ao excluir tipo de ação.")
             
-            # Formulário para editar tipo de ação
-            if 'editar_tipo' in st.session_state and st.session_state.editar_tipo == tipo['id']:
-                with st.form(f"editar_tipo_{tipo['id']}"):
-                    st.write(f"Editar Tipo de Ação #{tipo['id']}")
-                    
+            # Formulário de edição (aparece abaixo do item)
+            if 'editar_tipo_id' in st.session_state and st.session_state.editar_tipo_id == tipo['id']:
+                with st.form(f"edit_form_tipo_{tipo['id']}", clear_on_submit=True):
+                    st.write(f"Editando: **{tipo['nome']}**")
                     novo_nome = st.text_input("Nome", value=tipo['nome'])
                     nova_descricao = st.text_input("Descrição", value=tipo['descricao'])
                     nova_pontuacao = st.number_input("Pontuação", value=float(tipo['pontuacao']), step=0.5)
                     novo_codigo = st.text_input("Código", value=tipo['codigo'])
                     
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        submitted = st.form_submit_button("Salvar")
-                    with col2:
-                        cancelar = st.form_submit_button("Cancelar")
-                    
-                    if submitted:
-                        if not novo_nome or not novo_codigo:
-                            st.error("Nome e Código são obrigatórios.")
-                        else:
-                            # Atualizar tipo de ação
-                            idx = tipos_acao_df[tipos_acao_df['id'] == tipo['id']].index
-                            tipos_acao_df.loc[idx, 'nome'] = novo_nome
-                            tipos_acao_df.loc[idx, 'descricao'] = nova_descricao
-                            tipos_acao_df.loc[idx, 'pontuacao'] = str(nova_pontuacao)
-                            tipos_acao_df.loc[idx, 'codigo'] = novo_codigo
-                            
-                            # Salvar no Google Sheets
-                            if save_data("Sistema_Acoes_Militares", "Tipos_Acao", tipos_acao_df):
-                                st.success("Tipo de ação atualizado com sucesso!")
-                                del st.session_state.editar_tipo
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.form_submit_button("Salvar Alterações"):
+                            dados_atualizados = {
+                                'id': tipo['id'],
+                                'nome': novo_nome,
+                                'descricao': nova_descricao,
+                                'pontuacao': str(nova_pontuacao),
+                                'codigo': novo_codigo
+                            }
+                            df_atualizado = pd.DataFrame([dados_atualizados])
+                            if save_data("Sistema_Acoes_Militares", "Tipos_Acao", df_atualizado):
+                                del st.session_state.editar_tipo_id
                                 st.rerun()
-                            else:
-                                st.error("Erro ao atualizar tipo de ação. Verifique a conexão com o Google Sheets.")
-                    
-                    if cancelar:
-                        del st.session_state.editar_tipo
-                        st.rerun()
-            
-            st.divider()
+                    with c2:
+                        if st.form_submit_button("Cancelar"):
+                            del st.session_state.editar_tipo_id
+                            st.rerun()
+
