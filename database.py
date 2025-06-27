@@ -1,311 +1,170 @@
+import streamlit as st
+import pandas as pd
+import sqlite3
 import gspread
 from google.oauth2.service_account import Credentials
-import pandas as pd
-import streamlit as st
-from datetime import datetime, timedelta
-import sqlite3
-import os
+import logging
 
-# Caminho para o banco de dados SQLite
-DB_PATH = 'sistema_militar.db'
+# Configuração do logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- Configuração de Debug --- #
-DEBUG_MODE = True # Mude para False para desativar as mensagens de debug na interface
+# --- Funções de Conexão com Base de Dados Local (SQLite) ---
 
-def debug_message(message):
-    if DEBUG_MODE:
-        with st.expander("Detalhes de Debug (Database)", expanded=False):
-            st.markdown(f"<p style=\"font-size: small;\">{message}</p>", unsafe_allow_html=True)
-        print(message) # Para logs do Streamlit Cloud
-
-# --- Funções do Banco de Dados --- #
-
-def init_local_db():
-    """Inicializa o banco de dados local"""
-    debug_message("DEBUG: database.py - init_local_db() chamado.")
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    # Criar tabelas se não existirem
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS alunos (
-        id INTEGER PRIMARY KEY,
-        numero_interno TEXT,
-        nome_guerra TEXT,
-        nome_completo TEXT,
-        pelotao TEXT,
-        especialidade TEXT,
-        data_nascimento TEXT,
-        pontuacao REAL,
-        foto_path TEXT
-    )
-    """)
-    
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS acoes (
-        id INTEGER PRIMARY KEY,
-        aluno_id INTEGER,
-        tipo_acao_id INTEGER,
-        tipo TEXT,
-        descricao TEXT,
-        data TEXT,
-        usuario TEXT,
-        pontuacao REAL,
-        pontuacao_efetiva REAL,
-        sincronizado INTEGER DEFAULT 0
-    )
-    """)
-    
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS tarefas (
-        id INTEGER PRIMARY KEY,
-        texto TEXT,
-        status TEXT,
-        responsavel TEXT,
-        data_criacao TEXT,
-        data_conclusao TEXT,
-        concluida_por TEXT
-    )
-    """)
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS ordens_diarias (
-        id INTEGER PRIMARY KEY,
-        data TEXT,
-        texto TEXT,
-        autor_id TEXT
-    )
-    """)
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS usuarios (
-        username TEXT PRIMARY KEY
-    )
-    """)
-
-    conn.commit()
-    conn.close()
-    debug_message("DEBUG: database.py - Tabelas locais verificadas/criadas.")
-
-def save_local_data(table_name, data_df):
-    """Salva dados localmente"""
-    debug_message(f"DEBUG: database.py - Salvando dados localmente na tabela {table_name}.")
-    conn = sqlite3.connect(DB_PATH)
-    data_df.to_sql(table_name.lower(), conn, if_exists='replace', index=False)
-    conn.close()
-    debug_message(f"DEBUG: database.py - Dados salvos localmente na tabela {table_name}.")
-    return True
-
-def load_local_data(table_name):
-    """Carrega dados locais"""
-    debug_message(f"DEBUG: database.py - Carregando dados localmente da tabela {table_name}.")
-    conn = sqlite3.connect(DB_PATH)
+def connect_to_local_db():
+    """Conecta à base de dados SQLite local."""
     try:
-        df = pd.read_sql(f"SELECT * FROM {table_name.lower()}", conn)
-        debug_message(f"DEBUG: database.py - Dados carregados localmente da tabela {table_name}.")
-    except pd.io.sql.DatabaseError:
-        df = pd.DataFrame() # Retorna DataFrame vazio se a tabela não existir
-        debug_message(f"DEBUG: database.py - Tabela {table_name} não encontrada localmente ou vazia.")
-    conn.close()
-    return df
-
-def sync_with_sheets():
-    """Sincroniza dados locais com Google Sheets"""
-    debug_message("DEBUG: database.py - Sincronizando dados com Google Sheets...")
-    
-    # Sincronizar Tarefas
-    tarefas_local = load_local_data("Tarefas")
-    if not tarefas_local.empty:
-        try:
-            debug_message("DEBUG: database.py - Sincronizando Tarefas...")
-            if _save_data_to_sheets("Sistema_Acoes_Militares", "Tarefas", tarefas_local):
-                st.success("Tarefas sincronizadas com Google Sheets!")
-                debug_message("DEBUG: database.py - Tarefas sincronizadas com Google Sheets.")
-        except Exception as e:
-            st.error(f"Erro ao sincronizar tarefas com Google Sheets: {e}")
-            debug_message(f"ERROR: database.py - Erro ao sincronizar tarefas com Google Sheets: {e}")
-
-    # Sincronizar Ordens Diarias
-    ordens_local = load_local_data("Ordens_Diarias")
-    if not ordens_local.empty:
-        try:
-            debug_message("DEBUG: database.py - Sincronizando Ordens Diárias...")
-            if _save_data_to_sheets("Sistema_Acoes_Militares", "Ordens_Diarias", ordens_local):
-                st.success("Ordens Diárias sincronizadas com Google Sheets!")
-                debug_message("DEBUG: database.py - Ordens Diárias sincronizadas com Google Sheets.")
-        except Exception as e:
-            st.error(f"Erro ao sincronizar ordens diárias com Google Sheets: {e}")
-            debug_message(f"ERROR: database.py - Erro ao sincronizar ordens diárias com Google Sheets: {e}")
-
-    # Sincronizar Acoes
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        acoes_nao_sincronizadas = pd.read_sql("SELECT * FROM acoes WHERE sincronizado = 0", conn)
-        debug_message("DEBUG: database.py - Ações não sincronizadas carregadas do SQLite.")
-    except pd.io.sql.DatabaseError:
-        debug_message("WARNING: database.py - Tabela 'acoes' ou coluna 'sincronizado' não encontrada no SQLite. Pulando sincronização de ações.")
-        acoes_nao_sincronizadas = pd.DataFrame()
-    
-    if not acoes_nao_sincronizadas.empty:
-        debug_message("DEBUG: database.py - Sincronizando Ações não sincronizadas...")
-        try:
-            # Carregar dados atuais do Google Sheets
-            acoes_sheets = _load_data_from_sheets("Sistema_Acoes_Militares", "Acoes")
-            
-            # Mesclar dados
-            if acoes_sheets.empty:
-                acoes_sheets = acoes_nao_sincronizadas
-            else:
-                acoes_sheets = pd.concat([acoes_sheets, acoes_nao_sincronizadas], ignore_index=True)
-            
-            # Salvar no Google Sheets
-            if _save_data_to_sheets("Sistema_Acoes_Militares", "Acoes", acoes_sheets):
-                # Marcar como sincronizado
-                c = conn.cursor()
-                c.execute("UPDATE acoes SET sincronizado = 1 WHERE sincronizado = 0")
-                conn.commit()
-                st.success("Ações sincronizadas com Google Sheets!")
-                debug_message("DEBUG: database.py - Ações sincronizadas com Google Sheets.")
-            else:
-                st.warning("Falha ao sincronizar Ações com Google Sheets.")
-                debug_message("WARNING: database.py - Falha ao sincronizar Ações com Google Sheets.")
-        except Exception as e:
-            st.error(f"Erro ao sincronizar ações com Google Sheets: {e}")
-            debug_message(f"ERROR: database.py - Erro ao sincronizar ações com Google Sheets: {e}")
-    
-    conn.close()
-    debug_message("DEBUG: database.py - Sincronização concluída.")
-
-
-# Configurar escopo e credenciais
-SCOPES = [
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive'
-]
-
-# Função para conectar ao Google Sheets
-@st.cache_resource
-def connect_to_sheets():
-    debug_message("DEBUG: database.py - Tentando conectar ao Google Sheets...")
-    try:
-        # Lendo credenciais do st.secrets
-        credentials = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"], scopes=SCOPES)
-        client = gspread.authorize(credentials)
-        debug_message("DEBUG: database.py - Conexão com Google Sheets estabelecida.")
-        return client
-    except Exception as e:
-        st.error(f"Erro ao conectar com Google Sheets: {e}")
-        debug_message(f"ERROR: database.py - Falha na conexão com Google Sheets: {e}")
+        conn = sqlite3.connect('local_database.db', check_same_thread=False)
+        logging.info("Conexão com a base de dados local SQLite estabelecida.")
+        return conn
+    except sqlite3.Error as e:
+        logging.error(f"Erro ao conectar à base de dados SQLite: {e}")
         return None
 
-# Funções internas para acesso direto ao Sheets (não usar diretamente no app)
-def _load_data_from_sheets(sheet_name, worksheet_name):
-    debug_message(f"DEBUG: database.py - _load_data_from_sheets() chamada para {worksheet_name}")
-    client = connect_to_sheets()
-    if not client:
-        debug_message("WARNING: database.py - Cliente Sheets não disponível para carregamento.")
-        return pd.DataFrame()
+def init_local_db():
+    """Inicializa a base de dados local e cria as tabelas se não existirem."""
+    logging.info("init_local_db() chamado.")
+    conn = connect_to_local_db()
+    if conn is None:
+        return
+
+    tables_schema = {
+        "Alunos": ["id", "numero_interno", "nome_guerra", "nome_completo", "pelotao", "especialidade", "data_nascimento", "pontuacao", "foto_url", "nip", "antiguidade", "graduacao"],
+        "Acoes": ["id", "aluno_id", "tipo_acao_id", "tipo", "descricao", "data", "usuario", "pontuacao", "pontuacao_efetiva"],
+        "Users": ["id", "username", "password", "nome", "permissao"],
+        "Tipos_Acao": ["id", "nome", "descricao", "pontuacao", "codigo"],
+        "Programacao": ["id", "data", "horario", "descricao", "local", "responsavel", "obs", "concluida"] # Nome da aba corrigido para 'Programacao' se for o caso
+    }
     
     try:
-        sheet = client.open(sheet_name)
-        worksheet = sheet.worksheet(worksheet_name)
-        data = worksheet.get_all_records()
-        debug_message(f"DEBUG: database.py - Dados de {worksheet_name} carregados do Sheets.")
+        cursor = conn.cursor()
+        for table_name, columns in tables_schema.items():
+            columns_sql = ", ".join([f'"{col}" TEXT' for col in columns])
+            cursor.execute(f'CREATE TABLE IF NOT EXISTS {table_name} ({columns_sql})')
+        conn.commit()
+        logging.info("Tabelas locais verificadas/criadas com sucesso.")
+    except sqlite3.Error as e:
+        logging.error(f"Erro ao criar tabelas no SQLite: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+# --- Funções de Conexão e Dados com Google Sheets ---
+
+@st.cache_resource(ttl=600)
+def connect_to_google_sheets():
+    """Conecta ao Google Sheets usando as credenciais do Streamlit secrets e armazena o cliente em cache."""
+    logging.info("Tentando conectar ao Google Sheets...")
+    try:
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        client = gspread.authorize(creds)
+        logging.info("Conexão com Google Sheets estabelecida com sucesso.")
+        return client
+    except Exception as e:
+        logging.error(f"Falha na conexão com Google Sheets: {e}", exc_info=True)
+        st.error(f"Erro de conexão com o Google Sheets. Verifique as credenciais em st.secrets. Detalhe: {e}")
+        return None
+
+@st.cache_data(ttl=300)
+def load_data(sheet_name, table_name):
+    """
+    Carrega dados de uma aba específica do Google Sheets.
+    Esta função é armazenada em cache e é a única forma de carregar dados do Sheets.
+    """
+    logging.info(f"Carregando dados do Sheets: Aba '{table_name}'")
+    client = connect_to_google_sheets()
+    if client is None: 
+        st.error("Não foi possível carregar dados pois a conexão com o Google Sheets falhou.")
+        return pd.DataFrame() # Retorna DataFrame vazio se a conexão falhar
+    
+    try:
+        worksheet = client.open(sheet_name).worksheet(table_name)
+        # numericise_ignore=['all'] garante que todos os dados, como 'id', venham como strings
+        data = worksheet.get_all_records(numericise_ignore=['all'])
+        
+        # Se a planilha estiver vazia, mas tiver cabeçalho
+        if not data:
+            headers = worksheet.row_values(1)
+            return pd.DataFrame(columns=headers) if headers else pd.DataFrame()
+            
         return pd.DataFrame(data)
+
+    except gspread.exceptions.WorksheetNotFound:
+        logging.warning(f"Aba '{table_name}' não encontrada na planilha '{sheet_name}'.")
+        st.warning(f"Aba '{table_name}' não foi encontrada na planilha. Verifique o nome.")
+        return pd.DataFrame()
     except Exception as e:
-        st.error(f"Erro ao carregar dados do Sheets ({worksheet_name}): {e}")
-        debug_message(f"ERROR: database.py - Falha ao carregar dados de {worksheet_name} do Sheets: {e}")
+        logging.error(f"Erro ao carregar dados da aba '{table_name}': {e}", exc_info=True)
+        st.error(f"Ocorreu um erro ao carregar dados da aba '{table_name}'. Detalhe: {e}")
         return pd.DataFrame()
 
-def _save_data_to_sheets(sheet_name, worksheet_name, data_df):
-    debug_message(f"DEBUG: database.py - _save_data_to_sheets() chamada para {worksheet_name}")
-    client = connect_to_sheets()
-    if not client:
-        debug_message("WARNING: database.py - Cliente Sheets não disponível para salvamento.")
+def save_data(sheet_name, worksheet_name, df_to_save):
+    """
+    Salva um DataFrame numa aba específica do Google Sheets usando a conexão em cache.
+    """
+    logging.info(f"Salvando dados no Sheets: Aba '{worksheet_name}'")
+    client = connect_to_google_sheets()
+    if client is None:
+        st.error("Não foi possível salvar os dados pois a conexão com o Google Sheets falhou.")
         return False
-    
+
     try:
         sheet = client.open(sheet_name)
-        worksheet = sheet.worksheet(worksheet_name)
+        try:
+            worksheet = sheet.worksheet(worksheet_name)
+            worksheet.clear() # Limpa a aba antes de escrever
+        except gspread.exceptions.WorksheetNotFound:
+            # Se a aba não existe, cria uma nova
+            worksheet = sheet.add_worksheet(title=worksheet_name, rows="100", cols="20")
+
+        # Converte o DataFrame para uma lista de listas para o gspread
+        df_to_save = df_to_save.fillna('') # Substitui NaN por strings vazias para evitar erros
+        worksheet.update([df_to_save.columns.values.tolist()] + df_to_save.values.tolist())
+        logging.info(f"Dados salvos com sucesso na aba '{worksheet_name}'.")
         
-        # Limpar planilha (exceto cabeçalho)
-        if worksheet.row_count > 1:
-            worksheet.delete_rows(2, worksheet.row_count)
-            debug_message(f"DEBUG: database.py - Linhas existentes em {worksheet_name} limpas.")
-        
-        # Obter cabeçalhos
-        headers = worksheet.row_values(1)
-        debug_message(f"DEBUG: database.py - Cabeçalhos de {worksheet_name} obtidos: {headers}")
-        
-        # Preparar dados para inserção
-        # Garantir que o DataFrame tenha as colunas na ordem correta dos cabeçalhos do Sheets
-        # Adicionado tratamento para colunas que podem não existir no DataFrame mas existem no Sheets
-        df_to_save = data_df.reindex(columns=headers, fill_value='')
-        values = df_to_save.values.tolist()
-        debug_message(f"DEBUG: database.py - {len(values)} linhas prontas para inserção em {worksheet_name}.")
-        
-        # Inserir dados
-        if values:
-            worksheet.append_rows(values)
-            debug_message(f"DEBUG: database.py - Dados de {worksheet_name} salvos no Sheets.")
+        # Limpa o cache para que a próxima leitura puxe os dados atualizados
+        st.cache_data.clear()
         
         return True
     except Exception as e:
-        st.error(f"Erro ao salvar dados no Sheets ({worksheet_name}): {e}")
-        debug_message(f"ERROR: database.py - Falha ao salvar dados de {worksheet_name} no Sheets: {e}")
+        logging.error(f"Falha ao salvar os dados no Google Sheets: {e}", exc_info=True)
+        st.error(f"Falha ao salvar os dados no Google Sheets. Detalhe: {e}")
         return False
 
+# --- Funções de Sincronização e Base de Dados Local ---
 
-# Função principal para carregar dados (com cache e prioridade local)
-@st.cache_data(ttl=300) # Cache por 5 minutos para leituras do Sheets
-def load_data(sheet_name, worksheet_name):
-    debug_message(f"DEBUG: database.py - load_data() chamada para {worksheet_name}")
-    # Tentar carregar do SQLite local
-    local_df = load_local_data(worksheet_name)
+def save_data_locally(df, table_name):
+    """Salva um DataFrame na base de dados SQLite local."""
+    if df is None or df.empty: return
+    conn = connect_to_local_db()
+    if conn is None: return
     
-    # Se o DataFrame local estiver vazio, carregar do Google Sheets e atualizar o SQLite local.
-    if local_df.empty:
-        debug_message(f"DEBUG: database.py - Carregando {worksheet_name} do Google Sheets (local vazio ou desatualizado)...")
-        sheets_df = _load_data_from_sheets(sheet_name, worksheet_name)
-        if not sheets_df.empty:
-            save_local_data(worksheet_name, sheets_df) # Salva no SQLite
-            debug_message(f"DEBUG: database.py - Dados de {worksheet_name} salvos localmente após carregar do Sheets.")
-            return sheets_df
-        else:
-            debug_message(f"WARNING: database.py - Não foi possível carregar {worksheet_name} de nenhum lugar.")
-            return pd.DataFrame() # Retorna DataFrame vazio se não conseguir carregar de nenhum lugar
-    else:
-        debug_message(f"DEBUG: database.py - Carregando {worksheet_name} do SQLite local...")
-        return local_df
+    try:
+        df.to_sql(table_name, conn, if_exists='replace', index=False)
+        conn.commit()
+    finally:
+        if conn: conn.close()
 
-# Função para salvar dados
-def save_data(sheet_name, worksheet_name, data_df):
-    debug_message(f"DEBUG: database.py - save_data() chamada para {worksheet_name}")
-    # Salvar no SQLite local imediatamente
-    if save_local_data(worksheet_name, data_df):
-        st.success(f"Dados de {worksheet_name} salvos localmente.")
-        debug_message(f"DEBUG: database.py - Dados de {worksheet_name} salvos localmente.")
-        # Tentar sincronizar com o Google Sheets em segundo plano (ou em lote)
-        # Para este exemplo, faremos a chamada direta, mas idealmente seria assíncrona
-        try:
-            if _save_data_to_sheets(sheet_name, worksheet_name, data_df):
-                st.success(f"Dados de {worksheet_name} sincronizados com Google Sheets.")
-                debug_message(f"DEBUG: database.py - Dados de {worksheet_name} sincronizados com Google Sheets.")
-            else:
-                st.warning(f"Falha ao sincronizar {worksheet_name} com Google Sheets. Verifique o log.")
-                debug_message(f"WARNING: database.py - Falha ao sincronizar {worksheet_name} com Google Sheets. Verifique o log.")
-        except Exception as e:
-            st.error(f"Erro durante a sincronização de {worksheet_name} com Google Sheets: {e}")
-            debug_message(f"ERROR: database.py - Erro durante a sincronização de {worksheet_name} com Google Sheets: {e}")
-            st.warning(f"Dados de {worksheet_name} salvos localmente, mas não sincronizados com Google Sheets.")
+def sync_with_sheets():
+    """Sincroniza todos os dados locais PARA o Google Sheets (Upload)."""
+    logging.info("Iniciando sincronização local -> Sheets...")
+    sheet_name = st.secrets.get("gcp_service_account", {}).get("sheet_name", "Sistema_Acoes_Militares")
+    
+    conn = connect_to_local_db()
+    if conn is None: return
+    
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        local_tables = [t[0] for t in cursor.fetchall()]
 
-        # Limpar cache do Streamlit para garantir que a próxima leitura seja fresca
-        load_data.clear()
-        return True
-    else:
-        st.error(f"Erro ao salvar dados de {worksheet_name} localmente.")
-        debug_message(f"ERROR: database.py - Falha ao salvar dados de {worksheet_name} localmente.")
-        return False
-
+        for table_name in local_tables:
+            local_df = pd.read_sql(f'SELECT * FROM {table_name}', conn)
+            if not local_df.empty:
+                logging.info(f"Sincronizando tabela '{table_name}' para o Sheets.")
+                save_data(sheet_name, table_name, local_df)
+    finally:
+        conn.close()
+    
+    st.success("Sincronização de dados locais para o Google Sheets concluída!")
 

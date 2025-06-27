@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 from database import load_data, save_data
 
-def show_ordens():
+def show_ordens_e_tarefas():
     st.title("Ordens Diárias e Tarefas")
     
     # Abas para ordens e tarefas

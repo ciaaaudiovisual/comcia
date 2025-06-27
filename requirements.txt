@@ -3,4 +3,5 @@ pandas
 gspread
 google-auth-oauthlib
 plotly
-
+google-api-python-client
+blinker==1.9.0
