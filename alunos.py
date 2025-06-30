@@ -5,16 +5,12 @@ from database import load_data, init_supabase_client
 from auth import check_permission
 import math
 
-# --- FUNÇÃO HELPER DE CÁLCULO DE PONTUAÇÃO (OBSERVACIONAL) ---
+# --- FUNÇÃO HELPER DE CÁLCULO DE PONTUAÇÃO (Sem alterações) ---
 def calcular_pontuacao_efetiva(acoes_df: pd.DataFrame, tipos_acao_df: pd.DataFrame, config_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Junta ações com seus tipos, calcula a pontuação base e a pontuação efetiva.
-    """
-    if acoes_df.empty:
+    if acoes_df.empty or tipos_acao_df.empty:
         return pd.DataFrame()
         
     if 'pontuacao' not in tipos_acao_df.columns:
-        st.error("ERRO CRÍTICO: A coluna 'pontuacao' não existe na tabela 'Tipos_Acao'.")
         return pd.DataFrame()
 
     acoes_copy = acoes_df.copy()
@@ -51,9 +47,8 @@ def calcular_pontuacao_efetiva(acoes_df: pd.DataFrame, tipos_acao_df: pd.DataFra
     acoes_com_pontos['pontuacao_efetiva'] = acoes_com_pontos.apply(aplicar_fator, axis=1)
     return acoes_com_pontos
 
-# --- NOVA FUNÇÃO PARA CALCULAR O CONCEITO FINAL ---
+# --- FUNÇÃO PARA CALCULAR O CONCEITO FINAL (Sem alterações) ---
 def calcular_conceito_final(soma_pontos_acoes: float, media_academica_aluno: float, todos_alunos_df: pd.DataFrame, config_dict: dict) -> float:
-    """Calcula o Conceito Final dinâmico de um aluno."""
     linha_base = float(config_dict.get('linha_base_conceito', 8.5))
     impacto_max_acoes = float(config_dict.get('impacto_max_acoes', 1.5))
     peso_academico = float(config_dict.get('peso_academico', 1.0))
@@ -73,7 +68,7 @@ def calcular_conceito_final(soma_pontos_acoes: float, media_academica_aluno: flo
     conceito_final = linha_base + impacto_acoes + impacto_academico
     return max(0.0, min(conceito_final, 10.0))
 
-# --- DIÁLOGO DE REGISTRO DE AÇÃO ---
+# --- DIÁLOGO DE REGISTRO DE AÇÃO (Sem alterações) ---
 @st.dialog("Registrar Nova Ação")
 def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
     st.write(f"Aluno: **{aluno_nome}**")
@@ -99,35 +94,70 @@ def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
             except Exception as e:
                 st.error(f"Falha ao registrar a ação: {e}")
 
-# --- PÁGINA PRINCIPAL ---
+# --- PÁGINA PRINCIPAL (MODIFICADA) ---
 def show_alunos():
     st.title("Gestão de Alunos")
     supabase = init_supabase_client()
     if 'page_num' not in st.session_state: st.session_state.page_num = 1
     def reset_page(): st.session_state.page_num = 1
 
+    # Carregamento de dados
     alunos_df = load_data("Alunos")
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
     
     if 'media_academica' not in alunos_df.columns: alunos_df['media_academica'] = 0.0
-    if tipos_acao_df.empty or 'pontuacao' not in tipos_acao_df.columns:
-        st.error("ERRO CRÍTICO: Tabela 'Tipos_Acao' não encontrada ou sem coluna 'pontuacao'."); st.stop()
+    if tipos_acao_df.empty:
+        st.error("ERRO CRÍTICO: Tabela 'Tipos_Acao' não encontrada. Cadastre os tipos de ação primeiro."); st.stop()
 
     config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
     
-    st.subheader("Filtros e Busca")
-    col1, col2, col3 = st.columns([1, 1, 2])
+    # --- OTIMIZAÇÃO: Bloco de pré-cálculo de pontos e conceitos para todos os alunos ---
+    soma_pontos_por_aluno = pd.DataFrame()
+    if not acoes_df.empty:
+        acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
+        if not acoes_com_pontos.empty:
+            soma_pontos_por_aluno = acoes_com_pontos.groupby('aluno_id')['pontuacao_efetiva'].sum().reset_index()
+            soma_pontos_por_aluno.rename(columns={'pontuacao_efetiva': 'soma_pontos_acoes'}, inplace=True)
+
+    if not soma_pontos_por_aluno.empty:
+        alunos_df = pd.merge(alunos_df, soma_pontos_por_aluno, left_on='id', right_on='aluno_id', how='left')
+    else:
+        alunos_df['soma_pontos_acoes'] = 0
+    
+    alunos_df['soma_pontos_acoes'] = alunos_df['soma_pontos_acoes'].fillna(0)
+
+    alunos_df['conceito_final_calculado'] = alunos_df.apply(
+        lambda row: calcular_conceito_final(
+            row['soma_pontos_acoes'],
+            float(row.get('media_academica', 0.0)),
+            alunos_df,
+            config_dict
+        ),
+        axis=1
+    )
+    # --- FIM DO BLOCO DE OTIMIZAÇÃO ---
+
+    # Seção de Filtros, Busca e Ordenação
+    st.subheader("Filtros e Ordenação")
+    col1, col2 = st.columns(2)
     with col1:
         opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
         pelotao_selecionado = st.selectbox("Filtrar por Pelotão:", opcoes_pelotao, on_change=reset_page)
-    with col2:
         opcoes_especialidade = ["Todas"] + sorted([e for e in alunos_df['especialidade'].unique() if pd.notna(e)])
         especialidade_selecionada = st.selectbox("Filtrar por Especialidade:", opcoes_especialidade, on_change=reset_page)
-    with col3:
+    with col2:
         search = st.text_input("Buscar por nome ou número...", key="search_aluno", on_change=reset_page)
+        # --- NOVO: Seletor de ordenação ---
+        sort_option = st.selectbox(
+            "Ordenar por:",
+            ["Padrão (Nº Interno)", "Maior Conceito", "Menor Conceito"],
+            key="sort_aluno",
+            on_change=reset_page
+        )
 
+    # Lógica de filtragem
     filtered_df = alunos_df.copy()
     if pelotao_selecionado != "Todos": filtered_df = filtered_df[filtered_df['pelotao'] == pelotao_selecionado]
     if especialidade_selecionada != "Todas": filtered_df = filtered_df[filtered_df['especialidade'] == especialidade_selecionada]
@@ -138,8 +168,19 @@ def show_alunos():
                 filtered_df['nome_completo'].str.lower().str.contains(search_lower, na=False))
         filtered_df = filtered_df[mask]
 
+    # --- NOVO: Lógica de ordenação ---
+    if sort_option == "Maior Conceito":
+        filtered_df = filtered_df.sort_values(by='conceito_final_calculado', ascending=False)
+    elif sort_option == "Menor Conceito":
+        filtered_df = filtered_df.sort_values(by='conceito_final_calculado', ascending=True)
+    else: # Padrão (Nº Interno)
+        # Garante que a coluna de número interno seja numérica para ordenação correta
+        filtered_df['numero_interno_num'] = pd.to_numeric(filtered_df['numero_interno'], errors='coerce')
+        filtered_df = filtered_df.sort_values(by='numero_interno_num', ascending=True)
+
     st.divider()
 
+    # Expander de Cadastro
     if check_permission('pode_importar_alunos'):
         with st.expander("➕ Opções de Cadastro"):
             st.subheader("Adicionar Novo Aluno")
@@ -165,6 +206,7 @@ def show_alunos():
 
     st.divider()
     
+    # Lógica de Paginação
     ITEMS_PER_PAGE = 30
     total_items = len(filtered_df); total_pages = math.ceil(total_items / ITEMS_PER_PAGE) if total_items > 0 else 1
     if st.session_state.page_num > total_pages: st.session_state.page_num = total_pages
@@ -172,29 +214,21 @@ def show_alunos():
     paginated_df = filtered_df.iloc[start_idx:end_idx]
     st.subheader(f"Alunos Exibidos ({len(paginated_df)} de {total_items})")
 
+    # Loop de exibição
     if not paginated_df.empty:
         for _, aluno in paginated_df.iterrows():
             aluno_id = aluno['id']
             with st.container(border=True):
                 col_img, col_info, col_actions = st.columns([1, 4, 1])
                 
-                soma_pontos_observacional = 0
-                if not acoes_df.empty and 'aluno_id' in acoes_df.columns:
-                    acoes_aluno_df = acoes_df[acoes_df['aluno_id'].astype(str) == str(aluno_id)]
-                    if not acoes_aluno_df.empty:
-                        acoes_com_pontos = calcular_pontuacao_efetiva(acoes_aluno_df, tipos_acao_df, config_df)
-                        if not acoes_com_pontos.empty:
-                            soma_pontos_observacional = acoes_com_pontos['pontuacao_efetiva'].sum()
-
-                media_academica_aluno = float(aluno.get('media_academica', 0.0))
-                conceito_final_aluno = calcular_conceito_final(soma_pontos_observacional, media_academica_aluno, alunos_df, config_dict)
+                soma_pontos_observacional = aluno['soma_pontos_acoes']
+                conceito_final_aluno = aluno['conceito_final_calculado']
 
                 with col_img:
                     st.image(aluno.get('url_foto', "https://via.placeholder.com/100?text=Sem+Foto"), width=100)
                 
                 with col_info:
                     st.markdown(f"**{aluno.get('nome_guerra', 'N/A')}** (`{aluno.get('numero_interno', 'N/A')}`)")
-                    # --- MODIFICAÇÃO: Exibição do nome completo ---
                     st.caption(f"Nome: {aluno.get('nome_completo', 'Não informado')}")
                     st.write(f"Pelotão: {aluno.get('pelotao', 'N/A')} | Especialidade: {aluno.get('especialidade', 'N/A')}")
                     cor_conceito = "green" if conceito_final_aluno >= 8.5 else "orange" if conceito_final_aluno >= 7.0 else "red"
@@ -211,6 +245,7 @@ def show_alunos():
                         st.session_state.aluno_em_foco_id = aluno_id if st.session_state.get('aluno_em_foco_id') != aluno_id else None
                         st.rerun()
 
+                # Painel de detalhes
                 if st.session_state.get('aluno_em_foco_id') == aluno_id:
                     with st.container(border=True):
                         tab_ver, tab_editar = st.tabs(["Ver Histórico", "Editar Dados"])
@@ -219,7 +254,6 @@ def show_alunos():
                             acoes_do_aluno = acoes_df[acoes_df['aluno_id'].astype(str) == str(aluno_id)] if not acoes_df.empty and 'aluno_id' in acoes_df.columns else pd.DataFrame()
                             if acoes_do_aluno.empty: st.info("Nenhuma ação registrada.")
                             else:
-
                                 historico_com_pontos = calcular_pontuacao_efetiva(acoes_do_aluno.copy(), tipos_acao_df, config_df)
                                 if not historico_com_pontos.empty:
                                     for _, acao in historico_com_pontos.sort_values("data", ascending=False).iterrows():
@@ -240,7 +274,6 @@ def show_alunos():
                                     st.divider()
                                     
                                     st.subheader("Dados Pessoais")
-                                    # --- MODIFICAÇÃO: Campo para editar nome completo ---
                                     new_nome_completo = st.text_input("Nome Completo", value=aluno.get('nome_completo', ''))
                                     new_nome_guerra = st.text_input("Nome de Guerra", value=aluno.get('nome_guerra', ''))
                                     new_numero_interno = st.text_input("Número Interno", value=aluno.get('numero_interno', ''))
@@ -249,7 +282,6 @@ def show_alunos():
                                     new_url_foto = st.text_input("URL da Foto", value=aluno.get('url_foto', ''))
                                     
                                     if st.form_submit_button("Salvar Alterações"):
-                                        # --- MODIFICAÇÃO: Adicionado nome_completo ao update ---
                                         dados_update = {
                                             'media_academica': new_media_academica, 
                                             'nome_completo': new_nome_completo,
@@ -271,6 +303,7 @@ def show_alunos():
     
     st.divider()
     
+    # Controles de Paginação
     if total_pages > 1:
         col_prev, col_page, col_next = st.columns([2, 1, 2])
         with col_prev:
