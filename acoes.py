@@ -118,4 +118,34 @@ def show_lancamentos_page():
 def registrar_acao(aluno_id, nome_aluno):
     # O código desta função não foi alterado pois é um fluxo secundário.
     # As principais melhorias foram na função principal 'show_lancamentos_page'.
-    pass
+    st.subheader(f"Registrar Ação para {nome_aluno}")
+    supabase = init_supabase_client()
+    tipos_acao_df = load_data("Tipos_Acao")
+    acoes_df = load_data("Acoes")
+
+    with st.form("registrar_acao_form"):
+        if not tipos_acao_df.empty:
+            tipos_opcoes = {f"{tipo['nome']} ({float(tipo.get('pontuacao',0)):.1f} pts)": tipo for _, tipo in tipos_acao_df.iterrows()}
+            tipo_selecionado_str = st.selectbox("Tipo de Ação", list(tipos_opcoes.keys()))
+        else:
+            st.error("Nenhum tipo de ação cadastrado."); return
+
+        data = st.date_input("Data", datetime.now())
+        descricao = st.text_area("Descrição/Justificativa", height=100)
+        
+        if st.form_submit_button("Registrar"):
+            if not descricao or not tipo_selecionado_str:
+                st.error("Por favor, forneça uma descrição para a ação.")
+            else:
+                try:
+                    tipo_info = tipos_opcoes[tipo_selecionado_str]
+                    ids_numericos = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
+                    novo_id = int(ids_numericos.max()) + 1 if not ids_numericos.empty else 1
+                    nova_acao = {'id': str(novo_id),'aluno_id': str(aluno_id),'tipo_acao_id': str(tipo_info['id']),'tipo': tipo_info['nome'],'descricao': descricao,'data': data.strftime('%Y-%m-%d'),'usuario': st.session_state.username,'lancado_faia': False}
+                    supabase.table("Acoes").insert(nova_acao).execute()
+                    st.success(f"Ação registrada com sucesso!")
+                    load_data.clear()
+                    if 'registrar_acao' in st.session_state: st.session_state.registrar_acao = False
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar a ação: {e}")
