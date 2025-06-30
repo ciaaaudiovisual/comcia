@@ -7,16 +7,8 @@ from acoes import calcular_pontuacao_efetiva
 from io import BytesIO
 import zipfile
 
-# ==============================================================================
-# FUNÇÕES DE CALLBACK (CORRIGIDAS)
-# ==============================================================================
-
+# --- FUNÇÕES DE CALLBACK (Sem alterações) ---
 def on_faia_status_change(acao_id, supabase, key_name):
-    """
-    Atualiza o status 'lancado_faia' de uma ação.
-    A chamada st.rerun() foi removida, pois o Streamlit recarrega o app
-    automaticamente após a execução de um callback.
-    """
     novo_status = st.session_state[key_name]
     try:
         supabase.table("Acoes").update({'lancado_faia': novo_status}).eq('id', acao_id).execute()
@@ -25,12 +17,7 @@ def on_faia_status_change(acao_id, supabase, key_name):
     except Exception as e:
         st.error(f"Erro ao atualizar status: {e}")
 
-
 def on_faia_delete_click(acao_id, supabase):
-    """
-    Exclui um lançamento da FAIA.
-    Corrigido de 'experimental_rerun' e depois removido pela mesma razão acima.
-    """
     try:
         supabase.table("Acoes").delete().eq('id', acao_id).execute()
         st.success("Lançamento excluído com sucesso.")
@@ -38,12 +25,8 @@ def on_faia_delete_click(acao_id, supabase):
     except Exception as e:
         st.error(f"Erro ao excluir lançamento: {e}")
 
-# ==============================================================================
-# FUNÇÕES DE APOIO (HELPERS)
-# ==============================================================================
-
+# --- FUNÇÕES DE APOIO (HELPER) ---
 def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
-    """Formata os dados de um único aluno para uma string de texto."""
     texto = [
         "============================================================",
         "      FICHA DE ACOMPANHAMENTO INDIVIDUAL DO ALUNO (FAIA)",
@@ -74,33 +57,33 @@ def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
     ])
     return "\n".join(texto)
 
+# --- FUNÇÃO DE FILTROS (MODIFICADA) ---
 def render_filters(alunos_df):
-    """Renderiza os widgets de filtro e retorna as seleções."""
+    """Renderiza os widgets de filtro com seletores dependentes e busca."""
     st.subheader("Filtros")
     col1, col2, col3 = st.columns([2, 2, 1])
-    
+
     with col1:
         opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
-        pelotao = st.selectbox("Filtrar por Pelotão:", opcoes_pelotao)
-        
+        pelotao = st.selectbox("1. Filtrar por Pelotão:", opcoes_pelotao)
+
+    # Filtra o DataFrame de alunos com base no pelotão selecionado
+    alunos_filtrados_df = alunos_df
+    if pelotao != "Todos":
+        alunos_filtrados_df = alunos_df[alunos_df['pelotao'] == pelotao]
+
     with col2:
-        # --- INÍCIO DA CORREÇÃO ---
-        # 1. Pega os nomes de guerra únicos
-        nomes_unicos = alunos_df['nome_guerra'].unique()
-        
-        # 2. Filtra a lista para remover valores nulos (NaN/None) e garante que tudo seja string
-        nomes_validos = [str(nome) for nome in nomes_unicos if pd.notna(nome)]
-        
-        # 3. Cria a lista de opções final, agora com dados limpos e seguros para ordenar
-        opcoes_alunos = ["Todos"] + sorted(nomes_validos)
-        # --- FIM DA CORREÇÃO ---
-        
-        aluno = st.selectbox("Filtrar por Aluno:", opcoes_alunos)
-        
+        busca_nome = st.text_input("2. Buscar por Nome de Guerra", help="Pode ser usado em conjunto com o filtro de pelotão.")
+        if busca_nome:
+            alunos_filtrados_df = alunos_filtrados_df[alunos_filtrados_df['nome_guerra'].str.contains(busca_nome, case=False, na=False)]
+
+        opcoes_alunos = ["Todos"] + sorted(alunos_filtrados_df['nome_guerra'].unique().tolist())
+        aluno = st.selectbox("3. Filtrar por Aluno:", opcoes_alunos)
+
     with col3:
         status = st.radio("Filtrar Status:", ["A Lançar", "Lançados", "Todos"], horizontal=True, index=0)
-        
-    return pelotao, aluno, status
+
+    return pelotao, aluno, status, busca_nome
 
 def render_export_section(df_filtrado, alunos_df, pelotao_selecionado, aluno_selecionado):
     """Renderiza a seção de exportação de relatórios."""
@@ -140,7 +123,7 @@ def display_launch_list(df_filtrado, alunos_df, supabase):
         st.info("Nenhum lançamento encontrado para os filtros selecionados.")
         return
 
-    df_display = pd.merge(df_filtrado, alunos_df[['id','nome_guerra','pelotao']], left_on='aluno_id', right_on='id')
+    df_display = pd.merge(df_filtrado, alunos_df[['id','nome_guerra','pelotao']], left_on='aluno_id', right_on='id', how='inner')
     for idx, acao in df_display.sort_values(by='data', ascending=False).iterrows():
         key_checkbox = f"check_{acao['id_x']}_{idx}"
         key_delete = f"delete_{acao['id_x']}_{idx}"
@@ -166,47 +149,48 @@ def display_launch_list(df_filtrado, alunos_df, supabase):
             if check_permission('pode_excluir_lancamento_faia'):
                 cols[2].button("🗑️", key=key_delete, help="Excluir este lançamento", on_click=on_faia_delete_click, args=(acao['id_x'], supabase))
 
-# ==============================================================================
-# FUNÇÃO PRINCIPAL DA PÁGINA
-# ==============================================================================
-
+# --- FUNÇÃO PRINCIPAL (MODIFICADA) ---
 def show_lancamentos_faia():
     """Função principal que renderiza a página de gestão de lançamentos da FAIA."""
     st.title("Gestão de Lançamentos (FAIA)")
     st.caption("Controle das anotações a serem lançadas na Ficha de Acompanhamento Individual do Aluno.")
     
-    # Inicialização e carregamento de dados
     supabase = init_supabase_client()
     alunos_df = load_data("Alunos")
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
 
-    if 'lancado_faia' not in acoes_df.columns:
-        acoes_df['lancado_faia'] = False
-    else:
-        # Garante que a coluna seja booleana
-        acoes_df['lancado_faia'] = acoes_df['lancado_faia'].apply(lambda x: str(x).lower() in ['true', '1', 't', 'y', 'yes', 'sim'])
+    if 'lancado_faia' not in acoes_df.columns: acoes_df['lancado_faia'] = False
+    else: acoes_df['lancado_faia'] = acoes_df['lancado_faia'].apply(lambda x: str(x).lower() in ['true', '1', 't', 'y', 'yes', 'sim'])
     
     acoes_com_pontos_df = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
 
     # Renderiza os filtros e obtém os valores selecionados
-    pelotao, aluno, status = render_filters(alunos_df)
+    pelotao, aluno, status, busca_nome = render_filters(alunos_df)
 
     # Aplica os filtros
     df_filtrado = acoes_com_pontos_df.copy()
+    alunos_ids_filtrados = alunos_df['id'].tolist()
+    
     if pelotao != "Todos":
-        alunos_ids = alunos_df[alunos_df['pelotao'] == pelotao]['id'].tolist()
-        df_filtrado = df_filtrado[df_filtrado['aluno_id'].isin(alunos_ids)]
+        alunos_ids_filtrados = alunos_df[alunos_df['pelotao'] == pelotao]['id'].tolist()
+    
+    if busca_nome:
+         ids_busca = alunos_df[alunos_df['nome_guerra'].str.contains(busca_nome, case=False, na=False)]['id'].tolist()
+         alunos_ids_filtrados = list(set(alunos_ids_filtrados) & set(ids_busca))
+
+    df_filtrado = df_filtrado[df_filtrado['aluno_id'].isin(alunos_ids_filtrados)]
+
     if aluno != "Todos":
         aluno_id = alunos_df[alunos_df['nome_guerra'] == aluno]['id'].iloc[0]
         df_filtrado = df_filtrado[df_filtrado['aluno_id'] == aluno_id]
+        
     if status == "A Lançar":
         df_filtrado = df_filtrado[~df_filtrado['lancado_faia']]
     elif status == "Lançados":
         df_filtrado = df_filtrado[df_filtrado['lancado_faia']]
 
-    # Renderiza as outras seções da página
     st.divider()
     render_export_section(df_filtrado, alunos_df, pelotao, aluno)
     st.divider()
