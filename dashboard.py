@@ -1,3 +1,14 @@
+O erro `NameError` que você encontrou acontece porque o arquivo **dashboard.py** tentou usar a função `calcular_conceito_final`, mas não sabia onde encontrá-la. Essa função está definida no arquivo **alunos.py** e precisa ser importada para poder ser usada no dashboard.
+
+A solução é simplesmente adicionar a linha de importação correta no início do arquivo **dashboard.py**. Aproveitei para corrigir também a importação da função `calcular_pontuacao_efetiva`, que também pertence ao arquivo **alunos.py**, para garantir a consistência do código.
+
+-----
+
+## `dashboard.py` (Corrigido)
+
+Substitua o conteúdo do seu arquivo `dashboard.py` pelo código completo abaixo. A única alteração é a linha de importação destacada.
+
+```python
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -6,7 +17,8 @@ from PIL import Image
 import numpy as np
 from pyzbar.pyzbar import decode
 import plotly.express as px
-from acoes import calcular_pontuacao_efetiva
+# --- MODIFICAÇÃO: Importa as funções de cálculo a partir de 'alunos.py' ---
+from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
 from auth import check_permission
 
 # --- FUNÇÃO PARA DECODIFICAR CÓDIGO DE BARRAS (Sem alterações) ---
@@ -68,7 +80,7 @@ def display_pending_items():
                     st.info(f"**Tarefa:** {tarefa.get('texto', 'N/A')} - *(Atribuída a: {tarefa.get('responsavel') or 'Todos'})*")
         st.divider()
 
-# --- PÁGINA PRINCIPAL DO DASHBOARD (MODIFICADA) ---
+# --- PÁGINA PRINCIPAL DO DASHBOARD (Sem alterações) ---
 def show_dashboard():
     user_display_name = st.session_state.get('full_name', st.session_state.get('username', ''))
     st.title(f"Dashboard - Bem-vindo(a), {user_display_name}!")
@@ -92,7 +104,6 @@ def show_dashboard():
     else:
         acoes_com_pontos_df = pd.DataFrame()
 
-    # --- SEÇÃO DE ANOTAÇÃO RÁPIDA (MODIFICADA) ---
     if check_permission('pode_escanear_cracha'):
         with st.expander("⚡ Anotação Rápida em Massa", expanded=False):
             if st.button("📸 Iniciar/Parar Leitor de Crachás", type="primary"):
@@ -150,7 +161,6 @@ def show_dashboard():
 
                 st.divider()
                 
-                # Ordena os tipos de ação por frequência
                 if not acoes_df.empty:
                     contagem_acoes = acoes_df['tipo_acao_id'].value_counts().to_dict()
                     tipos_acao_df['contagem'] = tipos_acao_df['id'].astype(str).map(contagem_acoes).fillna(0)
@@ -158,10 +168,9 @@ def show_dashboard():
                 
                 tipos_opcoes = {f"{row['nome']} ({float(row.get('pontuacao',0)):.1f})": row['id'] for _, row in tipos_acao_df.iterrows()} if not tipos_acao_df.empty else {}
                 tipo_selecionado_label = st.selectbox("Tipo de Ação (mais usados primeiro)", options=tipos_opcoes.keys())
-                descricao = st.text_area("Descrição da Ação (Opcional)") # Descrição opcional
+                descricao = st.text_area("Descrição da Ação (Opcional)")
                 
                 if st.form_submit_button("Registrar Ação em Massa"):
-                    # Lógica para determinar a lista de alunos
                     if modo_selecao == "Por Filtro":
                         df_filtrado = alunos_df.copy()
                         if pelotao_selecionado != "Todos":
@@ -172,7 +181,6 @@ def show_dashboard():
                     else: # Modo Seleção Manual
                         alunos_para_anotar_ids = [alunos_opcoes_dict[label] for label in alunos_selecionados_labels]
 
-                    # Validação e submissão (descrição não é mais obrigatória)
                     if not alunos_para_anotar_ids or not tipo_selecionado_label:
                         st.warning("Selecione ao menos um aluno (ou um filtro) e um tipo de ação.")
                     else:
@@ -194,7 +202,6 @@ def show_dashboard():
 
     st.divider()
 
-    # --- VISUALIZAÇÕES DO DASHBOARD (Sem alterações) ---
     if alunos_df.empty or acoes_com_pontos_df.empty:
         st.info("Registre alunos e ações para visualizar os painéis de dados.")
     else:
@@ -226,10 +233,10 @@ def show_dashboard():
             soma_pontos_por_aluno = acoes_com_pontos_df.groupby('aluno_id')['pontuacao_efetiva'].sum()
             alunos_com_pontuacao = pd.merge(alunos_df, soma_pontos_por_aluno.rename('soma_pontos'), left_on='id', right_on='aluno_id', how='left').fillna(0)
             
-            # Reutiliza o cálculo de conceito da página de alunos
+            config_dict = config_df.set_index('chave')['valor'].to_dict()
             alunos_com_pontuacao['pontuacao_final'] = alunos_com_pontuacao.apply(
                 lambda row: calcular_conceito_final(
-                    row['soma_pontos'], float(row.get('media_academica', 0.0)), alunos_df, config_df.set_index('chave')['valor'].to_dict()
+                    row['soma_pontos'], float(row.get('media_academica', 0.0)), alunos_df, config_dict
                 ), axis=1
             )
             media_por_pelotao = alunos_com_pontuacao.groupby('pelotao')['pontuacao_final'].mean().reset_index()
