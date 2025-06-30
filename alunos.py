@@ -36,14 +36,11 @@ def calcular_pontuacao_efetiva(acoes_df: pd.DataFrame, tipos_acao_df: pd.DataFra
 
     def aplicar_fator(row):
         pontuacao = row.get('pontuacao', 0.0)
-        # --- CORREÇÃO APLICADA AQUI ---
-        # 1. Converte a data e verifica se o resultado é nulo (NaT)
         data_convertida = pd.to_datetime(row['data'], errors='coerce')
         if pd.isna(data_convertida):
-            return pontuacao # 2. Se a data for inválida, retorna a pontuação original sem causar erro.
+            return pontuacao
         
         data_acao = data_convertida.date()
-        # --- FIM DA CORREÇÃO ---
 
         if pontuacao >= 0 or not inicio_adaptacao: return pontuacao
         
@@ -69,13 +66,14 @@ def calcular_conceito_final(soma_pontos_acoes: float, media_academica_aluno: flo
         if not medias_validas.empty and medias_validas.max() > medias_validas.min():
             media_min_turma = medias_validas.min()
             media_max_turma = medias_validas.max()
-            fator_normalizado = (media_academica_aluno - media_min_turma) / (media_max_turma - media_min_turma)
-            impacto_academico = fator_normalizado * peso_academico
+            if (media_max_turma - media_min_turma) > 0:
+                fator_normalizado = (media_academica_aluno - media_min_turma) / (media_max_turma - media_min_turma)
+                impacto_academico = fator_normalizado * peso_academico
     
     conceito_final = linha_base + impacto_acoes + impacto_academico
     return max(0.0, min(conceito_final, 10.0))
 
-# --- DIÁLOGO DE REGISTRO DE AÇÃO (ATUALIZADO PARA SUPABASE) ---
+# --- DIÁLOGO DE REGISTRO DE AÇÃO ---
 @st.dialog("Registrar Nova Ação")
 def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
     st.write(f"Aluno: **{aluno_nome}**")
@@ -108,20 +106,17 @@ def show_alunos():
     if 'page_num' not in st.session_state: st.session_state.page_num = 1
     def reset_page(): st.session_state.page_num = 1
 
-    # Carregamento de dados
     alunos_df = load_data("Alunos")
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
     
-    # Adiciona colunas default se não existirem, para evitar erros
     if 'media_academica' not in alunos_df.columns: alunos_df['media_academica'] = 0.0
     if tipos_acao_df.empty or 'pontuacao' not in tipos_acao_df.columns:
         st.error("ERRO CRÍTICO: Tabela 'Tipos_Acao' não encontrada ou sem coluna 'pontuacao'."); st.stop()
 
     config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
     
-    # Seção de Filtros e Busca
     st.subheader("Filtros e Busca")
     col1, col2, col3 = st.columns([1, 1, 2])
     with col1:
@@ -133,18 +128,18 @@ def show_alunos():
     with col3:
         search = st.text_input("Buscar por nome ou número...", key="search_aluno", on_change=reset_page)
 
-    # Lógica de filtragem
     filtered_df = alunos_df.copy()
     if pelotao_selecionado != "Todos": filtered_df = filtered_df[filtered_df['pelotao'] == pelotao_selecionado]
     if especialidade_selecionada != "Todas": filtered_df = filtered_df[filtered_df['especialidade'] == especialidade_selecionada]
     if search:
         search_lower = search.lower()
-        mask = (filtered_df['nome_guerra'].str.lower().str.contains(search_lower, na=False) | filtered_df['numero_interno'].str.lower().str.contains(search_lower, na=False))
+        mask = (filtered_df['nome_guerra'].str.lower().str.contains(search_lower, na=False) | 
+                filtered_df['numero_interno'].astype(str).str.contains(search_lower, na=False) |
+                filtered_df['nome_completo'].str.lower().str.contains(search_lower, na=False))
         filtered_df = filtered_df[mask]
 
     st.divider()
 
-    # Expander para adicionar novos alunos
     if check_permission('pode_importar_alunos'):
         with st.expander("➕ Opções de Cadastro"):
             st.subheader("Adicionar Novo Aluno")
@@ -165,11 +160,11 @@ def show_alunos():
             
             st.divider()
             st.subheader("Importar Alunos em Massa (CSV)")
-            pass
+            st.info("Funcionalidade de importação de CSV a ser implementada.")
+
 
     st.divider()
     
-    # Lógica de Paginação
     ITEMS_PER_PAGE = 30
     total_items = len(filtered_df); total_pages = math.ceil(total_items / ITEMS_PER_PAGE) if total_items > 0 else 1
     if st.session_state.page_num > total_pages: st.session_state.page_num = total_pages
@@ -178,24 +173,18 @@ def show_alunos():
     st.subheader(f"Alunos Exibidos ({len(paginated_df)} de {total_items})")
 
     if not paginated_df.empty:
-        # Loop para exibir cada aluno
         for _, aluno in paginated_df.iterrows():
             aluno_id = aluno['id']
             with st.container(border=True):
                 col_img, col_info, col_actions = st.columns([1, 4, 1])
                 
-                # --- INÍCIO DA CORREÇÃO PARA EVITAR O 'KeyError' ---
                 soma_pontos_observacional = 0
-                # Verifica se o DataFrame de ações não está vazio E se a coluna 'aluno_id' existe
                 if not acoes_df.empty and 'aluno_id' in acoes_df.columns:
-                    # Converte ambos os IDs para string para uma comparação segura
                     acoes_aluno_df = acoes_df[acoes_df['aluno_id'].astype(str) == str(aluno_id)]
-                    
                     if not acoes_aluno_df.empty:
                         acoes_com_pontos = calcular_pontuacao_efetiva(acoes_aluno_df, tipos_acao_df, config_df)
                         if not acoes_com_pontos.empty:
                             soma_pontos_observacional = acoes_com_pontos['pontuacao_efetiva'].sum()
-                # --- FIM DA CORREÇÃO ---
 
                 media_academica_aluno = float(aluno.get('media_academica', 0.0))
                 conceito_final_aluno = calcular_conceito_final(soma_pontos_observacional, media_academica_aluno, alunos_df, config_dict)
@@ -205,6 +194,8 @@ def show_alunos():
                 
                 with col_info:
                     st.markdown(f"**{aluno.get('nome_guerra', 'N/A')}** (`{aluno.get('numero_interno', 'N/A')}`)")
+                    # --- MODIFICAÇÃO: Exibição do nome completo ---
+                    st.caption(f"Nome: {aluno.get('nome_completo', 'Não informado')}")
                     st.write(f"Pelotão: {aluno.get('pelotao', 'N/A')} | Especialidade: {aluno.get('especialidade', 'N/A')}")
                     cor_conceito = "green" if conceito_final_aluno >= 8.5 else "orange" if conceito_final_aluno >= 7.0 else "red"
                     
@@ -220,7 +211,6 @@ def show_alunos():
                         st.session_state.aluno_em_foco_id = aluno_id if st.session_state.get('aluno_em_foco_id') != aluno_id else None
                         st.rerun()
 
-                # Lógica para exibir os detalhes do aluno (histórico, edição)
                 if st.session_state.get('aluno_em_foco_id') == aluno_id:
                     with st.container(border=True):
                         tab_ver, tab_editar = st.tabs(["Ver Histórico", "Editar Dados"])
@@ -229,13 +219,14 @@ def show_alunos():
                             acoes_do_aluno = acoes_df[acoes_df['aluno_id'].astype(str) == str(aluno_id)] if not acoes_df.empty and 'aluno_id' in acoes_df.columns else pd.DataFrame()
                             if acoes_do_aluno.empty: st.info("Nenhuma ação registrada.")
                             else:
-                                historico_com_pontos = calcular_pontuacao_efetiva(acoes_do_aluno, tipos_acao_df, config_df)
+
+                                historico_com_pontos = calcular_pontuacao_efetiva(acoes_do_aluno.copy(), tipos_acao_df, config_df)
                                 if not historico_com_pontos.empty:
                                     for _, acao in historico_com_pontos.sort_values("data", ascending=False).iterrows():
                                         pontos = acao.get('pontuacao_efetiva', 0.0)
                                         cor = "green" if pontos > 0 else "red" if pontos < 0 else "gray"
                                         st.markdown(f"**{pd.to_datetime(acao['data']).strftime('%d/%m/%Y')} - {acao.get('nome', 'N/A')}** (`{pontos:+.1f} pts`): {acao.get('descricao','')}")
-                           # --- INÍCIO DA SEÇÃO CORRIGIDA ---
+                        
                         with tab_editar:
                             if check_permission('pode_editar_aluno'):
                                 st.subheader("Editar Dados do Aluno")
@@ -249,7 +240,8 @@ def show_alunos():
                                     st.divider()
                                     
                                     st.subheader("Dados Pessoais")
-                                    # Campos que estavam faltando foram restaurados
+                                    # --- MODIFICAÇÃO: Campo para editar nome completo ---
+                                    new_nome_completo = st.text_input("Nome Completo", value=aluno.get('nome_completo', ''))
                                     new_nome_guerra = st.text_input("Nome de Guerra", value=aluno.get('nome_guerra', ''))
                                     new_numero_interno = st.text_input("Número Interno", value=aluno.get('numero_interno', ''))
                                     new_pelotao = st.text_input("Pelotão", value=aluno.get('pelotao', ''))
@@ -257,9 +249,10 @@ def show_alunos():
                                     new_url_foto = st.text_input("URL da Foto", value=aluno.get('url_foto', ''))
                                     
                                     if st.form_submit_button("Salvar Alterações"):
-                                        # Dicionário de atualização foi restaurado com todos os campos
+                                        # --- MODIFICAÇÃO: Adicionado nome_completo ao update ---
                                         dados_update = {
                                             'media_academica': new_media_academica, 
+                                            'nome_completo': new_nome_completo,
                                             'nome_guerra': new_nome_guerra,
                                             'numero_interno': new_numero_interno, 
                                             'pelotao': new_pelotao,
@@ -275,11 +268,9 @@ def show_alunos():
                                             st.error(f"Erro ao atualizar: {e}")
                             else:
                                 st.info("Você não tem permissão para editar os dados do aluno.")
-                        # --- FIM DA SEÇÃO CORRIGIDA ---
     
     st.divider()
     
-    # Controles de Paginação
     if total_pages > 1:
         col_prev, col_page, col_next = st.columns([2, 1, 2])
         with col_prev:
