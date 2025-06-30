@@ -1,253 +1,320 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from database import load_data, save_data
+from database import load_data, init_supabase_client
+from auth import check_permission, get_permissions_rules
+
+# --- LISTA MESTRA DE FUNCIONALIDADES CONTROLÁVEIS ---
+FEATURES_LIST = [
+    ('acesso_pagina_configuracoes', 'Acesso à Página de Configurações', 'admin'),
+    ('acesso_pagina_relatorios', 'Acesso à Página de Relatórios', 'admin,comcia,supervisor'),
+    ('acesso_pagina_lancamentos_faia', 'Acesso à Página de Lançamentos FAIA', 'admin,comcia,supervisor'),
+    ('pode_gerenciar_usuarios', 'Pode Adicionar/Excluir Usuários', 'admin'),
+    ('pode_gerenciar_tipos_acao', 'Pode Adicionar/Editar/Excluir Tipos de Ação', 'admin'),
+    ('pode_editar_aluno', 'Pode Editar Dados de Alunos', 'admin,supervisor'),
+    ('pode_importar_alunos', 'Pode Importar Alunos em Massa', 'admin'),
+    ('pode_importar_eventos', 'Pode Importar Eventos em Massa', 'admin'),
+    ('pode_escanear_cracha', 'Pode Usar o Scanner de Crachás', 'admin,comcia,compel,supervisor'),
+    ('pode_excluir_evento_programacao', 'Pode Excluir Eventos da Programação', 'admin,supervisor'),
+    ('pode_finalizar_evento_programacao', 'Pode Finalizar Eventos (Status Concluído)', 'admin,comcia,supervisor'),
+    ('pode_excluir_lancamento_faia', 'Pode Excluir Lançamentos na tela da FAIA', 'admin,supervisor'),
+    ('pode_ver_conceito_final', 'Pode Visualizar o Conceito Final do Aluno', 'admin,supervisor,comcia'),
+]
+
+# ==============================================================================
+# FUNÇÕES DE CALLBACK E DIÁLOGOS
+# ==============================================================================
+
+@st.dialog("Editar Detalhes da Ação")
+def edit_tipo_acao_dialog(tipo_acao, supabase):
+    """Diálogo para editar NOME e DESCRIÇÃO. A pontuação é editada na tela principal."""
+    st.write(f"Editando: **{tipo_acao['nome']}**")
+    with st.form("edit_tipo_acao_form"):
+        novo_nome = st.text_input("Nome da Ação*", value=tipo_acao.get('nome', ''))
+        nova_descricao = st.text_input("Descrição", value=tipo_acao.get('descricao', ''))
+
+        if st.form_submit_button("Salvar Alterações"):
+            if not novo_nome:
+                st.warning("O nome da ação é obrigatório.")
+                return
+            try:
+                supabase.table("Tipos_Acao").update({
+                    "nome": novo_nome,
+                    "descricao": nova_descricao
+                }).eq("id", tipo_acao['id']).execute()
+                st.success("Tipo de Ação atualizado!")
+                load_data.clear()
+            except Exception as e:
+                st.error(f"Falha ao salvar as alterações: {e}")
+
+def on_pontuacao_change(tipo_acao_id, pontuacao_atual, delta, supabase):
+    """Altera a pontuação de um tipo de ação em 0.1 para mais ou para menos."""
+    nova_pontuacao = round(pontuacao_atual + delta, 1)
+    try:
+        supabase.table("Tipos_Acao").update({'pontuacao': nova_pontuacao}).eq('id', tipo_acao_id).execute()
+        load_data.clear()
+    except Exception as e:
+        st.error(f"Falha ao alterar a pontuação: {e}")
+
+def on_delete_tipo_acao_click(tipo_acao_id, supabase):
+    """Callback para exclusão segura de um tipo de ação."""
+    acoes_df = load_data("Acoes")
+    # Garante que ambos os IDs sejam strings para a comparação
+    if not acoes_df.empty and str(tipo_acao_id) in acoes_df['tipo_acao_id'].astype(str).values:
+        st.error("Não é possível excluir: este tipo de ação já está em uso.")
+    else:
+        try:
+            supabase.table("Tipos_Acao").delete().eq('id', str(tipo_acao_id)).execute()
+            st.success("Tipo de Ação excluído.")
+            load_data.clear()
+        except Exception as e:
+            st.error(f"Falha ao excluir o Tipo de Ação: {e}")
+
+def on_delete_user_click(user_to_delete, supabase):
+    """Callback para exclusão de usuário."""
+    try:
+        st.info("Funcionalidade de exclusão de usuário (Supabase Auth) requer chaves de administrador e não está implementada nesta versão.")
+    except Exception as e:
+        st.error(f"Erro ao remover perfil: {e}")
+
+# ==============================================================================
+# PÁGINA PRINCIPAL E RENDERIZAÇÃO DAS ABAS
+# ==============================================================================
+
+def show_config_gerais(supabase):
+    st.subheader("Configurações Gerais")
+    config_df = load_data("Config")
+    
+    defaults = {'linha_base_conceito': 8.5, 'impacto_max_acoes': 1.5, 'peso_academico': 1.0, 'periodo_adaptacao_inicio': datetime.now().date(), 'periodo_adaptacao_fim': datetime.now().date(), 'fator_adaptacao': 0.25}
+    config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
+
+    def get_config_value(key, default, cast_type=float):
+        try: return cast_type(config_dict.get(key, default))
+        except (ValueError, TypeError): return default
+
+    linha_base = get_config_value('linha_base_conceito', defaults['linha_base_conceito'])
+    impacto_acoes = get_config_value('impacto_max_acoes', defaults['impacto_max_acoes'])
+    peso_academico = get_config_value('peso_academico', defaults['peso_academico'])
+    adapt_inicio = pd.to_datetime(config_dict.get('periodo_adaptacao_inicio', defaults['periodo_adaptacao_inicio'])).date()
+    adapt_fim = pd.to_datetime(config_dict.get('periodo_adaptacao_fim', defaults['periodo_adaptacao_fim'])).date()
+    fator_adaptacao = get_config_value('fator_adaptacao', defaults['fator_adaptacao'])
+
+    with st.form("editar_config"):
+        st.subheader("Parâmetros do Conceito Final")
+        st.caption("Fórmula: `Conceito = Linha de Base + Impacto das Ações + Impacto Acadêmico`")
+        c1, c2, c3 = st.columns(3)
+        nova_linha_base = c1.number_input("Linha de Base do Conceito", value=linha_base, step=0.1, format="%.2f", help="Nota de partida para um aluno mediano.")
+        novo_impacto_acoes = c2.number_input("Impacto Máximo das Ações (+/-)", value=impacto_acoes, step=0.1, format="%.2f", help="Limite de pontos que as anotações podem influenciar no conceito final.")
+        novo_peso_academico = c3.number_input("Peso Máximo Acadêmico", value=peso_academico, step=0.1, format="%.2f", help="Bônus máximo de pontos para o aluno com a melhor média.")
+        
+        st.divider()
+        st.subheader("Parâmetros do Período de Adaptação")
+        st.caption("As pontuações negativas das ações serão multiplicadas por este fator durante o período.")
+        c4, c5, c6 = st.columns(3)
+        novo_periodo_inicio = c4.date_input("Início do Período de Adaptação", value=adapt_inicio)
+        novo_periodo_fim = c5.date_input("Fim do Período de Adaptação", value=adapt_fim)
+        novo_fator = c6.slider("Fator de Adaptação", 0.0, 1.0, fator_adaptacao, 0.05)
+
+        if st.form_submit_button("Salvar Todas as Configurações"):
+            novas_configs = [
+                {'chave': 'linha_base_conceito', 'valor': str(nova_linha_base)},
+                {'chave': 'impacto_max_acoes', 'valor': str(novo_impacto_acoes)},
+                {'chave': 'peso_academico', 'valor': str(novo_peso_academico)},
+                {'chave': 'periodo_adaptacao_inicio', 'valor': novo_periodo_inicio.strftime('%Y-%m-%d')},
+                {'chave': 'periodo_adaptacao_fim', 'valor': novo_periodo_fim.strftime('%Y-%m-%d')},
+                {'chave': 'fator_adaptacao', 'valor': str(novo_fator)}
+            ]
+            try:
+                supabase.table("Config").upsert(novas_configs).execute()
+                st.success("Configurações salvas com sucesso!")
+                load_data.clear()
+            except Exception as e:
+                st.error(f"Falha ao salvar configurações: {e}")
+
+def show_config_usuarios(supabase):
+    st.subheader("Gestão de Usuários")
+    usuarios_df = load_data("Users")
+
+    if check_permission('pode_gerenciar_usuarios'):
+        with st.expander("➕ Adicionar Novo Usuário"):
+            with st.form("novo_usuario", clear_on_submit=True):
+                st.info("O login no Supabase usa E-mail. O 'Nome de Usuário' é para exibição interna.")
+                email = st.text_input("E-mail do Usuário*")
+                password = st.text_input("Senha Temporária*", type="password")
+                username = st.text_input("Nome de Usuário (para exibição)*")
+                nome = st.text_input("Nome Completo")
+                role = st.selectbox("Tipo de Permissão*", ["admin", "comcia", "compel", "supervisor"])
+                
+                if st.form_submit_button("Adicionar Usuário"):
+                    if not all([email, password, username]):
+                        st.error("E-mail, Senha e Nome de Usuário são obrigatórios.")
+                    else:
+                        try:
+                            res = supabase.auth.sign_up({"email": email, "password": password})
+                            if res.user:
+                                new_user_id = res.user.id
+                                supabase.table("Users").insert({
+                                    "id": new_user_id, "username": username, "nome": nome, "role": role
+                                }).execute()
+                                st.success(f"Usuário {username} criado!")
+                                load_data.clear()
+                            else:
+                                st.error("Falha ao criar o usuário no sistema de autenticação.")
+                        except Exception as e:
+                            st.error(f"Erro ao criar usuário: {e}")
+
+    st.divider()
+    st.subheader("Usuários Cadastrados")
+    if not usuarios_df.empty:
+        for _, u in usuarios_df.iterrows():
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([3, 2, 1])
+                c1.write(f"**{u.get('nome','N/A')}** (`{u.get('username')}`)")
+                c2.write(f"Permissão: {u.get('role')}")
+                if check_permission('pode_gerenciar_usuarios') and u['username'] != st.session_state.get('username'):
+                    with c3:
+                        st.button("🗑️", key=f"del_user_{u['id']}", on_click=on_delete_user_click, args=(u, supabase), help="Excluir este usuário")
+    else:
+        st.info("Nenhum usuário cadastrado.")
+
+def show_config_tipos_acao(supabase):
+    st.subheader("Gestão de Tipos de Ação")
+    if not check_permission('pode_gerenciar_tipos_acao'):
+        st.warning("Você não tem permissão para gerenciar os tipos de ação."); return
+        
+    tipos_acao_df = load_data("Tipos_Acao")
+    
+    # O formulário para adicionar novas ações não foi alterado.
+    with st.expander("➕ Adicionar Novo Tipo de Ação"):
+        with st.form("novo_tipo_acao", clear_on_submit=True):
+            nome = st.text_input("Nome da Ação*")
+            descricao = st.text_input("Descrição")
+            pontuacao = st.number_input("Pontuação Inicial*", value=0.0, step=0.1, format="%.1f")
+            
+            if st.form_submit_button("Adicionar Tipo"):
+                if not nome: st.warning("O nome da ação é obrigatório.")
+                else:
+                    ids = pd.to_numeric(tipos_acao_df['id'], errors='coerce').dropna()
+                    novo_id = int(ids.max()) + 1 if not ids.empty else 1
+                    novo_tipo = {'id': str(novo_id), 'nome': nome, 'descricao': descricao, 'pontuacao': pontuacao}
+                    try:
+                        supabase.table("Tipos_Acao").insert(novo_tipo).execute()
+                        st.success("Tipo de ação adicionado!"); load_data.clear()
+                    except Exception as e: st.error(f"Erro ao adicionar: {e}")
+
+    st.divider()
+    st.subheader("Tipos de Ação Cadastrados")
+
+    if not tipos_acao_df.empty:
+        # Cabeçalho para a lista de ações
+        col_header1, col_header2, col_header3 = st.columns([6, 3, 2])
+        col_header1.markdown("**Ação**")
+        col_header2.markdown("<p style='text-align: center;'><b>Ajuste de Pontos</b></p>", unsafe_allow_html=True)
+        col_header3.markdown("<p style='text-align: center;'><b>Opções</b></p>", unsafe_allow_html=True)
+        st.write("") 
+
+        # Loop para exibir cada item com o layout refinado
+        for _, row in tipos_acao_df.sort_values('nome').iterrows():
+            pontuacao_atual = float(row.get('pontuacao', 0.0))
+            
+            col_info, col_score_ctrl, col_actions = st.columns([6, 3, 2])
+            
+            with col_info:
+                st.markdown(f"**{row['nome']}**")
+                st.caption(row.get('descricao', 'Sem descrição.'))
+            
+            # --- Grupo de controle de pontuação com ícones e fonte ajustados ---
+            with col_score_ctrl:
+                sub_c1, sub_c2, sub_c3 = st.columns([1, 1, 1])
+                
+                # Botão de diminuir com emoji
+                sub_c1.button("➖", key=f"minus_{row['id']}", on_click=on_pontuacao_change, args=(row['id'], pontuacao_atual, -0.1, supabase), use_container_width=True, help="Diminuir 0.1")
+                
+                # Exibição da pontuação com fonte menor
+                cor = 'red' if pontuacao_atual < 0 else 'green' if pontuacao_atual > 0 else 'gray'
+                sub_c2.markdown(f"""
+                    <p style='font-size: 1.25rem; text-align: center; color: {cor}; margin: 0; font-weight: 500; padding-top: 5px;'>
+                        {pontuacao_atual:+.1f}
+                    </p>
+                """, unsafe_allow_html=True)
+                
+                # Botão de aumentar com emoji
+                sub_c3.button("➕", key=f"plus_{row['id']}", on_click=on_pontuacao_change, args=(row['id'], pontuacao_atual, 0.1, supabase), use_container_width=True, help="Aumentar 0.1")
+
+            # --- Grupo de botões de ação (Editar/Excluir) ---
+            with col_actions:
+                sub_b1, sub_b2 = st.columns(2)
+                # Botão de Editar
+                if sub_b1.button("✏️", key=f"e_{row['id']}", help="Editar nome/descrição", use_container_width=True):
+                    edit_tipo_acao_dialog(row, supabase)
+                # Botão de Excluir
+                sub_b2.button("🗑️", key=f"d_{row['id']}", help="Excluir", on_click=on_delete_tipo_acao_click, args=(row['id'], supabase), use_container_width=True)
+            
+            st.markdown("---") 
+
+            
+def show_config_permissoes(supabase):
+    st.subheader("Gestão de Permissões por Perfil")
+    st.info("O perfil 'admin' sempre tem acesso total e não pode ser editado aqui.")
+    permissions_df = get_permissions_rules() # Usa a função em cache
+    
+    perfis_disponiveis = ["comcia", "compel", "supervisor"] 
+    with st.form("permissions_form"):
+        for _, feature in pd.DataFrame(FEATURES_LIST, columns=['key','name','default']).iterrows():
+            st.markdown(f"**{feature['name']}**")
+            rule = permissions_df[permissions_df['feature_key'] == feature['key']]
+            current_roles = []
+            if not rule.empty:
+                roles_str = rule.iloc[0].get('allowed_roles', '')
+                if pd.notna(roles_str):
+                    current_roles = [r.strip() for r in roles_str.split(',') if r]
+            
+            default_for_widget = [role for role in current_roles if role in perfis_disponiveis]
+            st.multiselect("Perfis com acesso:", options=perfis_disponiveis, default=default_for_widget, key=f"perm_{feature['key']}")
+            st.divider()
+            
+        if st.form_submit_button("Salvar Todas as Permissões"):
+            novas_permissoes = []
+            for feature_key, feature_name, _ in FEATURES_LIST:
+                selected_roles = st.session_state[f"perm_{feature_key}"]
+                final_roles = set(selected_roles)
+                # Garante que 'admin' seja sempre incluído se for o padrão original
+                default_roles_str = next((f[2] for f in FEATURES_LIST if f[0] == feature_key), '')
+                if 'admin' in default_roles_str:
+                    final_roles.add('admin')
+                
+                novas_permissoes.append({
+                    "feature_key": feature_key, 
+                    "feature_name": feature_name, 
+                    "allowed_roles": ",".join(sorted(list(final_roles)))
+                })
+            
+            try:
+                supabase.table("Permissions").upsert(novas_permissoes, on_conflict='feature_key').execute()
+                get_permissions_rules.clear()
+                st.success("Permissões salvas com sucesso!")
+            except Exception as e:
+                st.error(f"Erro ao salvar permissões: {e}")
 
 def show_config():
     st.title("Configurações do Sistema")
-    
-    # Verificar se é administrador
-    if st.session_state.role != "admin":
-        st.error("Acesso negado. Apenas administradores podem acessar esta página.")
+    supabase = init_supabase_client()
+
+    if not check_permission('acesso_pagina_configuracoes'):
+        st.error("Acesso negado. Você não tem permissão para acessar esta página.")
         return
     
-    # Criar abas para diferentes configurações
-    tab1, tab2, tab3 = st.tabs(["⚙️ Configurações Gerais", "👥 Usuários", "🏆 Tipos de Ação"])
+    tab_list = ["⚙️ Gerais", "👥 Usuários", "🏆 Tipos de Ação"]
+    if st.session_state.get('role') == 'admin':
+        tab_list.append("🔒 Permissões")
+    tabs = st.tabs(tab_list)
     
-    with tab1:
-        show_config_gerais()
-    
-    with tab2:
-        show_config_usuarios()
-    
-    with tab3:
-        show_config_tipos_acao()
-
-def show_config_gerais():
-    st.subheader("Configurações Gerais")
-    
-    # Carregar configurações existentes
-    config_df = load_data("Sistema_Acoes_Militares", "Config")
-    
-    # Valores padrão
-    pontuacao_inicial = 10.0
-    periodo_adaptacao_inicio = datetime.now().date()
-    periodo_adaptacao_fim = datetime.now().date()
-    fator_adaptacao = 0.25
-    
-    # Obter valores atuais
-    if not config_df.empty:
-        if 'pontuacao_inicial' in config_df['chave'].values:
-            pontuacao_inicial = float(config_df[config_df['chave'] == 'pontuacao_inicial']['valor'].iloc[0])
-        
-        if 'periodo_adaptacao_inicio' in config_df['chave'].values:
-            try:
-                periodo_adaptacao_inicio = pd.to_datetime(config_df[config_df['chave'] == 'periodo_adaptacao_inicio']['valor'].iloc[0]).date()
-            except:
-                pass
-        
-        if 'periodo_adaptacao_fim' in config_df['chave'].values:
-            try:
-                periodo_adaptacao_fim = pd.to_datetime(config_df[config_df['chave'] == 'periodo_adaptacao_fim']['valor'].iloc[0]).date()
-            except:
-                pass
-        
-        if 'fator_adaptacao' in config_df['chave'].values:
-            fator_adaptacao = float(config_df[config_df['chave'] == 'fator_adaptacao']['valor'].iloc[0])
-    
-    # Formulário para editar configurações
-    with st.form("editar_config"):
-        st.write("Configurações do Sistema")
-        
-        nova_pontuacao_inicial = st.number_input("Pontuação Inicial dos Alunos", value=pontuacao_inicial, min_value=0.0)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            novo_periodo_inicio = st.date_input("Início do Período de Adaptação", value=periodo_adaptacao_inicio)
-        with col2:
-            novo_periodo_fim = st.date_input("Fim do Período de Adaptação", value=periodo_adaptacao_fim)
-        
-        novo_fator = st.slider("Fator de Adaptação (multiplicador da pontuação)", min_value=0.0, max_value=1.0, value=fator_adaptacao, step=0.05)
-        
-        submitted = st.form_submit_button("Salvar Configurações")
-        
-        if submitted:
-            novas_configs_df = pd.DataFrame([
-                {'chave': 'pontuacao_inicial', 'valor': str(nova_pontuacao_inicial), 'descricao': 'Pontuação inicial dos alunos'},
-                {'chave': 'periodo_adaptacao_inicio', 'valor': novo_periodo_inicio.strftime('%Y-%m-%d'), 'descricao': 'Data de início do período de adaptação'},
-                {'chave': 'periodo_adaptacao_fim', 'valor': novo_periodo_fim.strftime('%Y-%m-%d'), 'descricao': 'Data de fim do período de adaptação'},
-                {'chave': 'fator_adaptacao', 'valor': str(novo_fator), 'descricao': 'Fator de multiplicação para pontuação no período de adaptação'}
-            ])
-            
-            if save_data("Sistema_Acoes_Militares", "Config", novas_configs_df):
-                st.success("Configurações salvas com sucesso!")
-            else:
-                st.error("Erro ao salvar configurações.")
-
-def show_config_usuarios():
-    st.subheader("Gestão de Usuários")
-    
-    # Carregar usuários existentes
-    usuarios_df = load_data("Sistema_Acoes_Militares", "Users") # CORRIGIDO PARA 'Users'
-    
-    # Formulário para novo usuário
-    with st.form("novo_usuario", clear_on_submit=True):
-        st.write("Adicionar Novo Usuário")
-        
-        username = st.text_input("Nome de Usuário")
-        password = st.text_input("Senha", type="password")
-        nome = st.text_input("Nome Completo")
-        role = st.selectbox("Tipo", ["admin", "comcia"])
-        
-        submitted = st.form_submit_button("Adicionar Usuário")
-        
-        if submitted:
-            if not all([username, password, nome]):
-                st.error("Todos os campos são obrigatórios.")
-            elif not usuarios_df.empty and username in usuarios_df['username'].values:
-                st.error("Este nome de usuário já existe.")
-            else:
-                novo_id = 1
-                if not usuarios_df.empty and 'id' in usuarios_df.columns:
-                    novo_id = int(pd.to_numeric(usuarios_df['id'], errors='coerce').max()) + 1
-                
-                novo_usuario = {
-                    'id': novo_id,
-                    'username': username,
-                    'password': password, # Idealmente, esta senha deveria ser "hashed"
-                    'nome': nome,
-                    'role': role
-                }
-                
-                novo_usuario_df = pd.DataFrame([novo_usuario])
-
-                if save_data("Sistema_Acoes_Militares", "Users", novo_usuario_df):
-                    st.success("Usuário adicionado com sucesso!")
-                    st.rerun()
-                else:
-                    st.error("Erro ao salvar usuário.")
-    
-    st.subheader("Usuários Cadastrados")
-    
-    if usuarios_df.empty:
-        st.info("Nenhum usuário cadastrado ainda.")
-    else:
-        usuarios_display = usuarios_df.copy()
-        if 'password' in usuarios_display.columns:
-            usuarios_display['password'] = '********'
-        
-        for _, usuario in usuarios_display.iterrows():
-            col1, col2, col3 = st.columns([3, 2, 1])
-            with col1:
-                st.write(f"**{usuario['nome']}** (`{usuario['username']}`)")
-            with col2:
-                st.write(f"Permissão: {usuario.get('role', 'N/A')}")
-            with col3:
-                # CORREÇÃO: Adicionada uma chave única ao botão
-                if st.button("Excluir", key=f"delete_user_{usuario['id']}"):
-                    usuarios_df_updated = usuarios_df[usuarios_df['id'] != usuario['id']]
-                    if save_data("Sistema_Acoes_Militares", "Users", usuarios_df_updated):
-                        st.success(f"Usuário {usuario['nome']} excluído.")
-                        st.rerun()
-                    else:
-                        st.error("Erro ao excluir usuário.")
-            st.divider()
-
-def show_config_tipos_acao():
-    st.subheader("Tipos de Ação")
-    
-    tipos_acao_df = load_data("Sistema_Acoes_Militares", "Tipos_Acao")
-    
-    with st.form("novo_tipo_acao", clear_on_submit=True):
-        st.write("Adicionar Novo Tipo de Ação")
-        
-        nome = st.text_input("Nome")
-        descricao = st.text_input("Descrição")
-        pontuacao = st.number_input("Pontuação", value=0.0, step=0.5)
-        codigo = st.text_input("Código (abreviação)")
-        
-        submitted = st.form_submit_button("Adicionar")
-        
-        if submitted:
-            if not nome or not codigo:
-                st.error("Nome e Código são obrigatórios.")
-            else:
-                novo_id = 1
-                if not tipos_acao_df.empty and 'id' in tipos_acao_df.columns:
-                    novo_id = int(pd.to_numeric(tipos_acao_df['id'], errors='coerce').max()) + 1
-                
-                novo_tipo = {
-                    'id': novo_id,
-                    'nome': nome,
-                    'descricao': descricao,
-                    'pontuacao': str(pontuacao),
-                    'codigo': codigo
-                }
-                
-                novo_tipo_df = pd.DataFrame([novo_tipo])
-                
-                if save_data("Sistema_Acoes_Militares", "Tipos_Acao", novo_tipo_df):
-                    st.success("Tipo de ação adicionado com sucesso!")
-                    st.rerun()
-                else:
-                    st.error("Erro ao salvar tipo de ação.")
-    
-    st.subheader("Tipos de Ação Cadastrados")
-    
-    if tipos_acao_df.empty:
-        st.info("Nenhum tipo de ação cadastrado ainda.")
-    else:
-        for _, tipo in tipos_acao_df.iterrows():
-            with st.container(border=True):
-                col1, col2, col3 = st.columns([3, 2, 2])
-                
-                with col1:
-                    st.write(f"**{tipo['nome']}** (`{tipo['codigo']}`)")
-                    st.caption(tipo['descricao'])
-                
-                with col2:
-                    pontuacao_val = float(tipo.get('pontuacao', 0))
-                    cor = "green" if pontuacao_val > 0 else "red" if pontuacao_val < 0 else "gray"
-                    st.markdown(f"Pontuação: <span style='color:{cor};font-weight:bold'>{pontuacao_val:+.1f}</span>", unsafe_allow_html=True)
-                
-                with col3:
-                    # CORREÇÃO: Adicionadas chaves únicas aos botões
-                    if st.button("Editar", key=f"edit_tipo_{tipo['id']}"):
-                        st.session_state.editar_tipo_id = tipo['id']
-                    
-                    if st.button("Excluir", key=f"delete_tipo_{tipo['id']}"):
-                        tipos_acao_df_updated = tipos_acao_df[tipos_acao_df['id'] != tipo['id']]
-                        if save_data("Sistema_Acoes_Militares", "Tipos_Acao", tipos_acao_df_updated):
-                            st.success(f"Tipo '{tipo['nome']}' excluído.")
-                            st.rerun()
-                        else:
-                            st.error("Erro ao excluir tipo de ação.")
-            
-            # Formulário de edição (aparece abaixo do item)
-            if 'editar_tipo_id' in st.session_state and st.session_state.editar_tipo_id == tipo['id']:
-                with st.form(f"edit_form_tipo_{tipo['id']}", clear_on_submit=True):
-                    st.write(f"Editando: **{tipo['nome']}**")
-                    novo_nome = st.text_input("Nome", value=tipo['nome'])
-                    nova_descricao = st.text_input("Descrição", value=tipo['descricao'])
-                    nova_pontuacao = st.number_input("Pontuação", value=float(tipo['pontuacao']), step=0.5)
-                    novo_codigo = st.text_input("Código", value=tipo['codigo'])
-                    
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        if st.form_submit_button("Salvar Alterações"):
-                            dados_atualizados = {
-                                'id': tipo['id'],
-                                'nome': novo_nome,
-                                'descricao': nova_descricao,
-                                'pontuacao': str(nova_pontuacao),
-                                'codigo': novo_codigo
-                            }
-                            df_atualizado = pd.DataFrame([dados_atualizados])
-                            if save_data("Sistema_Acoes_Militares", "Tipos_Acao", df_atualizado):
-                                del st.session_state.editar_tipo_id
-                                st.rerun()
-                    with c2:
-                        if st.form_submit_button("Cancelar"):
-                            del st.session_state.editar_tipo_id
-                            st.rerun()
-
+    with tabs[0]:
+        show_config_gerais(supabase)
+    with tabs[1]:
+        show_config_usuarios(supabase)
+    with tabs[2]:
+        show_config_tipos_acao(supabase)
+    if "🔒 Permissões" in tab_list:
+        with tabs[3]:
+            show_config_permissoes(supabase)

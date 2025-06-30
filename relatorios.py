@@ -1,221 +1,240 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from database import load_data
 from datetime import datetime, timedelta
+from database import load_data, init_supabase_client
+from auth import check_permission
+from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
 
+# =============================================================================
+# FUNÇÕES DE RENDERIZAÇÃO DAS ABAS
+# =============================================================================
 
-def show_relatorios():
-    st.title("Relatórios e Gráficos")
+def render_graficos_tab(acoes_filtradas, alunos_filtrados, config_dict, view_mode):
+    """Renderiza a aba de Gráficos com base no modo de visualização."""
+    st.header("Análise Gráfica")
     
-    # Carregar dados
-    alunos_df = load_data("Sistema_Acoes_Militares", "Alunos")
-    acoes_df = load_data("Sistema_Acoes_Militares", "Acoes")
+    grafico_tipo = st.selectbox(
+        "Selecione o tipo de gráfico",
+        ["Pontuação por Pelotão", "Distribuição de Ações", "Ranking de Ações (Top 5)"]
+    )
+
+    if grafico_tipo == "Pontuação por Pelotão":
+        show_pontuacao_pelotao(alunos_filtrados, acoes_filtradas, config_dict, view_mode)
+    elif grafico_tipo == "Distribuição de Ações":
+        show_distribuicao_acoes(acoes_filtradas)
+    elif grafico_tipo == "Ranking de Ações (Top 5)":
+        show_ranking_acoes(acoes_filtradas)
+
+def render_rankings_tab(acoes_filtradas, alunos_filtrados, periodo_selecionado, pelotao_selecionado):
+    """Renderiza a aba de Rankings e o botão de exportação."""
+    st.header("Rankings de Alunos (baseado na Variação de Pontos)")
     
-    if alunos_df.empty or acoes_df.empty:
-        st.warning("Dados insuficientes para gerar relatórios. Adicione alunos e registre ações primeiro.")
-        return
+    if acoes_filtradas.empty:
+        st.info("Nenhuma ação registrada para os filtros selecionados."); return
+
+    pontuacao_periodo = acoes_filtradas.groupby('aluno_id')['pontuacao_efetiva'].sum().reset_index()
+    alunos_com_pontuacao = pd.merge(alunos_filtrados, pontuacao_periodo, left_on='id', right_on='aluno_id', how='inner')
     
-    # Abas para diferentes tipos de relatórios
-    tab1, tab2, tab3 = st.tabs(["📊 Gráficos", "🏆 Rankings", "📈 Evolução"])
+    if alunos_com_pontuacao.empty:
+        st.info("Nenhum aluno com ações para os filtros selecionados."); return
+
+    top_positivos = alunos_com_pontuacao[alunos_com_pontuacao['pontuacao_efetiva'] > 0].sort_values('pontuacao_efetiva', ascending=False).head(5)
+    top_negativos = alunos_com_pontuacao[alunos_com_pontuacao['pontuacao_efetiva'] < 0].sort_values('pontuacao_efetiva').head(5)
     
-    with tab1:
-        # Selecionar tipo de gráfico
-        grafico_tipo = st.selectbox(
-            "Selecione o tipo de gráfico",
-            ["Pontuação por Pelotão", "Distribuição de Ações"]
-        )
-        
-        if grafico_tipo == "Pontuação por Pelotão":
-            show_pontuacao_pelotao(alunos_df, acoes_df)
-        elif grafico_tipo == "Distribuição de Ações":
-            show_distribuicao_acoes(acoes_df)
-    
-    with tab2:
-        # Rankings de alunos
-        st.subheader("Rankings de Alunos")
-        
-        # Período de tempo
-        periodo = st.radio(
-            "Selecione o período",
-            ["Hoje", "Esta Semana", "Este Mês", "Todo o Período"],
-            horizontal=True
-        )
-        
-        # Filtrar ações pelo período selecionado
-        acoes_filtradas = acoes_df.copy()
-        hoje = datetime.now().date()
-        
-        if periodo == "Hoje":
-            acoes_filtradas = acoes_df[pd.to_datetime(acoes_df['data']).dt.date == hoje]
-        elif periodo == "Esta Semana":
-            inicio_semana = hoje - timedelta(days=hoje.weekday())
-            acoes_filtradas = acoes_df[pd.to_datetime(acoes_df['data']).dt.date >= inicio_semana]
-        elif periodo == "Este Mês":
-            inicio_mes = datetime(hoje.year, hoje.month, 1).date()
-            acoes_filtradas = acoes_df[pd.to_datetime(acoes_df['data']).dt.date >= inicio_mes]
-        
-        if acoes_filtradas.empty:
-            st.info(f"Nenhuma ação registrada no período: {periodo}")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("🌟 Mais Pontuados")
+        if top_positivos.empty:
+            st.info("Nenhum aluno com pontuação positiva.")
         else:
-            # Calcular pontuação por aluno no período
-            pontuacao_periodo = acoes_filtradas.groupby('aluno_id')['pontuacao_efetiva'].sum().reset_index()
-            
-            # Mesclar com dados dos alunos
-            alunos_com_pontuacao = pd.merge(
-                alunos_df,
-                pontuacao_periodo,
-                left_on='id',
-                right_on='aluno_id',
-                how='inner'  # Apenas alunos com ações no período
-            )
-            
-            # Mostrar rankings
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("🌟 Mais Pontuados")
-                top_positivos = alunos_com_pontuacao.sort_values('pontuacao_efetiva', ascending=False).head(5)
-                
-                for i, (_, aluno) in enumerate(top_positivos.iterrows()):
-                    st.write(f"{i+1}. **{aluno['nome_guerra']}** ({aluno['pelotao']}) - {aluno['pontuacao_efetiva']:+.1f} pts")
-            
-            with col2:
-                st.subheader("⚠️ Menos Pontuados")
-                top_negativos = alunos_com_pontuacao.sort_values('pontuacao_efetiva').head(5)
-                
-                for i, (_, aluno) in enumerate(top_negativos.iterrows()):
-                    st.write(f"{i+1}. **{aluno['nome_guerra']}** ({aluno['pelotao']}) - {aluno['pontuacao_efetiva']:+.1f} pts")
-    
-    with tab3:
-        show_evolucao_pontuacao(alunos_df, acoes_df)
+            for i, (_, aluno) in enumerate(top_positivos.iterrows()):
+                st.write(f"#{i+1}: **{aluno['nome_guerra']}** ({aluno['pelotao']}) - {aluno['pontuacao_efetiva']:+.2f} pts")
+    with col2:
+        st.subheader("⚠️ Menos Pontuados")
+        if top_negativos.empty:
+            st.info("Nenhum aluno com pontuação negativa.")
+        else:
+            for i, (_, aluno) in enumerate(top_negativos.iterrows()):
+                st.write(f"#{i+1}: **{aluno['nome_guerra']}** ({aluno['pelotao']}) - {aluno['pontuacao_efetiva']:+.2f} pts")
 
-
-def show_pontuacao_pelotao(alunos_df, acoes_df):
-    st.subheader("Pontuação Média por Pelotão")
+def render_evolucao_tab(acoes_filtradas, alunos_filtrados, config_dict, view_mode):
+    """Renderiza a aba de Evolução com comparação múltipla."""
+    st.header("Evolução de Desempenho")
+    tipo_visao = st.radio("Analisar por:", ["Individual", "Pelotão"], horizontal=True)
     
-    # Calcular pontuação por aluno
-    if not acoes_df.empty and 'aluno_id' in acoes_df.columns and 'pontuacao_efetiva' in acoes_df.columns:
-        pontuacao_por_aluno = acoes_df.groupby('aluno_id')['pontuacao_efetiva'].sum().reset_index()
-        
-        # Mesclar com dados dos alunos
-        alunos_com_pontuacao = pd.merge(
-            alunos_df,
-            pontuacao_por_aluno,
-            left_on='id',
-            right_on='aluno_id',
-            how='left'
-        )
-        
-        # Preencher valores nulos com pontuação inicial (10)
-        alunos_com_pontuacao['pontuacao_efetiva'] = alunos_com_pontuacao['pontuacao_efetiva'].fillna(0) + 10
-        
-        # Calcular média por pelotão
-        media_por_pelotao = alunos_com_pontuacao.groupby('pelotao')['pontuacao_efetiva'].mean().reset_index()
-        
-        # Criar gráfico
-        fig = px.bar(
-            media_por_pelotao,
-            x='pelotao',
-            y='pontuacao_efetiva',
-            title='Pontuação Média por Pelotão',
-            labels={'pelotao': 'Pelotão', 'pontuacao_efetiva': 'Pontuação Média'},
-            color='pontuacao_efetiva',
-            color_continuous_scale='RdYlGn'
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Mostrar tabela com dados
-        st.subheader("Dados Detalhados")
-        st.dataframe(media_por_pelotao)
+    if tipo_visao == "Individual":
+        show_evolucao_individual_comparativa(acoes_filtradas, alunos_filtrados, config_dict, view_mode)
     else:
-        st.info("Dados insuficientes para gerar este relatório.")
+        show_evolucao_pelotao_comparativa(acoes_filtradas, alunos_filtrados, config_dict, view_mode)
+
+# --- NOVAS E APRIMORADAS FUNÇÕES DE GRÁFICOS ---
+
+def show_pontuacao_pelotao(alunos_df, acoes_df, config_dict, view_mode):
+    titulo = "Conceito Médio por Pelotão" if view_mode == 'Conceito Final' else "Saldo Médio de Pontos por Pelotão"
+    st.subheader(titulo)
+
+    if acoes_df.empty: st.info("Dados de ações insuficientes para gerar este relatório."); return
+
+    soma_pontos_por_aluno = acoes_df.groupby('aluno_id')['pontuacao_efetiva'].sum()
+    alunos_com_pontos = pd.merge(alunos_df, soma_pontos_por_aluno.rename('pontos_acoes'), left_on='id', right_on='aluno_id', how='left')
+    alunos_com_pontos['pontos_acoes'] = alunos_com_pontos['pontos_acoes'].fillna(0)
+
+    if view_mode == 'Conceito Final':
+        alunos_com_pontos['valor_final'] = alunos_com_pontos.apply(lambda row: calcular_conceito_final(row['pontos_acoes'], float(row.get('media_academica', 0.0)), alunos_df, config_dict), axis=1)
+    else:
+        alunos_com_pontos['valor_final'] = alunos_com_pontos['pontos_acoes']
+
+    media_por_pelotao = alunos_com_pontos.groupby('pelotao')['valor_final'].mean().reset_index()
+    fig = px.bar(media_por_pelotao, x='pelotao', y='valor_final', title=titulo, text_auto='.2f')
+    st.plotly_chart(fig, use_container_width=True)
 
 def show_distribuicao_acoes(acoes_df):
     st.subheader("Distribuição de Tipos de Ação")
-    
-    if not acoes_df.empty and 'tipo' in acoes_df.columns:
-        # Contar ocorrências de cada tipo
-        contagem_tipos = acoes_df['tipo'].value_counts().reset_index()
+    if not acoes_df.empty and 'nome' in acoes_df.columns:
+        contagem_tipos = acoes_df['nome'].value_counts().reset_index()
         contagem_tipos.columns = ['Tipo de Ação', 'Quantidade']
-        
-        # Criar gráfico
-        fig = px.pie(
-            contagem_tipos,
-            values='Quantidade',
-            names='Tipo de Ação',
-            title='Distribuição de Tipos de Ação',
-            hole=0.4
-        )
-        
+        fig = px.pie(contagem_tipos, values='Quantidade', names='Tipo de Ação', title='Distribuição de Tipos de Ação no Período', hole=0.4)
         st.plotly_chart(fig, use_container_width=True)
-        
-        # Mostrar tabela com dados
-        st.subheader("Dados Detalhados")
-        st.dataframe(contagem_tipos)
     else:
-        st.info("Dados insuficientes para gerar este relatório.")
+        st.info("Nenhuma ação para analisar nos filtros selecionados.")
 
+def show_ranking_acoes(acoes_df):
+    st.subheader("Ranking de Tipos de Ação Registrados")
+    if acoes_df.empty or 'nome' not in acoes_df.columns:
+        st.info("Nenhuma ação para analisar."); return
 
+    col1, col2 = st.columns(2)
+    with col1:
+        positivas = acoes_df[acoes_df['pontuacao_efetiva'] > 0]['nome'].value_counts().nlargest(5).reset_index()
+        positivas.columns = ['Tipo de Ação', 'Ocorrências']
+        st.write("Top 5 Ações Positivas:")
+        st.dataframe(positivas, use_container_width=True)
+    with col2:
+        negativas = acoes_df[acoes_df['pontuacao_efetiva'] < 0]['nome'].value_counts().nlargest(5).reset_index()
+        negativas.columns = ['Tipo de Ação', 'Ocorrências']
+        st.write("Top 5 Ações Negativas:")
+        st.dataframe(negativas, use_container_width=True)
 
-def show_evolucao_pontuacao(alunos_df, acoes_df):
-    st.subheader("Evolução da Pontuação ao Longo do Tempo")
+def show_evolucao_individual_comparativa(acoes_df, alunos_df, config_dict, view_mode):
+    st.subheader("Comparativo de Evolução Individual")
     
-    if not acoes_df.empty and 'data' in acoes_df.columns and 'pontuacao_efetiva' in acoes_df.columns:
-        # Converter data para datetime
-        acoes_df['data'] = pd.to_datetime(acoes_df['data'])
-        
-        # Ordenar por data
-        acoes_df = acoes_df.sort_values('data')
-        
-        # Selecionar aluno para visualizar evolução
-        if 'aluno_id' in acoes_df.columns:
-            alunos_ids = acoes_df['aluno_id'].unique()
-            
-            if len(alunos_ids) > 0:
-                # Criar opções de alunos
-                alunos_opcoes = []
-                for aluno_id in alunos_ids:
-                    aluno = alunos_df[alunos_df['id'] == aluno_id]
-                    if not aluno.empty:
-                        nome = aluno.iloc[0]['nome_guerra']
-                        alunos_opcoes.append(f"{nome} (ID: {aluno_id})")
-                    else:
-                        alunos_opcoes.append(f"Aluno ID: {aluno_id}")
-                
-                # Selecionar aluno
-                aluno_selecionado = st.selectbox("Selecione o Aluno", alunos_opcoes)
-                aluno_id = int(aluno_selecionado.split("ID: ")[1].rstrip(")"))
-                
-                # Filtrar ações do aluno
-                acoes_aluno = acoes_df[acoes_df['aluno_id'] == aluno_id]
-                
-                if not acoes_aluno.empty:
-                    # Calcular pontuação acumulada
-                    pontuacao_inicial = 10
-                    acoes_aluno['pontuacao_acumulada'] = acoes_aluno['pontuacao_efetiva'].cumsum() + pontuacao_inicial
-                    
-                    # Criar gráfico
-                    fig = px.line(
-                        acoes_aluno,
-                        x='data',
-                        y='pontuacao_acumulada',
-                        title=f'Evolução da Pontuação - {aluno_selecionado.split(" (ID")[0]}',
-                        labels={'data': 'Data', 'pontuacao_acumulada': 'Pontuação'},
-                        markers=True
-                    )
-                    
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Mostrar tabela com dados
-                    st.subheader("Histórico de Pontuação")
-                    st.dataframe(acoes_aluno[['data', 'tipo', 'pontuacao_efetiva', 'pontuacao_acumulada']])
-                else:
-                    st.info("Este aluno não possui ações registradas.")
+    opcoes_alunos = {aluno['id']: f"{aluno['nome_guerra']} ({aluno.get('pelotao', 'N/A')})" for _, aluno in alunos_df.iterrows()}
+    alunos_selecionados_ids = st.multiselect("Selecione um ou mais alunos para comparar:", options=opcoes_alunos.keys(), format_func=opcoes_alunos.get)
+
+    if not alunos_selecionados_ids:
+        st.info("Selecione pelo menos um aluno para ver a evolução."); return
+
+    df_plot = pd.DataFrame()
+    for aluno_id in alunos_selecionados_ids:
+        acoes_aluno = acoes_df[acoes_df['aluno_id'] == aluno_id].copy()
+        if not acoes_aluno.empty:
+            acoes_aluno.sort_values('data', inplace=True)
+            soma_pontos_acoes = acoes_aluno['pontuacao_efetiva'].cumsum()
+            aluno_info = alunos_df[alunos_df['id'] == aluno_id].iloc[0]
+            if view_mode == 'Conceito Final':
+                media_acad = float(aluno_info.get('media_academica', 0.0))
+                acoes_aluno['valor_final'] = soma_pontos_acoes.apply(lambda x: calcular_conceito_final(x, media_acad, alunos_df, config_dict))
             else:
-                st.info("Nenhum aluno com ações registradas.")
-        else:
-            st.info("Dados insuficientes para gerar este relatório.")
-    else:
-        st.info("Dados insuficientes para gerar este relatório.")
+                acoes_aluno['valor_final'] = soma_pontos_acoes
+            acoes_aluno['nome_guerra'] = aluno_info['nome_guerra']
+            df_plot = pd.concat([df_plot, acoes_aluno])
+
+    if not df_plot.empty:
+        titulo = "Evolução do Conceito Final" if view_mode == 'Conceito Final' else "Evolução do Saldo de Pontos"
+        fig = px.line(df_plot, x='data', y='valor_final', color='nome_guerra', title=titulo, markers=True, labels={'valor_final': view_mode, 'nome_guerra': 'Aluno'})
+        st.plotly_chart(fig, use_container_width=True)
+
+def show_evolucao_pelotao_comparativa(acoes_df, alunos_df, config_dict, view_mode):
+    st.subheader("Comparativo de Evolução por Pelotão")
+    opcoes_pelotao = sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
+    pelotoes_selecionados = st.multiselect("Selecione um ou mais pelotões para comparar:", options=opcoes_pelotao, default=opcoes_pelotao)
+
+    if not pelotoes_selecionados:
+        st.info("Selecione pelo menos um pelotão."); return
+        
+    df_plot = pd.DataFrame()
+    for pelotao in pelotoes_selecionados:
+        alunos_do_pelotao_ids = alunos_df[alunos_df['pelotao'] == pelotao]['id'].tolist()
+        # Variável corrigida nesta linha
+        acoes_pelotao = acoes_df[acoes_df['aluno_id'].isin(alunos_do_pelotao_ids)].copy()
+        if not acoes_pelotao.empty:
+            acoes_pelotao.sort_values('data', inplace=True)
+            soma_pontos_acoes = acoes_pelotao['pontuacao_efetiva'].cumsum()
+            
+            if view_mode == 'Conceito Final':
+                # Nota: O conceito de um pelotão é uma média complexa. Aqui, simplificamos para a média do saldo de pontos aplicada à linha de base.
+                linha_base = float(config_dict.get('linha_base_conceito', 8.5))
+                acoes_pelotao['valor_final'] = linha_base + soma_pontos_acoes / len(alunos_do_pelotao_ids)
+            else:
+                acoes_pelotao['valor_final'] = soma_pontos_acoes
+            
+            acoes_pelotao['pelotao'] = pelotao
+            df_plot = pd.concat([df_plot, acoes_pelotao])
+    
+    if not df_plot.empty:
+        titulo = "Evolução do Conceito Médio" if view_mode == 'Conceito Final' else "Evolução do Saldo de Pontos Total"
+        fig = px.line(df_plot, x='data', y='valor_final', color='pelotao', title=titulo, markers=True, labels={'valor_final': view_mode})
+        st.plotly_chart(fig, use_container_width=True)
+
+# --- FUNÇÃO PRINCIPAL DA PÁGINA ---
+def show_relatorios():
+    st.title("Relatórios e Análises")
+    if not check_permission('acesso_pagina_relatorios'):
+        st.error("Acesso negado."); return
+
+    alunos_df = load_data("Alunos"); acoes_df = load_data("Acoes"); tipos_acao_df = load_data("Tipos_Acao"); config_df = load_data("Config")
+    if alunos_df.empty or acoes_df.empty: st.warning("Dados insuficientes para gerar relatórios."); return
+
+    acoes_com_pontos_df = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
+    config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
+    if not acoes_com_pontos_df.empty:
+        acoes_com_pontos_df['data'] = pd.to_datetime(acoes_com_pontos_df['data'], errors='coerce')
+
+    st.subheader("Painel de Controle de Relatórios")
+    with st.container(border=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            view_mode = st.radio("Visualizar dados por:", ["Conceito Final", "Variação de Pontos"], horizontal=True, key="view_mode")
+        with col2:
+            tipos_opcoes = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
+            tipo_acao_filtro = st.selectbox("Filtrar por Tipo de Ação:", tipos_opcoes)
+        
+        periodo_opts = ["Todo o Período", "Hoje", "Esta Semana", "Este Mês", "Intervalo Personalizado"]
+        periodo_tipo = st.selectbox("Filtrar Período", periodo_opts, key="periodo_tipo")
+        start_date, end_date = None, datetime.now().date()
+        if periodo_tipo != "Todo o Período":
+            if periodo_tipo == "Hoje": start_date = end_date
+            elif periodo_tipo == "Esta Semana": start_date = end_date - timedelta(days=end_date.weekday())
+            elif periodo_tipo == "Este Mês": start_date = end_date.replace(day=1)
+            elif periodo_tipo == "Intervalo Personalizado":
+                c_start, c_end = st.columns(2)
+                start_date = c_start.date_input("Data Inicial", end_date - timedelta(days=30))
+                end_date = c_end.date_input("Data Final", end_date)
+
+    acoes_filtradas = acoes_com_pontos_df.copy()
+    if tipo_acao_filtro != "Todos":
+        acoes_filtradas = acoes_filtradas[acoes_filtradas['nome'] == tipo_acao_filtro]
+    if start_date:
+        acoes_filtradas = acoes_filtradas[(acoes_filtradas['data'].dt.date >= start_date) & (acoes_filtradas['data'].dt.date <= end_date)]
+
+    st.write("") 
+    pelotoes_validos = sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
+    pelotoes = ["Todos os Pelotões"] + pelotoes_validos
+    pelotao_selecionado = st.selectbox("Filtrar por Pelotão", pelotoes, key="pelotao_filtro")
+
+    alunos_filtrados = alunos_df.copy()
+    if pelotao_selecionado != "Todos os Pelotões":
+        alunos_filtrados = alunos_df[alunos_df['pelotao'] == pelotao_selecionado]
+        aluno_ids_do_pelotao = alunos_filtrados['id'].tolist()
+        acoes_filtradas = acoes_filtradas[acoes_filtradas['aluno_id'].isin(aluno_ids_do_pelotao)]
+
+    st.divider()
+    tab1, tab2, tab3 = st.tabs(["📊 Gráficos", "🏆 Rankings", "📈 Evolução"])
+
+    with tab1:
+        render_graficos_tab(acoes_filtradas, alunos_filtrados, config_dict, view_mode)
+    with tab2:
+        render_rankings_tab(acoes_filtradas, alunos_filtrados, periodo_tipo, pelotao_selecionado)
+    with tab3:
+        render_evolucao_tab(acoes_filtradas, alunos_filtrados, config_dict, view_mode)

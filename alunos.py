@@ -1,138 +1,271 @@
 import streamlit as st
 import pandas as pd
-from database import load_data, save_data
-import logging
 from datetime import datetime
-import os
+from database import load_data, init_supabase_client
+from auth import check_permission
+import math
 
-# Configuração do logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Nome do ficheiro Google Sheets
-SHEET_NAME = "Sistema_Acoes_Militares"
-
-def show_alunos():
-    """Função principal para exibir e gerir a página de Alunos."""
-    st.title("Gestão de Alunos")
-
-    try:
-        alunos_df = load_data(SHEET_NAME, "Alunos")
-        acoes_df = load_data(SHEET_NAME, "Acoes")
-    except Exception as e:
-        st.error(f"Erro ao carregar dados: {e}")
-        return
-
-    # Demais lógicas de adicionar e editar aluno (mantidas)
-    # ...
-
-    # Exibição da lista de alunos
-    search = st.text_input("🔍 Buscar aluno (nome, número, pelotão...)")
-    if not alunos_df.empty and search:
-        search_lower = search.lower()
-        mask = (alunos_df['nome_guerra'].astype(str).str.lower().str.contains(search_lower, na=False) |
-                alunos_df['nome_completo'].astype(str).str.lower().str.contains(search_lower, na=False) |
-                alunos_df['numero_interno'].astype(str).str.contains(search_lower, na=False) |
-                alunos_df['pelotao'].astype(str).str.lower().str.contains(search_lower, na=False))
-        filtered_df = alunos_df[mask]
-    else:
-        filtered_df = alunos_df
-
-    if not filtered_df.empty:
-        st.subheader(f"Alunos ({len(filtered_df)} encontrados)")
+# --- FUNÇÃO HELPER DE CÁLCULO DE PONTUAÇÃO (OBSERVACIONAL) ---
+def calcular_pontuacao_efetiva(acoes_df: pd.DataFrame, tipos_acao_df: pd.DataFrame, config_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Junta ações com seus tipos, calcula a pontuação base e a pontuação efetiva.
+    """
+    if acoes_df.empty:
+        return pd.DataFrame()
         
+    if 'pontuacao' not in tipos_acao_df.columns:
+        st.error("ERRO CRÍTICO: A coluna 'pontuacao' não existe na tabela 'Tipos_Acao'.")
+        return pd.DataFrame()
+
+    acoes_copy = acoes_df.copy()
+    tipos_copy = tipos_acao_df.copy()
+
+    tipos_copy['pontuacao'] = pd.to_numeric(tipos_copy['pontuacao'], errors='coerce').fillna(0)
+    acoes_copy['tipo_acao_id'] = acoes_copy['tipo_acao_id'].astype(str)
+    tipos_copy['id'] = tipos_copy['id'].astype(str)
+    
+    acoes_com_pontos = pd.merge(acoes_copy, tipos_copy[['id', 'pontuacao', 'nome']], left_on='tipo_acao_id', right_on='id', how='left')
+    
+    config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
+    fator_adaptacao = float(config_dict.get('fator_adaptacao', 0.25))
+    try:
+        inicio_adaptacao = pd.to_datetime(config_dict.get('periodo_adaptacao_inicio')).date()
+        fim_adaptacao = pd.to_datetime(config_dict.get('periodo_adaptacao_fim')).date()
+    except Exception:
+        inicio_adaptacao, fim_adaptacao = None, None
+
+    def aplicar_fator(row):
+        pontuacao = row.get('pontuacao', 0.0)
         # --- CORREÇÃO APLICADA AQUI ---
-        # Converte a coluna de pontuação para numérica UMA VEZ antes do loop
-        if not acoes_df.empty and 'pontuacao_efetiva' in acoes_df.columns:
-            acoes_df['pontuacao_efetiva'] = pd.to_numeric(acoes_df['pontuacao_efetiva'], errors='coerce').fillna(0)
+        # 1. Converte a data e verifica se o resultado é nulo (NaT)
+        data_convertida = pd.to_datetime(row['data'], errors='coerce')
+        if pd.isna(data_convertida):
+            return pontuacao # 2. Se a data for inválida, retorna a pontuação original sem causar erro.
+        
+        data_acao = data_convertida.date()
         # --- FIM DA CORREÇÃO ---
 
-        for i, (_, aluno) in enumerate(filtered_df.iterrows()):
-            with st.container(border=True):
-                st.markdown(f"**{aluno.get('nome_guerra', 'N/A')}**")
-                st.write(f"Nº: {aluno.get('numero_interno', 'N/A')}")
-
-                pontuacao = 10.0 # Pontuação inicial
-                if not acoes_df.empty and 'aluno_id' in acoes_df.columns:
-                    # Garante que a comparação de ID seja consistente (str vs str)
-                    acoes_aluno = acoes_df[acoes_df['aluno_id'] == str(aluno.get('id'))]
-                    if not acoes_aluno.empty:
-                        # Agora a soma funcionará corretamente pois a coluna é numérica
-                        pontuacao += acoes_aluno['pontuacao_efetiva'].sum()
-
-                cor = "green" if pontuacao >= 10 else "red"
-                st.markdown(f"<h4 style='color:{cor}'>{pontuacao:.1f} pts</h4>", unsafe_allow_html=True)
-
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    if st.button("👁️ Ver", key=f"ver_{aluno['id']}"):
-                        st.session_state.aluno_selecionado_para_detalhes = aluno['id']
-                        st.rerun()
-                with c2:
-                    if st.button("✏️ Editar", key=f"editar_{aluno['id']}"):
-                        st.warning("Funcionalidade de edição a ser implementada.")
-                with c3:
-                    if st.button("➕ Ação", key=f"acao_{aluno['id']}"):
-                        st.session_state.aluno_selecionado_para_acao = aluno['id']
-                        st.info(f"Vá para a página 'Lançamento de Ações' para registrar uma ação para {aluno['nome_guerra']}.")
-                        st.rerun()
-
-    if 'aluno_selecionado' in st.session_state:
-        show_detalhes_aluno(st.session_state.aluno_selecionado, alunos_df, acoes_df)
-    
-    if st.session_state.get('registrar_acao', False):
-        aluno_id = st.session_state.aluno_acao
-        aluno = alunos_df[alunos_df['id'] == aluno_id].iloc[0]
-        registrar_acao(aluno_id, aluno['nome_guerra'])
-
-def show_detalhes_aluno(aluno_id, alunos_df, acoes_df):
-    aluno = alunos_df[alunos_df['id'] == aluno_id].iloc[0]
-    acoes_aluno = pd.DataFrame()
-    if not acoes_df.empty and 'aluno_id' in acoes_df.columns:
-        acoes_aluno = acoes_df[acoes_df['aluno_id'] == aluno_id].sort_values('data', ascending=False)
-    
-    pontuacao_atual = 10
-    if not acoes_aluno.empty and 'pontuacao_efetiva' in acoes_aluno.columns:
-        pontuacao_atual += acoes_aluno['pontuacao_efetiva'].sum()
-    
-    st.subheader(f"Detalhes do Aluno: {aluno['nome_guerra']}")
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        CLOUD_NAME = st.secrets.gcp_service_account.get("cloudinary_cloud_name")
-        FOLDER = st.secrets.gcp_service_account.get("cloudinary_folder")
-        numero_interno = aluno.get('numero_interno')
-        if numero_interno and CLOUD_NAME and FOLDER:
-            photo_url = f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/{FOLDER}/{numero_interno}.jpg"
-            st.image(photo_url, width=150)
-        else:
-            st.image("https://via.placeholder.com/150?text=Sem+Foto", width=150 )
-            
-        st.markdown(f"""
-        ### {aluno['nome_guerra']}
-        **Nome Completo:** {aluno['nome_completo']}  
-        **Número Interno:** {aluno['numero_interno']}  
-        **Pelotão:** {aluno['pelotao']}  
-        **Especialidade:** {aluno['especialidade']}  
-        **Pontuação Atual:** {pontuacao_atual:.1f}
-        """)
+        if pontuacao >= 0 or not inicio_adaptacao: return pontuacao
         
-        if st.button("Voltar para Lista"):
-            del st.session_state.aluno_selecionado
-            st.rerun()
-    
-    with col2:
-        st.subheader("Histórico de Ações")
-        if acoes_aluno.empty:
-            st.info("Nenhuma ação registrada para este aluno.")
-        else:
-            for _, acao in acoes_aluno.iterrows():
-                pontuacao = acao.get('pontuacao_efetiva', 0)
-                cor = "green" if pontuacao > 0 else "red" if pontuacao < 0 else "gray"
-                st.markdown(f"""
-                <div style="border-left: 3px solid {cor}; padding-left: 10px; margin-bottom: 10px">
-                    <p><strong>{acao.get('tipo', 'Ação')}</strong> ({pontuacao:+.1f} pontos) - {acao.get('data', 'N/A')}</p>
-                    <p>{acao.get('descricao', '')}</p>
-                    <p><small>Registrado por: {acao.get('usuario', 'Sistema')}</small></p>
-                </div>
-                """, unsafe_allow_html=True)
+        if inicio_adaptacao <= data_acao <= fim_adaptacao:
+            return pontuacao * fator_adaptacao
+        return pontuacao
+        
+    acoes_com_pontos['pontuacao_efetiva'] = acoes_com_pontos.apply(aplicar_fator, axis=1)
+    return acoes_com_pontos
 
-pass
+# --- NOVA FUNÇÃO PARA CALCULAR O CONCEITO FINAL ---
+def calcular_conceito_final(soma_pontos_acoes: float, media_academica_aluno: float, todos_alunos_df: pd.DataFrame, config_dict: dict) -> float:
+    """Calcula o Conceito Final dinâmico de um aluno."""
+    linha_base = float(config_dict.get('linha_base_conceito', 8.5))
+    impacto_max_acoes = float(config_dict.get('impacto_max_acoes', 1.5))
+    peso_academico = float(config_dict.get('peso_academico', 1.0))
+
+    impacto_acoes = max(-impacto_max_acoes, min(soma_pontos_acoes, impacto_max_acoes))
+    impacto_academico = 0.0
+    
+    if 'media_academica' in todos_alunos_df.columns and not todos_alunos_df.empty:
+        medias_validas = pd.to_numeric(todos_alunos_df['media_academica'], errors='coerce').dropna()
+        if not medias_validas.empty and medias_validas.max() > medias_validas.min():
+            media_min_turma = medias_validas.min()
+            media_max_turma = medias_validas.max()
+            fator_normalizado = (media_academica_aluno - media_min_turma) / (media_max_turma - media_min_turma)
+            impacto_academico = fator_normalizado * peso_academico
+    
+    conceito_final = linha_base + impacto_acoes + impacto_academico
+    return max(0.0, min(conceito_final, 10.0))
+
+# --- DIÁLOGO DE REGISTRO DE AÇÃO (ATUALIZADO PARA SUPABASE) ---
+@st.dialog("Registrar Nova Ação")
+def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
+    st.write(f"Aluno: **{aluno_nome}**")
+    tipos_acao_df = load_data("Tipos_Acao")
+    if tipos_acao_df.empty:
+        st.error("Não há tipos de ação cadastrados."); return
+    with st.form("nova_acao_dialog_form"):
+        tipos_opcoes = {f"{tipo['nome']} ({float(tipo.get('pontuacao', 0.0)):.1f} pts)": tipo for _, tipo in tipos_acao_df.iterrows()}
+        tipo_selecionado_str = st.selectbox("Tipo de Ação", options=list(tipos_opcoes.keys()))
+        descricao = st.text_area("Descrição/Justificativa")
+        data = st.date_input("Data da Ação", value=datetime.now())
+        if st.form_submit_button("Registrar"):
+            if not descricao or not tipo_selecionado_str:
+                st.warning("Descrição e Tipo de Ação são obrigatórios."); return
+            try:
+                acoes_df = load_data("Acoes")
+                tipo_info = tipos_opcoes[tipo_selecionado_str]
+                ids = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
+                novo_id = int(ids.max()) + 1 if not ids.empty else 1
+                nova_acao = {'id': str(novo_id), 'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 'descricao': descricao, 'data': data.strftime('%Y-%m-%d'), 'usuario': st.session_state.username}
+                supabase.table("Acoes").insert(nova_acao).execute()
+                st.success("Ação registrada com sucesso!"); load_data.clear(); st.rerun()
+            except Exception as e:
+                st.error(f"Falha ao registrar a ação: {e}")
+
+# --- PÁGINA PRINCIPAL ---
+def show_alunos():
+    st.title("Gestão de Alunos")
+    supabase = init_supabase_client()
+    if 'page_num' not in st.session_state: st.session_state.page_num = 1
+    def reset_page(): st.session_state.page_num = 1
+
+    alunos_df = load_data("Alunos")
+    acoes_df = load_data("Acoes")
+    tipos_acao_df = load_data("Tipos_Acao")
+    config_df = load_data("Config")
+    
+    if 'media_academica' not in alunos_df.columns: alunos_df['media_academica'] = 0.0
+    if tipos_acao_df.empty or 'pontuacao' not in tipos_acao_df.columns:
+        st.error("ERRO CRÍTICO: Tabela 'Tipos_Acao' não encontrada ou sem coluna 'pontuacao'."); st.stop()
+
+    config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
+    
+    st.subheader("Filtros e Busca")
+    col1, col2, col3 = st.columns([1, 1, 2])
+    with col1:
+        opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
+        pelotao_selecionado = st.selectbox("Filtrar por Pelotão:", opcoes_pelotao, on_change=reset_page)
+    with col2:
+        opcoes_especialidade = ["Todas"] + sorted([e for e in alunos_df['especialidade'].unique() if pd.notna(e)])
+        especialidade_selecionada = st.selectbox("Filtrar por Especialidade:", opcoes_especialidade, on_change=reset_page)
+    with col3:
+        search = st.text_input("Buscar por nome ou número...", key="search_aluno", on_change=reset_page)
+
+    filtered_df = alunos_df.copy()
+    if pelotao_selecionado != "Todos": filtered_df = filtered_df[filtered_df['pelotao'] == pelotao_selecionado]
+    if especialidade_selecionada != "Todas": filtered_df = filtered_df[filtered_df['especialidade'] == especialidade_selecionada]
+    if search:
+        search_lower = search.lower()
+        mask = (filtered_df['nome_guerra'].str.lower().str.contains(search_lower, na=False) | filtered_df['numero_interno'].str.lower().str.contains(search_lower, na=False))
+        filtered_df = filtered_df[mask]
+
+    st.divider()
+
+    if check_permission('pode_importar_alunos'):
+        with st.expander("➕ Opções de Cadastro"):
+            st.subheader("Adicionar Novo Aluno")
+            with st.form("add_aluno_form", clear_on_submit=True):
+                c1,c2 = st.columns(2); numero_interno = c1.text_input("Número Interno*"); nome_guerra = c2.text_input("Nome de Guerra*")
+                nome_completo = st.text_input("Nome Completo")
+                c3,c4 = st.columns(2); pelotao = c3.text_input("Pelotão*"); especialidade = c4.text_input("Especialidade")
+                if st.form_submit_button("Adicionar Aluno"):
+                    if not all([numero_interno, nome_guerra, pelotao]): st.warning("Número, Nome de Guerra e Pelotão são obrigatórios.")
+                    else:
+                        try:
+                            ids = pd.to_numeric(alunos_df['id'], errors='coerce').dropna()
+                            novo_id = int(ids.max()) + 1 if not ids.empty else 1
+                            novo_aluno = {'id': str(novo_id), 'numero_interno': numero_interno, 'nome_guerra': nome_guerra, 'nome_completo': nome_completo, 'pelotao': pelotao, 'especialidade': especialidade}
+                            supabase.table("Alunos").insert(novo_aluno).execute()
+                            st.success(f"Aluno {nome_guerra} adicionado!"); load_data.clear(); st.rerun()
+                        except Exception as e: st.error(f"Erro ao adicionar aluno: {e}")
+            
+            st.divider()
+            st.subheader("Importar Alunos em Massa (CSV)")
+            # (Lógica de importação completa aqui...)
+            pass
+
+    st.divider()
+    ITEMS_PER_PAGE = 30
+    total_items = len(filtered_df); total_pages = math.ceil(total_items / ITEMS_PER_PAGE) if total_items > 0 else 1
+    if st.session_state.page_num > total_pages: st.session_state.page_num = total_pages
+    start_idx = (st.session_state.page_num - 1) * ITEMS_PER_PAGE; end_idx = start_idx + ITEMS_PER_PAGE
+    paginated_df = filtered_df.iloc[start_idx:end_idx]
+    st.subheader(f"Alunos Exibidos ({len(paginated_df)} de {total_items})")
+
+    if not paginated_df.empty:
+        for _, aluno in paginated_df.iterrows():
+            aluno_id = aluno['id']
+            with st.container(border=True):
+                col_img, col_info, col_actions = st.columns([1, 4, 1])
+                
+                acoes_aluno_df = acoes_df[acoes_df['aluno_id'] == aluno_id]
+                soma_pontos_observacional = 0
+                if not acoes_aluno_df.empty:
+                    acoes_com_pontos = calcular_pontuacao_efetiva(acoes_aluno_df, tipos_acao_df, config_df)
+                    if not acoes_com_pontos.empty: soma_pontos_observacional = acoes_com_pontos['pontuacao_efetiva'].sum()
+
+                media_academica_aluno = float(aluno.get('media_academica', 0.0))
+                conceito_final_aluno = calcular_conceito_final(soma_pontos_observacional, media_academica_aluno, alunos_df, config_dict)
+
+                with col_img:
+                    st.image(aluno.get('url_foto', "https://via.placeholder.com/100?text=Sem+Foto"), width=100)
+                
+                with col_info:
+                    st.markdown(f"**{aluno.get('nome_guerra', 'N/A')}** (`{aluno.get('numero_interno', 'N/A')}`)")
+                    st.write(f"Pelotão: {aluno.get('pelotao', 'N/A')} | Especialidade: {aluno.get('especialidade', 'N/A')}")
+                    cor_conceito = "green" if conceito_final_aluno >= 8.5 else "orange" if conceito_final_aluno >= 7.0 else "red"
+                    
+                    if check_permission('pode_ver_conceito_final'):
+                        st.markdown(f"**Conceito Final:** <span style='color:{cor_conceito}; font-size: 1.2em; font-weight: bold;'>{conceito_final_aluno:.2f}</span> | **Pontuação Geral:** `{soma_pontos_observacional:+.2f} pts`", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"**Pontuação Geral:** `{soma_pontos_observacional:+.2f} pts`", unsafe_allow_html=True)
+
+                with col_actions:
+                    if st.button("➕ Ação", key=f"acao_{aluno_id}"):
+                        registrar_acao_dialog(aluno_id, aluno.get('nome_guerra', 'N/A'), supabase)
+                    if st.button("👁️ Detalhes", key=f"detalhes_{aluno_id}"):
+                        st.session_state.aluno_em_foco_id = aluno_id if st.session_state.get('aluno_em_foco_id') != aluno_id else None
+                        st.rerun()
+
+                if st.session_state.get('aluno_em_foco_id') == aluno_id:
+                    with st.container(border=True):
+                        tab_ver, tab_editar = st.tabs(["Ver Histórico", "Editar Dados"])
+                        with tab_ver:
+                            # (Código do histórico)
+                            st.subheader("Histórico de Ações")
+                            acoes_do_aluno = acoes_df[acoes_df['aluno_id'] == aluno_id]
+                            if acoes_do_aluno.empty: st.info("Nenhuma ação registrada.")
+                            else:
+                                historico_com_pontos = calcular_pontuacao_efetiva(acoes_do_aluno, tipos_acao_df, config_df)
+                                if not historico_com_pontos.empty:
+                                    for _, acao in historico_com_pontos.sort_values("data", ascending=False).iterrows():
+                                        pontos = acao.get('pontuacao_efetiva', 0.0)
+                                        cor = "green" if pontos > 0 else "red" if pontos < 0 else "gray"
+                                        st.markdown(f"**{pd.to_datetime(acao['data']).strftime('%d/%m/%Y')} - {acao.get('nome', 'N/A')}** (`{pontos:+.1f} pts`): {acao.get('descricao','')}")
+                        
+                        with tab_editar:
+                            if check_permission('pode_editar_aluno'):
+                                st.subheader("Editar Dados do Aluno")
+                                with st.form(key=f"edit_form_{aluno_id}"):
+                                    st.subheader("Informações Acadêmicas")
+                                    new_media_academica = st.number_input("Média Acadêmica Final", value=float(aluno.get('media_academica', 0.0)), min_value=0.0, max_value=10.0, step=0.1, format="%.2f")
+                                    st.divider()
+                                    st.subheader("Dados Pessoais")
+                                    new_nome_guerra = st.text_input("Nome de Guerra", value=aluno.get('nome_guerra', ''))
+                                    new_numero_interno = st.text_input("Número Interno", value=aluno.get('numero_interno', ''))
+                                    new_pelotao = st.text_input("Pelotão", value=aluno.get('pelotao', ''))
+                                    new_especialidade = st.text_input("Especialidade", value=aluno.get('especialidade', ''))
+                                    new_url_foto = st.text_input("URL da Foto", value=aluno.get('url_foto', ''))
+                                    
+                                    if st.form_submit_button("Salvar Alterações"):
+                                        dados_update = {
+                                            'media_academica': new_media_academica, 'nome_guerra': new_nome_guerra,
+                                            'numero_interno': new_numero_interno, 'pelotao': new_pelotao,
+                                            'especialidade': new_especialidade, 'url_foto': new_url_foto
+                                        }
+                                        try:
+                                            supabase.table("Alunos").update(dados_update).eq("id", aluno_id).execute()
+                                            st.success("Dados atualizados!"); load_data.clear(); st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Erro ao atualizar: {e}")
+                            else:
+                                st.info("Você não tem permissão para editar os dados do aluno.")
+    else:
+        st.info("Nenhum aluno encontrado para os filtros selecionados.")
+    
+    st.divider()
+    if total_pages > 1:
+        # (Código da paginação)
+        pass
+    
+    st.divider()
+
+    if total_pages > 1:
+        col_prev, col_page, col_next = st.columns([2, 1, 2])
+        with col_prev:
+            if st.button("⬅️ Anterior", use_container_width=True, disabled=(st.session_state.page_num <= 1)):
+                st.session_state.page_num -= 1; st.rerun()
+        with col_page:
+            st.write(f"Página **{st.session_state.page_num} de {total_pages}**")
+        with col_next:
+            if st.button("Próxima ➡️", use_container_width=True, disabled=(st.session_state.page_num >= total_pages)):
+                st.session_state.page_num += 1; st.rerun()

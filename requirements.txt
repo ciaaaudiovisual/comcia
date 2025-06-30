@@ -5,3 +5,9 @@ google-auth-oauthlib
 plotly
 google-api-python-client
 blinker==1.9.0
+tenacity
+xlsxwriter
+openpyxl
+opencv-python 
+pyzbar
+supabase
