@@ -1,10 +1,3 @@
-import streamlit as st
-import pandas as pd
-from database import init_supabase_client, load_data
-
-# --- FUNÇÕES DE AUTENTICAÇÃO (LOGIN) ATUALIZADAS ---
-
-# --- NOVO DIÁLOGO DE SOLICITAÇÃO DE CADASTRO ---
 @st.dialog("Solicitação de Acesso")
 def show_registration_dialog():
     """Exibe um formulário para um novo usuário solicitar acesso."""
@@ -25,8 +18,11 @@ def show_registration_dialog():
                     res = supabase.auth.sign_up({"email": email, "password": password})
                     if res.user:
                         supabase.table("RegistrationRequests").insert({
-                            "id": res.user.id, "email": email, "nome_completo": nome_completo,
-                            "nome_guerra": nome_guerra, "status": "pending"
+                            "id": res.user.id,
+                            "email": email,
+                            "nome_completo": nome_completo,
+                            "nome_guerra": nome_guerra,
+                            "status": "pending"
                         }).execute()
                         st.success("Solicitação enviada com sucesso! Aguarde a aprovação do administrador.")
                     else:
@@ -34,7 +30,7 @@ def show_registration_dialog():
                 except Exception as e:
                     st.error(f"Erro ao enviar solicitação: {e}")
 
-
+# --- FUNÇÃO DE LOGOUT (ATUALIZADA) ---
 def logout():
     """Limpa o estado da sessão para deslogar o usuário de forma segura."""
     keys_to_clear = ['authenticated', 'username', 'role', 'full_name', 'user_id', 'email', 'user_session']
@@ -51,11 +47,7 @@ def logout():
     
     st.toast("Você saiu com segurança.", icon="👋")
 
-
-# --- FUNÇÕES DE AUTENTICAÇÃO (LOGIN) ---
-
-
-# --- FUNÇÃO DE LOGIN ATUALIZADA ---
+# --- FUNÇÃO DE LOGIN (CORRIGIDA) ---
 def login(supabase):
     """Exibe o formulário de login e armazena a sessão do usuário de forma segura."""
     st.title("Sistema de Gestão")
@@ -68,17 +60,17 @@ def login(supabase):
 
         if submitted:
             try:
-                # 1. Autentica e obtém a sessão completa
-                user_session = supabase.auth.sign_in_with_password({"email": email, "password": password})
-                user_id = user_session.user.id
+                # 1. Autentica e obtém a resposta de autenticação
+                auth_response = supabase.auth.sign_in_with_password({"email": email, "password": password})
+                user_id = auth_response.user.id
                 users_df = load_data("Users")
                 user_profile = users_df[users_df['id'] == user_id]
 
                 if not user_profile.empty:
                     user_row = user_profile.iloc[0]
-                    # 2. Armazena os dados e a SESSÃO no st.session_state do usuário
+                    # 2. Armazena os dados e o OBJETO DE SESSÃO correto no st.session_state
                     st.session_state.authenticated = True
-                    st.session_state.user_session = user_session # GUARDA A SESSÃO
+                    st.session_state.user_session = auth_response.session  # CORREÇÃO: Armazena o objeto .session
                     st.session_state.username = user_row['username']
                     st.session_state.full_name = user_row.get('nome', user_row['username'])
                     st.session_state.role = user_row.get('role', 'compel')
@@ -88,42 +80,47 @@ def login(supabase):
                     st.error("Autenticação bem-sucedida, mas o perfil de usuário não foi encontrado ou aprovado. Contate um administrador.")
                     supabase.auth.sign_out()
             
-            except Exception:
-                st.error("Falha no login. Verifique seu email e senha.")
+            except Exception as e:
+                st.error(f"Falha no login. Verifique seu email e senha. Detalhe: {e}")
 
     st.divider()
     if st.button("Não tem uma conta? Solicite seu acesso aqui"):
         show_registration_dialog()
 
+# --- VERIFICAÇÃO DE AUTENTICAÇÃO (ROBUSTA E CORRIGIDA) ---
 def check_authentication():
     """
     Verifica se o usuário está autenticado de forma segura para cada sessão.
-    Esta é a principal correção para o problema de autenticação cruzada.
+    Esta é a correção definitiva para o problema de autenticação.
     """
     supabase = init_supabase_client()
     if not supabase:
         st.error("Falha na conexão com o banco de dados. Verifique as configurações 'secrets.toml'.")
         st.stop()
 
-    # Verifica se já existe uma sessão de usuário no st.session_state
-    if st.session_state.get('authenticated') and st.session_state.get('user_session'):
-        try:
-            # Tenta usar os tokens da sessão para revalidar no cliente Supabase
-            # Esta ação é específica para a execução atual do script, não afeta outros usuários
-            supabase.auth.set_session(
-                st.session_state.user_session.access_token,
-                st.session_state.user_session.refresh_token
-            )
-            return True # O usuário está autenticado e a sessão foi restaurada corretamente
-        except Exception:
-            # Se os tokens forem inválidos ou expirados, limpa a sessão
+    # Se o usuário já estiver autenticado na sessão do Streamlit, restaura a sessão no Supabase
+    if st.session_state.get('authenticated'):
+        session = st.session_state.get('user_session')
+        # Verifica se o objeto de sessão e seus tokens existem
+        if session and session.access_token and session.refresh_token:
+            try:
+                # Restaura a sessão no cliente Supabase para esta execução específica
+                supabase.auth.set_session(session.access_token, session.refresh_token)
+                return True  # A sessão é válida e foi restaurada com sucesso.
+            except Exception as e:
+                # Se ocorrer um erro (ex: token inválido), força o logout
+                st.warning(f"Sua sessão expirou. Por favor, faça login novamente.")
+                logout()
+                st.rerun()
+        else:
+            # Se o objeto de sessão estiver corrompido, força o logout
             logout()
             st.rerun()
-    
-    # Se não houver uma sessão autenticada, mostra a tela de login
+
+    # Se não houver uma sessão autenticada, exibe a página de login
     login(supabase)
     st.stop()
-    
+
 # --- FUNÇÕES DE PERMISSÃO (Sem alterações) ---
 @st.cache_data(ttl=300)
 def get_permissions_rules():
