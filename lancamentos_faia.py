@@ -78,14 +78,28 @@ def render_filters(alunos_df):
     """Renderiza os widgets de filtro e retorna as seleções."""
     st.subheader("Filtros")
     col1, col2, col3 = st.columns([2, 2, 1])
+    
     with col1:
         opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
         pelotao = st.selectbox("Filtrar por Pelotão:", opcoes_pelotao)
+        
     with col2:
-        opcoes_alunos = ["Todos"] + sorted(alunos_df['nome_guerra'].unique().tolist())
+        # --- INÍCIO DA CORREÇÃO ---
+        # 1. Pega os nomes de guerra únicos
+        nomes_unicos = alunos_df['nome_guerra'].unique()
+        
+        # 2. Filtra a lista para remover valores nulos (NaN/None) e garante que tudo seja string
+        nomes_validos = [str(nome) for nome in nomes_unicos if pd.notna(nome)]
+        
+        # 3. Cria a lista de opções final, agora com dados limpos e seguros para ordenar
+        opcoes_alunos = ["Todos"] + sorted(nomes_validos)
+        # --- FIM DA CORREÇÃO ---
+        
         aluno = st.selectbox("Filtrar por Aluno:", opcoes_alunos)
+        
     with col3:
         status = st.radio("Filtrar Status:", ["A Lançar", "Lançados", "Todos"], horizontal=True, index=0)
+        
     return pelotao, aluno, status
 
 def render_export_section(df_filtrado, alunos_df, pelotao_selecionado, aluno_selecionado):
