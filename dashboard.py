@@ -1,14 +1,3 @@
-O erro `NameError` que você encontrou acontece porque o arquivo **dashboard.py** tentou usar a função `calcular_conceito_final`, mas não sabia onde encontrá-la. Essa função está definida no arquivo **alunos.py** e precisa ser importada para poder ser usada no dashboard.
-
-A solução é simplesmente adicionar a linha de importação correta no início do arquivo **dashboard.py**. Aproveitei para corrigir também a importação da função `calcular_pontuacao_efetiva`, que também pertence ao arquivo **alunos.py**, para garantir a consistência do código.
-
------
-
-## `dashboard.py` (Corrigido)
-
-Substitua o conteúdo do seu arquivo `dashboard.py` pelo código completo abaixo. A única alteração é a linha de importação destacada.
-
-```python
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
