@@ -1,5 +1,6 @@
 import streamlit as st
-from auth import check_authentication, check_permission
+# --- MODIFICAÇÃO: Importa a função de logout ---
+from auth import check_authentication, check_permission, logout
 from database import load_data 
 from dashboard import show_dashboard
 from alunos import show_alunos
@@ -11,18 +12,20 @@ from config import show_config
 from admin_panel import show_admin_panel
 from lancamentos_faia import show_lancamentos_faia
 
-# A chamada a init_local_db() foi removida pois não é mais necessária.
-
 if not check_authentication():
     st.stop()
 
-# --- BARRA LATERAL E NAVEGAÇÃO ATUALIZADA ---
+# --- BARRA LATERAL E NAVEGAÇÃO ---
 st.sidebar.title("Sistema de Gestão")
 
-# --- CORREÇÃO APLICADA AQUI ---
-# Acesso seguro ao nome do usuário para exibição
 user_display_name = st.session_state.get('full_name', st.session_state.get('username', ''))
 st.sidebar.markdown(f"Usuário: **{user_display_name}**")
+
+# --- NOVO BOTÃO DE LOGOUT ADICIONADO AQUI ---
+if st.sidebar.button("Logout"):
+    logout()
+    st.rerun()
+
 st.sidebar.divider()
 
 st.sidebar.header("Navegação")
