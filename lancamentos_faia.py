@@ -67,7 +67,6 @@ def render_filters(alunos_df):
         opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
         pelotao = st.selectbox("1. Filtrar por Pelotão:", opcoes_pelotao)
 
-    # Filtra o DataFrame de alunos com base no pelotão selecionado
     alunos_filtrados_df = alunos_df
     if pelotao != "Todos":
         alunos_filtrados_df = alunos_df[alunos_df['pelotao'] == pelotao]
@@ -77,8 +76,23 @@ def render_filters(alunos_df):
         if busca_nome:
             alunos_filtrados_df = alunos_filtrados_df[alunos_filtrados_df['nome_guerra'].str.contains(busca_nome, case=False, na=False)]
 
-        opcoes_alunos = ["Todos"] + sorted(alunos_filtrados_df['nome_guerra'].unique().tolist())
+        # --- INÍCIO DA CORREÇÃO ---
+        # 1. Pega os nomes de guerra únicos da lista já filtrada
+        nomes_unicos = alunos_filtrados_df['nome_guerra'].unique()
+        
+        # 2. Filtra a lista para remover valores nulos (NaN/None) e garante que tudo seja string
+        nomes_validos = [str(nome) for nome in nomes_unicos if pd.notna(nome)]
+        
+        # 3. Cria a lista de opções final, agora com dados limpos e seguros para ordenar
+        opcoes_alunos = ["Todos"] + sorted(nomes_validos)
+        # --- FIM DA CORREÇÃO ---
+        
         aluno = st.selectbox("3. Filtrar por Aluno:", opcoes_alunos)
+
+    with col3:
+        status = st.radio("Filtrar Status:", ["A Lançar", "Lançados", "Todos"], horizontal=True, index=0)
+
+    return pelotao, aluno, status, busca_nome
 
     with col3:
         status = st.radio("Filtrar Status:", ["A Lançar", "Lançados", "Todos"], horizontal=True, index=0)
