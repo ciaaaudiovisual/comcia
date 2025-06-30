@@ -19,17 +19,25 @@ def show_lancamentos_page():
         st.warning("Não há alunos ou tipos de ação cadastrados. Cadastre-os primeiro.")
         return
 
-    # --- FORMULÁRIO (MODIFICADO) ---
+    # --- FORMULÁRIO (MODIFICADO COM CAMPOS DE BUSCA SEPARADOS) ---
     st.subheader("Novo Lançamento")
     with st.form("novo_lancamento"):
-        col1, col2 = st.columns(2)
-        with col1:
-            alunos_opcoes_dict = {
-                f"Nº: {aluno.get('numero_interno', 'S/N')} | {aluno['nome_guerra']} ({aluno.get('pelotao', 'S/N')})": aluno['id']
-                for _, aluno in alunos_df.sort_values('numero_interno').iterrows()
-            }
-            aluno_selecionado_label = st.selectbox("Selecione o Aluno", options=list(alunos_opcoes_dict.keys()))
+        st.info("Preencha um ou mais campos abaixo para buscar o aluno e, em seguida, preencha os detalhes da ação.")
+        
+        # Novos campos de busca para o aluno
+        col_busca1, col_busca2, col_busca3 = st.columns(3)
+        with col_busca1:
+            busca_num_interno = st.text_input("Buscar por Número Interno")
+        with col_busca2:
+            busca_nome_guerra = st.text_input("Buscar por Nome de Guerra")
+        with col_busca3:
+            busca_nip = st.text_input("Buscar por NIP")
 
+        st.divider()
+
+        # Campos para os detalhes da ação
+        col_acao1, col_acao2 = st.columns(2)
+        with col_acao1:
             # Lógica para ordenar tipos de ação por frequência de uso
             if not acoes_df.empty:
                 contagem_acoes = acoes_df['tipo_acao_id'].value_counts().to_dict()
@@ -39,35 +47,57 @@ def show_lancamentos_page():
             tipos_opcoes = {f"{tipo['nome']} ({float(tipo.get('pontuacao', 0)):.1f} pts)": tipo for _, tipo in tipos_acao_df.iterrows()}
             tipo_selecionado_str = st.selectbox("Tipo de Ação (mais usados primeiro)", tipos_opcoes.keys())
 
-        with col2:
+        with col_acao2:
             data = st.date_input("Data", datetime.now())
-            # Descrição agora é opcional
             descricao = st.text_area("Descrição/Justificativa (Opcional)", height=100)
 
         if st.form_submit_button("Registrar Ação"):
-            # Validação foi ajustada: descrição não é mais obrigatória
-            if not all([aluno_selecionado_label, tipo_selecionado_str]):
-                st.error("Por favor, selecione um aluno e um tipo de ação.")
-            else:
-                try:
-                    aluno_id = alunos_opcoes_dict[aluno_selecionado_label]
-                    tipo_info = tipos_opcoes[tipo_selecionado_str]
-                    
-                    ids_numericos = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
-                    novo_id = int(ids_numericos.max()) + 1 if not ids_numericos.empty else 1
+            # Lógica de busca do aluno ao submeter o formulário
+            df_busca = alunos_df.copy()
+            if busca_num_interno:
+                df_busca = df_busca[df_busca['numero_interno'].astype(str) == str(busca_num_interno)]
+            if busca_nome_guerra:
+                df_busca = df_busca[df_busca['nome_guerra'].str.contains(busca_nome_guerra, case=False, na=False)]
+            if busca_nip:
+                # Garante que a coluna NIP exista e faz a busca
+                if 'nip' in df_busca.columns:
+                    df_busca = df_busca[df_busca['nip'].astype(str) == str(busca_nip)]
+                else:
+                    st.error("A coluna 'NIP' não foi encontrada na base de dados de alunos.")
+                    st.stop()
+            
+            # Validação do resultado da busca
+            if len(df_busca) == 1:
+                aluno_encontrado = df_busca.iloc[0]
+                aluno_id = aluno_encontrado['id']
+                
+                # Validação dos campos da ação
+                if not tipo_selecionado_str:
+                    st.error("Por favor, selecione um tipo de ação.")
+                else:
+                    try:
+                        tipo_info = tipos_opcoes[tipo_selecionado_str]
+                        ids_numericos = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
+                        novo_id = int(ids_numericos.max()) + 1 if not ids_numericos.empty else 1
 
-                    nova_acao = {
-                        'id': str(novo_id), 'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_info['id']),
-                        'tipo': tipo_info['nome'], 'descricao': descricao, 'data': data.strftime('%Y-%m-%d'),
-                        'usuario': st.session_state.username, 'lancado_faia': False
-                    }
-                    
-                    supabase.table("Acoes").insert(nova_acao).execute()
-                    st.success(f"Ação '{tipo_info['nome']}' registrada com sucesso!")
-                    load_data.clear()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao salvar a ação: {e}")
+                        nova_acao = {
+                            'id': str(novo_id), 'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_info['id']),
+                            'tipo': tipo_info['nome'], 'descricao': descricao, 'data': data.strftime('%Y-%m-%d'),
+                            'usuario': st.session_state.username, 'lancado_faia': False
+                        }
+                        
+                        supabase.table("Acoes").insert(nova_acao).execute()
+                        st.success(f"Ação '{tipo_info['nome']}' registrada com sucesso para o aluno {aluno_encontrado['nome_guerra']}!")
+                        load_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar a ação: {e}")
+
+            elif len(df_busca) > 1:
+                st.warning(f"Múltiplos alunos ({len(df_busca)}) encontrados. Por favor, refine a sua busca para identificar um único aluno.")
+            else:
+                st.error("Nenhum aluno encontrado com os critérios de busca fornecidos.")
+
 
     # --- HISTÓRICO DE LANÇAMENTOS (MODIFICADO) ---
     st.divider()
