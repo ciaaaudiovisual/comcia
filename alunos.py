@@ -235,26 +235,47 @@ def show_alunos():
                                         pontos = acao.get('pontuacao_efetiva', 0.0)
                                         cor = "green" if pontos > 0 else "red" if pontos < 0 else "gray"
                                         st.markdown(f"**{pd.to_datetime(acao['data']).strftime('%d/%m/%Y')} - {acao.get('nome', 'N/A')}** (`{pontos:+.1f} pts`): {acao.get('descricao','')}")
-                        
+                           # --- INÍCIO DA SEÇÃO CORRIGIDA ---
                         with tab_editar:
                             if check_permission('pode_editar_aluno'):
                                 st.subheader("Editar Dados do Aluno")
                                 with st.form(key=f"edit_form_{aluno_id}"):
-                                    new_media_academica = st.number_input("Média Acadêmica Final", value=float(aluno.get('media_academica', 0.0)), min_value=0.0, max_value=10.0, step=0.1, format="%.2f")
+                                    st.subheader("Informações Acadêmicas")
+                                    new_media_academica = st.number_input(
+                                        "Média Acadêmica Final", 
+                                        value=float(aluno.get('media_academica', 0.0)), 
+                                        min_value=0.0, max_value=10.0, step=0.1, format="%.2f"
+                                    )
                                     st.divider()
+                                    
+                                    st.subheader("Dados Pessoais")
+                                    # Campos que estavam faltando foram restaurados
                                     new_nome_guerra = st.text_input("Nome de Guerra", value=aluno.get('nome_guerra', ''))
-                                    # ... (outros campos de edição) ...
+                                    new_numero_interno = st.text_input("Número Interno", value=aluno.get('numero_interno', ''))
+                                    new_pelotao = st.text_input("Pelotão", value=aluno.get('pelotao', ''))
+                                    new_especialidade = st.text_input("Especialidade", value=aluno.get('especialidade', ''))
+                                    new_url_foto = st.text_input("URL da Foto", value=aluno.get('url_foto', ''))
+                                    
                                     if st.form_submit_button("Salvar Alterações"):
-                                        dados_update = { 'media_academica': new_media_academica, 'nome_guerra': new_nome_guerra, # ...
+                                        # Dicionário de atualização foi restaurado com todos os campos
+                                        dados_update = {
+                                            'media_academica': new_media_academica, 
+                                            'nome_guerra': new_nome_guerra,
+                                            'numero_interno': new_numero_interno, 
+                                            'pelotao': new_pelotao,
+                                            'especialidade': new_especialidade, 
+                                            'url_foto': new_url_foto
                                         }
                                         try:
                                             supabase.table("Alunos").update(dados_update).eq("id", aluno_id).execute()
-                                            st.success("Dados atualizados!"); load_data.clear(); st.rerun()
-                                        except Exception as e: st.error(f"Erro ao atualizar: {e}")
+                                            st.success("Dados atualizados!")
+                                            load_data.clear()
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Erro ao atualizar: {e}")
                             else:
                                 st.info("Você não tem permissão para editar os dados do aluno.")
-    else:
-        st.info("Nenhum aluno encontrado para os filtros selecionados.")
+                        # --- FIM DA SEÇÃO CORRIGIDA ---
     
     st.divider()
     
