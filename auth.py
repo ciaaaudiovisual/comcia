@@ -1,3 +1,8 @@
+import streamlit as st
+import pandas as pd
+from database import init_supabase_client, load_data
+
+# --- DIÁLOGO DE SOLICITAÇÃO DE CADASTRO (Sem alterações) ---
 @st.dialog("Solicitação de Acesso")
 def show_registration_dialog():
     """Exibe um formulário para um novo usuário solicitar acesso."""
