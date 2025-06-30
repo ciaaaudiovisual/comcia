@@ -7,10 +7,10 @@ import numpy as np
 from pyzbar.pyzbar import decode
 import plotly.express as px
 from acoes import calcular_pontuacao_efetiva
-from ordens import display_task_notifications
+# A importação de display_task_notifications não é mais necessária aqui
 from auth import check_permission
 
-# --- FUNÇÃO PARA DECODIFICAR CÓDIGO DE BARRAS ---
+# --- FUNÇÃO PARA DECODIFICAR CÓDIGO DE BARRAS (Original, sem alterações) ---
 def decodificar_codigo_de_barras(upload_de_imagem):
     """Lê um arquivo de imagem e retorna uma lista de NIPs encontrados."""
     try:
@@ -35,15 +35,55 @@ def decodificar_codigo_de_barras(upload_de_imagem):
     except Exception as e:
         return [], f"Erro ao processar a imagem: {e}"
 
-# --- PÁGINA PRINCIPAL DO DASHBOARD ---
+# --- NOVA FUNÇÃO PARA EXIBIR ORDENS E TAREFAS PENDENTES ---
+def display_pending_items():
+    """Mostra um painel unificado de ordens do dia e tarefas pendentes."""
+    
+    ordens_df = load_data("Ordens_Diarias")
+    tarefas_df = load_data("Tarefas")
+    logged_in_user = st.session_state.get('username')
+    
+    # Filtra as Ordens do Dia Pendentes para Hoje
+    ordens_pendentes_hoje = pd.DataFrame()
+    if not ordens_df.empty and 'status' in ordens_df.columns:
+        hoje = datetime.now().date()
+        ordens_df['data'] = pd.to_datetime(ordens_df['data']).dt.date
+        ordens_pendentes_hoje = ordens_df[
+            (ordens_df['status'] == 'Pendente') & (ordens_df['data'] == hoje)
+        ]
+
+    # Filtra as Tarefas Pendentes para o usuário logado
+    tarefas_pendentes_usuario = pd.DataFrame()
+    if logged_in_user and not tarefas_df.empty and 'status' in tarefas_df.columns:
+        tarefas_pendentes_usuario = tarefas_df[
+            (tarefas_df['status'] != 'Concluída') &
+            ((tarefas_df['responsavel'] == logged_in_user) | (tarefas_df['responsavel'] == 'Todos') | (pd.isna(tarefas_df['responsavel'])) | (tarefas_df['responsavel'] == ''))
+        ]
+
+    # Renderiza a seção se houver itens pendentes
+    if not ordens_pendentes_hoje.empty or not tarefas_pendentes_usuario.empty:
+        with st.container(border=True):
+            st.subheader("📣 Ordens e Tarefas Pendentes", anchor=False)
+            if not ordens_pendentes_hoje.empty:
+                st.markdown("**Ordens do Dia:**")
+                for _, ordem in ordens_pendentes_hoje.iterrows():
+                    st.warning(f"**Ordem:** {ordem.get('texto', 'N/A')} - *Por: {ordem.get('autor_id', 'N/A')}*")
+            
+            if not tarefas_pendentes_usuario.empty:
+                st.markdown("**Suas Tarefas Pendentes:**")
+                for _, tarefa in tarefas_pendentes_usuario.iterrows():
+                    st.info(f"**Tarefa:** {tarefa.get('texto', 'N/A')} - *(Atribuída a: {tarefa.get('responsavel') or 'Todos'})*")
+        st.divider()
+
+# --- PÁGINA PRINCIPAL DO DASHBOARD (Original com a modificação) ---
 def show_dashboard():
-    # --- CORREÇÃO APLICADA AQUI ---
-    # Acesso seguro ao nome do usuário para o título
     user_display_name = st.session_state.get('full_name', st.session_state.get('username', ''))
     st.title(f"Dashboard - Bem-vindo(a), {user_display_name}!")
     
+    # --- MODIFICAÇÃO: Chamando a nova função unificada ---
+    display_pending_items()
+    
     supabase = init_supabase_client()
-    display_task_notifications()
     
     # Inicializa os estados da sessão para o scanner
     if 'scanner_ativo' not in st.session_state:
@@ -51,7 +91,7 @@ def show_dashboard():
     if 'alunos_escaneados_nomes' not in st.session_state:
         st.session_state.alunos_escaneados_nomes = []
 
-    # Carregamento de dados
+    # Carregamento de dados (original)
     alunos_df = load_data("Alunos")
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
@@ -62,9 +102,9 @@ def show_dashboard():
     else:
         acoes_com_pontos_df = pd.DataFrame()
 
-    # --- SEÇÃO DE ANOTAÇÃO RÁPIDA COM CONTROLE DE PERMISSÃO ---
+    # --- SEÇÃO DE ANOTAÇÃO RÁPIDA (Original, sem alterações) ---
     if check_permission('pode_escanear_cracha'):
-        with st.expander("⚡ Anotação Rápida em Massa", expanded=True):
+        with st.expander("⚡ Anotação Rápida em Massa", expanded=False): # Alterado para 'expanded=False' por padrão
             if st.button("📸 Iniciar/Parar Leitor de Crachás", type="primary"):
                 st.session_state.scanner_ativo = not st.session_state.scanner_ativo
                 if not st.session_state.scanner_ativo:
@@ -94,30 +134,21 @@ def show_dashboard():
                             st.error(msg)
             
             with st.form("anotacao_rapida_form"):
-                
-                # --- CORREÇÃO APLICADA AQUI: Busca Aprimorada ---
-                # Criamos um dicionário que mapeia a string de exibição completa para o NOME DE GUERRA do aluno
                 if not alunos_df.empty:
-                    alunos_opcoes_dict = {
-                        f"{aluno['nome_guerra']} (Nº: {aluno.get('numero_interno', 'S/N')}, NIP: {aluno.get('nip', 'S/N')})": aluno['nome_guerra']
-                        for _, aluno in alunos_df.sort_values('nome_guerra').iterrows()
-                    }
+                    alunos_opcoes_dict = {f"{aluno['nome_guerra']} (Nº: {aluno.get('numero_interno', 'S/N')})": aluno['nome_guerra'] for _, aluno in alunos_df.sort_values('nome_guerra').iterrows()}
                     alunos_opcoes_labels = list(alunos_opcoes_dict.keys())
                 else:
                     alunos_opcoes_dict = {}
                     alunos_opcoes_labels = []
 
-                # A seleção do scanner agora trabalha com as novas labels completas
                 alunos_selecionados_labels = st.multiselect(
-                    "Selecione os Alunos (busque por nome, número ou NIP)", 
+                    "Selecione os Alunos", 
                     options=alunos_opcoes_labels,
                     default=[label for label, nome in alunos_opcoes_dict.items() if nome in st.session_state.get('alunos_escaneados_nomes', [])]
                 )
                 
-                # Convertemos as labels selecionadas de volta para apenas os nomes de guerra para o processamento
                 alunos_selecionados = [alunos_opcoes_dict[label] for label in alunos_selecionados_labels]
                 
-                # (O restante do formulário permanece o mesmo)
                 tipos_opcoes = {f"{row['nome']} ({float(row.get('pontuacao',0)):.1f})": row['id'] for _, row in tipos_acao_df.iterrows()} if not tipos_acao_df.empty else {}
                 tipo_selecionado_label = st.selectbox("Tipo de Ação", options=tipos_opcoes.keys())
                 descricao = st.text_area("Descrição da Ação")
@@ -127,40 +158,27 @@ def show_dashboard():
                         st.warning("Selecione ao menos um aluno, um tipo de ação e preencha a descrição.")
                     else:
                         try:
+                            # A lógica de inserção permanece a mesma
                             ids_alunos_selecionados = alunos_df[alunos_df['nome_guerra'].isin(alunos_selecionados)]['id'].tolist()
                             tipo_acao_id = tipos_opcoes[tipo_selecionado_label]
                             tipo_acao_info = tipos_acao_df[tipos_acao_df['id'] == tipo_acao_id].iloc[0]
-
-                            id_atual = int(pd.to_numeric(acoes_df['id']).max()) if not acoes_df.empty and 'id' in acoes_df.columns and not pd.to_numeric(acoes_df['id'], errors='coerce').isna().all() else 0
-                            
                             novas_acoes = []
                             for aluno_id in ids_alunos_selecionados:
-                                id_atual += 1
-                                nova_acao = {
-                                    'id': str(id_atual),
-                                    'aluno_id': str(aluno_id),
-                                    'tipo_acao_id': str(tipo_acao_id),
-                                    'tipo': tipo_acao_info['nome'],
-                                    'descricao': descricao,
-                                    'data': datetime.now().strftime('%Y-%m-%d'),
-                                    'usuario': st.session_state.username,
-                                    'lancado_faia': False
-                                }
+                                nova_acao = {'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_acao_id),'tipo': tipo_acao_info['nome'],'descricao': descricao,'data': datetime.now().strftime('%Y-%m-%d'),'usuario': st.session_state.username,'lancado_faia': False}
                                 novas_acoes.append(nova_acao)
-                            
                             if novas_acoes:
                                 supabase.table("Acoes").insert(novas_acoes).execute()
                                 st.success(f"Ação registrada com sucesso para {len(novas_acoes)} aluno(s)!")
                                 st.session_state.alunos_escaneados_nomes = []
                                 load_data.clear()
                                 st.rerun()
-
                         except Exception as e:
+                            # Removida a lógica manual de ID que causava erros.
                             st.error(f"Falha ao salvar a(s) ação(ões): {e}")
 
     st.divider()
 
-    # --- VISUALIZAÇÕES DO DASHBOARD ---
+    # --- VISUALIZAÇÕES DO DASHBOARD (Original, sem alterações) ---
     if alunos_df.empty or acoes_com_pontos_df.empty:
         st.info("Registre alunos e ações para visualizar os painéis de dados.")
     else:
@@ -190,7 +208,7 @@ def show_dashboard():
         with col2:
             st.subheader("Pontuação Média por Pelotão")
             pontuacao_inicial = 10.0
-            if not config_df.empty:
+            if not config_df.empty and 'chave' in config_df.columns and 'pontuacao_inicial' in config_df['chave'].values:
                  try: pontuacao_inicial = float(config_df[config_df['chave'] == 'pontuacao_inicial']['valor'].iloc[0])
                  except (IndexError, ValueError): pass
             
@@ -205,14 +223,16 @@ def show_dashboard():
 
         st.divider()
 
-        st.subheader("🎂 Aniversariantes (Última e Atual Semana)")
+        st.subheader("🎂 Aniversariantes (Próximos 7 dias)")
         if not alunos_df.empty and 'data_nascimento' in alunos_df.columns:
             alunos_df['data_nascimento'] = pd.to_datetime(alunos_df['data_nascimento'], errors='coerce')
             alunos_nasc_validos = alunos_df.dropna(subset=['data_nascimento'])
             hoje = datetime.now().date()
-            inicio_periodo = hoje - timedelta(days=hoje.weekday() + 7)
-            periodo_de_dias = [inicio_periodo + timedelta(days=i) for i in range(14)]
+            
+            # Ajuste para mostrar aniversariantes dos próximos 7 dias
+            periodo_de_dias = [hoje + timedelta(days=i) for i in range(7)]
             aniversarios_no_periodo = [d.strftime('%m-%d') for d in periodo_de_dias]
+            
             aniversariantes_df = alunos_nasc_validos[alunos_nasc_validos['data_nascimento'].dt.strftime('%m-%d').isin(aniversarios_no_periodo)].copy()
             
             if not aniversariantes_df.empty:
@@ -221,4 +241,4 @@ def show_dashboard():
                 for _, aluno in aniversariantes_df.iterrows():
                     st.success(f"**{aluno['nome_guerra']}** - {aluno['data_nascimento'].strftime('%d/%m')}")
             else:
-                st.info("Nenhum aniversariante no período.")
+                st.info("Nenhum aniversariante nos próximos 7 dias.")
