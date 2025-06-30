@@ -22,40 +22,32 @@ def show_registration_dialog():
                 st.warning("Todos os campos são obrigatórios.")
             else:
                 try:
-                    # 1. Cria o usuário no sistema de autenticação do Supabase. Ele ficará aguardando.
                     res = supabase.auth.sign_up({"email": email, "password": password})
-                    
                     if res.user:
-                        # 2. Insere a solicitação na nossa tabela de aprovação pendente.
                         supabase.table("RegistrationRequests").insert({
-                            "id": res.user.id,
-                            "email": email,
-                            "nome_completo": nome_completo,
-                            "nome_guerra": nome_guerra,
-                            "status": "pending"
+                            "id": res.user.id, "email": email, "nome_completo": nome_completo,
+                            "nome_guerra": nome_guerra, "status": "pending"
                         }).execute()
                         st.success("Solicitação enviada com sucesso! Aguarde a aprovação do administrador.")
                     else:
                         st.error("Não foi possível registrar o usuário no sistema de autenticação.")
-
                 except Exception as e:
                     st.error(f"Erro ao enviar solicitação: {e}")
 
 
 def logout():
-    """Limpa o estado da sessão para deslogar o usuário."""
-    keys_to_clear = ['authenticated', 'username', 'role', 'full_name', 'user_id', 'email']
+    """Limpa o estado da sessão para deslogar o usuário de forma segura."""
+    keys_to_clear = ['authenticated', 'username', 'role', 'full_name', 'user_id', 'email', 'user_session']
     for key in keys_to_clear:
         if key in st.session_state:
             del st.session_state[key]
     
-    # Opcional: Tenta deslogar do Supabase, mas a limpeza da sessão já protege o app
     try:
         supabase = init_supabase_client()
         if supabase:
             supabase.auth.sign_out()
     except Exception:
-        pass # Ignora erros se a conexão falhar aqui
+        pass
     
     st.toast("Você saiu com segurança.", icon="👋")
 
@@ -65,7 +57,7 @@ def logout():
 
 # --- FUNÇÃO DE LOGIN ATUALIZADA ---
 def login(supabase):
-    """Exibe o formulário de login e o link para solicitar acesso."""
+    """Exibe o formulário de login e armazena a sessão do usuário de forma segura."""
     st.title("Sistema de Gestão")
     st.subheader("Por favor, faça o login para continuar")
 
@@ -76,6 +68,7 @@ def login(supabase):
 
         if submitted:
             try:
+                # 1. Autentica e obtém a sessão completa
                 user_session = supabase.auth.sign_in_with_password({"email": email, "password": password})
                 user_id = user_session.user.id
                 users_df = load_data("Users")
@@ -83,7 +76,9 @@ def login(supabase):
 
                 if not user_profile.empty:
                     user_row = user_profile.iloc[0]
+                    # 2. Armazena os dados e a SESSÃO no st.session_state do usuário
                     st.session_state.authenticated = True
+                    st.session_state.user_session = user_session # GUARDA A SESSÃO
                     st.session_state.username = user_row['username']
                     st.session_state.full_name = user_row.get('nome', user_row['username'])
                     st.session_state.role = user_row.get('role', 'compel')
@@ -101,46 +96,35 @@ def login(supabase):
         show_registration_dialog()
 
 def check_authentication():
-    """Verifica se o usuário está autenticado. Se não, exibe a tela de login."""
+    """
+    Verifica se o usuário está autenticado de forma segura para cada sessão.
+    Esta é a principal correção para o problema de autenticação cruzada.
+    """
     supabase = init_supabase_client()
     if not supabase:
         st.error("Falha na conexão com o banco de dados. Verifique as configurações 'secrets.toml'.")
         st.stop()
-        
-    if not st.session_state.get('authenticated'):
+
+    # Verifica se já existe uma sessão de usuário no st.session_state
+    if st.session_state.get('authenticated') and st.session_state.get('user_session'):
         try:
-            user_session = supabase.auth.get_session()
-            if user_session and user_session.user:
-                user_id = user_session.user.id
-                users_df = load_data("Users")
-                user_profile = users_df[users_df['id'] == user_id]
-                
-                if not user_profile.empty:
-                    user_row = user_profile.iloc[0]
-                    st.session_state.authenticated = True
-                    st.session_state.username = user_row['username']
-                    st.session_state.full_name = user_row.get('nome', user_row['username'])
-                    st.session_state.role = user_row.get('role', 'compel')
-                    st.session_state.user_id = user_id
-                else:
-                    supabase.auth.sign_out()
-            else:
-                 st.session_state.authenticated = False
+            # Tenta usar os tokens da sessão para revalidar no cliente Supabase
+            # Esta ação é específica para a execução atual do script, não afeta outros usuários
+            supabase.auth.set_session(
+                st.session_state.user_session.access_token,
+                st.session_state.user_session.refresh_token
+            )
+            return True # O usuário está autenticado e a sessão foi restaurada corretamente
         except Exception:
-            st.session_state.authenticated = False
-
-    if not st.session_state.get('authenticated'):
-        login(supabase)
-        st.stop()
+            # Se os tokens forem inválidos ou expirados, limpa a sessão
+            logout()
+            st.rerun()
     
-    return True
-
-
-
-
-
-# --- FUNÇÕES DE PERMISSÃO (PERMANECEM AS MESMAS) ---
-
+    # Se não houver uma sessão autenticada, mostra a tela de login
+    login(supabase)
+    st.stop()
+    
+# --- FUNÇÕES DE PERMISSÃO (Sem alterações) ---
 @st.cache_data(ttl=300)
 def get_permissions_rules():
     return load_data("Permissions")
