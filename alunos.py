@@ -7,21 +7,39 @@ import math
 
 # --- FUNÇÃO HELPER DE CÁLCULO DE PONTUAÇÃO (Sem alterações) ---
 def calcular_pontuacao_efetiva(acoes_df: pd.DataFrame, tipos_acao_df: pd.DataFrame, config_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Junta ações com seus tipos, calcula a pontuação base e a pontuação efetiva.
+    Esta versão foi corrigida para lidar com tipos de ação inválidos ou apagados.
+    """
     if acoes_df.empty or tipos_acao_df.empty:
-        return pd.DataFrame()
+        return acoes_df.assign(pontuacao_efetiva=0) # Retorna o DF original com pontos zerados
         
     if 'pontuacao' not in tipos_acao_df.columns:
-        return pd.DataFrame()
+        st.error("ERRO CRÍTICO: A coluna 'pontuacao' não existe na tabela 'Tipos_Acao'.")
+        return acoes_df.assign(pontuacao_efetiva=0)
 
     acoes_copy = acoes_df.copy()
     tipos_copy = tipos_acao_df.copy()
 
-    tipos_copy['pontuacao'] = pd.to_numeric(tipos_copy['pontuacao'], errors='coerce').fillna(0)
+    # Garante que os IDs sejam do tipo string para uma junção (merge) fiável
     acoes_copy['tipo_acao_id'] = acoes_copy['tipo_acao_id'].astype(str)
     tipos_copy['id'] = tipos_copy['id'].astype(str)
     
-    acoes_com_pontos = pd.merge(acoes_copy, tipos_copy[['id', 'pontuacao', 'nome']], left_on='tipo_acao_id', right_on='id', how='left')
+    # Faz a junção para buscar os pontos e o nome do tipo de ação
+    acoes_com_pontos = pd.merge(
+        acoes_copy, 
+        tipos_copy[['id', 'pontuacao', 'nome']], 
+        left_on='tipo_acao_id', 
+        right_on='id', 
+        how='left'
+    )
     
+    # --- CORREÇÃO CRÍTICA ---
+    # Após a junção, converte a coluna de pontos para numérico.
+    # Se um tipo de ação não foi encontrado (resultando em NaN), preenche com 0.
+    acoes_com_pontos['pontuacao'] = pd.to_numeric(acoes_com_pontos['pontuacao'], errors='coerce').fillna(0)
+    
+    # Carrega as configurações para o período de adaptação
     config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
     fator_adaptacao = float(config_dict.get('fator_adaptacao', 0.25))
     try:
