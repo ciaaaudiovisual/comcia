@@ -75,11 +75,11 @@ def show_dashboard():
     config_df = load_data("Config")
     
     # --- INÍCIO DA CORREÇÃO ---
-    # Limpa espaços em branco extras nas colunas de filtro para garantir correspondência correta
+    # Normaliza os dados de filtro para garantir correspondências corretas
     if 'pelotao' in alunos_df.columns:
-        alunos_df['pelotao'] = alunos_df['pelotao'].str.strip()
+        alunos_df['pelotao'] = alunos_df['pelotao'].astype(str).str.strip().str.upper()
     if 'especialidade' in alunos_df.columns:
-        alunos_df['especialidade'] = alunos_df['especialidade'].str.strip()
+        alunos_df['especialidade'] = alunos_df['especialidade'].astype(str).str.strip().str.upper()
     # --- FIM DA CORREÇÃO ---
 
     if check_permission('pode_escanear_cracha'):
@@ -88,10 +88,10 @@ def show_dashboard():
             st.subheader("1. Selecione os Alunos")
             
             col1, col2, col3 = st.columns([2, 2, 1])
-            opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
+            opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p) and p])
             pelotao_selecionado = col1.selectbox("Filtrar por Pelotão:", opcoes_pelotao)
 
-            opcoes_especialidade = ["Todos"] + sorted([e for e in alunos_df['especialidade'].unique() if pd.notna(e)])
+            opcoes_especialidade = ["Todos"] + sorted([e for e in alunos_df['especialidade'].unique() if pd.notna(e) and e])
             especialidade_selecionada = col2.selectbox("Filtrar por Especialidade:", opcoes_especialidade)
 
             if col3.button("Limpar Seleção e Filtros"):
