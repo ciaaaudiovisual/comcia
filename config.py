@@ -25,6 +25,17 @@ FEATURES_LIST = [
 # FUNÇÕES DE CALLBACK E DIÁLOGOS
 # ==============================================================================
 
+# --- FUNÇÃO RENOMEADA PARA CORRIGIR O NameError ---
+def on_visibility_change(acao_id, supabase):
+    """Atualiza a visibilidade da ação nos gráficos."""
+    novo_status = st.session_state[f"visible_{acao_id}"]
+    try:
+        supabase.table("Tipos_Acao").update({'exibir_no_grafico': novo_status}).eq("id", acao_id).execute()
+        load_data.clear()
+        st.toast("Visibilidade atualizada.")
+    except Exception as e:
+        st.error(f"Falha ao atualizar visibilidade: {e}")
+
 @st.dialog("Editar Detalhes da Ação")
 def edit_tipo_acao_dialog(tipo_acao, supabase):
     """Diálogo para editar NOME e DESCRIÇÃO. A pontuação é editada na tela principal."""
@@ -59,7 +70,6 @@ def on_pontuacao_change(tipo_acao_id, pontuacao_atual, delta, supabase):
 def on_delete_tipo_acao_click(tipo_acao_id, supabase):
     """Callback para exclusão segura de um tipo de ação."""
     acoes_df = load_data("Acoes")
-    # Garante que ambos os IDs sejam strings para a comparação
     if not acoes_df.empty and str(tipo_acao_id) in acoes_df['tipo_acao_id'].astype(str).values:
         st.error("Não é possível excluir: este tipo de ação já está em uso.")
     else:
@@ -89,8 +99,10 @@ def show_config_gerais(supabase):
     config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
 
     def get_config_value(key, default, cast_type=float):
-        try: return cast_type(config_dict.get(key, default))
-        except (ValueError, TypeError): return default
+        try:
+            return cast_type(config_dict.get(key, default))
+        except (ValueError, TypeError):
+            return default
 
     linha_base = get_config_value('linha_base_conceito', defaults['linha_base_conceito'])
     impacto_acoes = get_config_value('impacto_max_acoes', defaults['impacto_max_acoes'])
@@ -195,7 +207,6 @@ def show_config_tipos_acao(supabase):
                 else:
                     ids = pd.to_numeric(tipos_acao_df['id'], errors='coerce').dropna()
                     novo_id = int(ids.max()) + 1 if not ids.empty else 1
-                    # Adiciona o novo campo com valor padrão True
                     novo_tipo = {'id': str(novo_id), 'nome': nome, 'descricao': descricao, 'pontuacao': pontuacao, 'exibir_no_grafico': True}
                     try:
                         supabase.table("Tipos_Acao").insert(novo_tipo).execute()
@@ -209,7 +220,7 @@ def show_config_tipos_acao(supabase):
         col_header1, col_header2, col_header3, col_header4 = st.columns([5, 2, 2, 2])
         col_header1.markdown("**Ação**")
         col_header2.markdown("<p style='text-align: center;'><b>Ajuste de Pontos</b></p>", unsafe_allow_html=True)
-        col_header3.markdown("<p style='text-align: center;'><b>Visibilidade Gráfico</b></p>", unsafe_allow_html=True)
+        col_header3.markdown("<p style='text-align: center;'><b>Visível no Gráfico</b></p>", unsafe_allow_html=True)
         col_header4.markdown("<p style='text-align: center;'><b>Opções</b></p>", unsafe_allow_html=True)
 
         for _, row in tipos_acao_df.sort_values('nome').iterrows():
@@ -228,11 +239,10 @@ def show_config_tipos_acao(supabase):
                 sub_c2.markdown(f"<p style='font-size: 1.25rem; text-align: center; color: {cor}; margin: 0; font-weight: 500; padding-top: 5px;'>{pontuacao_atual:+.1f}</p>", unsafe_allow_html=True)
                 sub_c3.button("➕", key=f"plus_{row['id']}", on_click=on_pontuacao_change, args=(row['id'], pontuacao_atual, 0.1, supabase), use_container_width=True)
             
-            # --- NOVA CHECKBOX ADICIONADA ---
             with col_visibility:
                 st.checkbox(
                     "Exibir",
-                    value=row.get('exibir_no_grafico', True), # Default para True se a coluna não existir
+                    value=row.get('exibir_no_grafico', True),
                     key=f"visible_{row['id']}",
                     on_change=on_visibility_change,
                     args=(row['id'], supabase),
@@ -247,11 +257,10 @@ def show_config_tipos_acao(supabase):
             
             st.markdown("---") 
 
-            
 def show_config_permissoes(supabase):
     st.subheader("Gestão de Permissões por Perfil")
     st.info("O perfil 'admin' sempre tem acesso total e não pode ser editado aqui.")
-    permissions_df = get_permissions_rules() # Usa a função em cache
+    permissions_df = get_permissions_rules()
     
     perfis_disponiveis = ["comcia", "compel", "supervisor"] 
     with st.form("permissions_form"):
@@ -273,7 +282,6 @@ def show_config_permissoes(supabase):
             for feature_key, feature_name, _ in FEATURES_LIST:
                 selected_roles = st.session_state[f"perm_{feature_key}"]
                 final_roles = set(selected_roles)
-                # Garante que 'admin' seja sempre incluído se for o padrão original
                 default_roles_str = next((f[2] for f in FEATURES_LIST if f[0] == feature_key), '')
                 if 'admin' in default_roles_str:
                     final_roles.add('admin')
