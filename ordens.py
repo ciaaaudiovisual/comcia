@@ -61,8 +61,8 @@ def on_set_status_click(item_id, new_status, supabase):
     try:
         supabase.table("Tarefas").update(update_data).eq('id', item_id).execute()
         st.toast(f"Item movido para '{new_status}'!")
+        # Apenas limpamos o cache. O st.rerun() é desnecessário e será removido.
         load_data.clear()
-        st.rerun()
     except Exception as e:
         st.error(f"Erro ao atualizar status: {e}")
 
@@ -71,8 +71,8 @@ def on_delete_click(item_id, supabase):
     try:
         supabase.table("Tarefas").delete().eq('id', item_id).execute()
         st.success("Item excluído com sucesso.")
+        # Apenas limpamos o cache. O st.rerun() é desnecessário e será removido.
         load_data.clear()
-        st.rerun()
     except Exception as e:
         st.error(f"Erro ao excluir: {e}")
 
