@@ -5,12 +5,10 @@ from database import load_data, init_supabase_client
 from auth import check_permission
 
 # ==============================================================================
-# DIÁLOGO DE EDIÇÃO
+# DIÁLOGO DE EDIÇÃO (Sem alterações)
 # ==============================================================================
-
 @st.dialog("Editar Item da Parada Diária")
 def edit_item_dialog(item_data, supabase):
-    """Exibe um formulário para editar um item existente."""
     st.write(f"Editando item: **{item_data.get('texto', '')[:50]}...**")
     
     usuarios_df = load_data("Users")
@@ -47,23 +45,25 @@ def edit_item_dialog(item_data, supabase):
                 st.error(f"Falha ao salvar as alterações: {e}")
 
 # ==============================================================================
-# FUNÇÕES DE CALLBACK
+# FUNÇÕES DE CALLBACK (MODIFICADAS)
 # ==============================================================================
+def on_set_status_click(item_id, new_status, supabase):
+    """Atualiza o status de um item para Pendente, Em Andamento ou Concluída."""
+    update_data = {'status': new_status}
+    
+    if new_status == 'Concluída':
+        update_data['data_conclusao'] = datetime.now().strftime('%Y-%m-%d %H:%M')
+        update_data['concluida_por'] = st.session_state.username
+    else:
+        # Limpa os dados de conclusão se for reaberto ou movido para outro estado
+        update_data['data_conclusao'] = None
+        update_data['concluida_por'] = None
 
-def on_status_change(item_id, supabase, key_name):
-    """Atualiza o status de um item (Pendente/Concluída)."""
-    novo_status_bool = st.session_state[key_name]
-    
-    update_data = {
-        'status': 'Concluída' if novo_status_bool else 'Pendente',
-        'data_conclusao': datetime.now().strftime('%Y-%m-%d %H:%M') if novo_status_bool else None,
-        'concluida_por': st.session_state.username if novo_status_bool else None
-    }
-    
     try:
         supabase.table("Tarefas").update(update_data).eq('id', item_id).execute()
-        st.toast("Status atualizado!")
+        st.toast(f"Item movido para '{new_status}'!")
         load_data.clear()
+        st.rerun()
     except Exception as e:
         st.error(f"Erro ao atualizar status: {e}")
 
@@ -78,11 +78,9 @@ def on_delete_click(item_id, supabase):
         st.error(f"Erro ao excluir: {e}")
 
 # ==============================================================================
-# PÁGINA PRINCIPAL
+# PÁGINA PRINCIPAL (MODIFICADA)
 # ==============================================================================
-
 def show_parada_diaria():
-    """Função principal que renderiza a página unificada 'Parada Diária'."""
     st.title("Parada Diária")
     st.caption("Controle unificado de itens e tarefas pendentes.")
     supabase = init_supabase_client()
@@ -93,56 +91,48 @@ def show_parada_diaria():
     with st.expander("➕ Adicionar Novo Item à Parada Diária"):
         with st.form("novo_item_parada", clear_on_submit=True):
             texto = st.text_area("Descrição do Item*")
-            
-            opcoes_responsavel = ["Não Atribuído"]
-            if not usuarios_df.empty:
-                opcoes_responsavel.extend(sorted(usuarios_df['username'].unique().tolist()))
-            
+            opcoes_responsavel = ["Não Atribuído"] + sorted(usuarios_df['username'].unique().tolist())
             responsavel = st.selectbox("Atribuir a:", opcoes_responsavel)
             
             if st.form_submit_button("Adicionar Item"):
                 if texto:
                     try:
-                        # --- INÍCIO DA CORREÇÃO ---
-                        # Calcula o próximo ID disponível para evitar o erro de valor nulo.
                         ids_numericos = pd.to_numeric(parada_diaria_df['id'], errors='coerce').dropna()
                         novo_id = int(ids_numericos.max()) + 1 if not ids_numericos.empty else 1
-                        
                         novo_item = {
-                            'id': str(novo_id), # Adiciona o novo ID ao registo
-                            'texto': texto,
-                            'status': 'Pendente',
+                            'id': str(novo_id), 'texto': texto, 'status': 'Pendente',
                             'responsavel': None if responsavel == "Não Atribuído" else responsavel,
                             'data_criacao': datetime.now().strftime('%Y-%m-%d'),
                         }
-                        # --- FIM DA CORREÇÃO ---
-
                         supabase.table("Tarefas").insert(novo_item).execute()
                         st.success("Item adicionado!")
-                        load_data.clear()
-                        st.rerun() # Garante que a página seja atualizada
+                        load_data.clear(); st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao salvar item: {e}")
                 else:
                     st.warning("A descrição do item é obrigatória.")
 
     st.divider()
-
     st.subheader("Lista de Itens")
+    
+    # --- FILTROS ATUALIZADOS ---
     col1, col2 = st.columns(2)
     with col1:
-        filtro_status = st.multiselect("Filtrar por Status:", ["Pendente", "Concluída"], default=["Pendente"])
+        filtro_status = st.multiselect("Filtrar por Status:", 
+                                       options=["Pendente", "Em Andamento", "Concluída"], 
+                                       default=["Pendente", "Em Andamento"])
     with col2:
         opcoes_filtro_resp = ["Todos"] + sorted(parada_diaria_df['responsavel'].dropna().unique().tolist())
         filtro_resp = st.multiselect("Filtrar por Responsável:", opcoes_filtro_resp, default=["Todos"])
 
+    # Lógica de filtragem
     filtered_df = parada_diaria_df
     if filtro_status:
         filtered_df = filtered_df[filtered_df['status'].isin(filtro_status)]
     if "Todos" not in filtro_resp:
-        mask = filtered_df['responsavel'].isin(filtro_resp)
-        filtered_df = filtered_df[mask]
+        filtered_df = filtered_df[filtered_df['responsavel'].isin(filtro_resp)]
     
+    # --- LAYOUT DOS CARDS MELHORADO ---
     if filtered_df.empty:
         st.info("Nenhum item encontrado para os filtros selecionados.")
     else:
@@ -151,38 +141,41 @@ def show_parada_diaria():
         
         for _, item in filtered_df_sorted.iterrows():
             with st.container(border=True):
-                is_done = (item['status'] == 'Concluída')
+                status_atual = item.get('status', 'Pendente')
                 
-                col_check, col_info, col_actions = st.columns([1, 8, 2])
-                
-                with col_check:
-                    st.checkbox(
-                        "Concluído", 
-                        value=is_done, 
-                        key=f"check_item_{item['id']}", 
-                        on_change=on_status_change, 
-                        args=(item['id'], supabase, f"check_item_{item['id']}"),
-                        label_visibility="collapsed"
-                    )
-                
+                # Cores e ícones para cada status
+                status_map = {
+                    'Pendente': ('🔵 Pendente', 'rgba(0, 100, 255, 0.1)'),
+                    'Em Andamento': ('🟠 Em Andamento', 'rgba(255, 165, 0, 0.1)'),
+                    'Concluída': ('✅ Concluída', 'rgba(0, 255, 0, 0.1)')
+                }
+                status_display, status_color = status_map.get(status_atual, ('⚪ Desconhecido', 'grey'))
+
+                # Layout do card em colunas
+                col_info, col_actions = st.columns([3, 1])
+
                 with col_info:
-                    text_style = "text-decoration: line-through; opacity: 0.6;" if is_done else ""
-                    st.markdown(f"<p style='{text_style}'>{item['texto']}</p>", unsafe_allow_html=True)
-                    
-                    responsavel_text = f"Responsável: {item.get('responsavel') or 'Não atribuído'}"
-                    data_criacao_fmt = f"Criado em: {item['data_criacao'].strftime('%d/%m/%Y')}" if pd.notna(item.get('data_criacao')) else ""
-                    
-                    if is_done and item.get('concluida_por'):
-                        concluido_text = f"Concluído por: {item['concluida_por']}"
-                        st.caption(f"✓ {responsavel_text} | {concluido_text}")
-                    else:
-                        st.caption(f"👤 {responsavel_text} | 🗓️ {data_criacao_fmt}")
+                    st.markdown(f"<span style='background-color:{status_color}; padding: 3px 8px; border-radius: 5px;'>{status_display}</span>", unsafe_allow_html=True)
+                    st.markdown(f"**{item['texto']}**")
+                    responsavel_text = f"**Responsável:** {item.get('responsavel') or 'Não atribuído'}"
+                    st.caption(responsavel_text)
 
                 with col_actions:
+                    st.write("") # Espaçamento
+                    # Botões de status contextuais
+                    if status_atual == 'Pendente':
+                        st.button("▶️ Iniciar", on_click=on_set_status_click, args=(item['id'], 'Em Andamento', supabase), key=f"start_{item['id']}", use_container_width=True)
+                    elif status_atual == 'Em Andamento':
+                        st.button("✅ Concluir", on_click=on_set_status_click, args=(item['id'], 'Concluída', supabase), key=f"finish_{item['id']}", use_container_width=True)
+                    
+                    # Botões de gerenciamento para Admins
                     if st.session_state.get('role') == 'admin':
-                        sub_c1, sub_c2 = st.columns(2)
-                        with sub_c1:
-                            if st.button("✏️", key=f"edit_item_{item['id']}", help="Editar este item"):
+                        if status_atual == 'Concluída':
+                           st.button("↩️ Reabrir", on_click=on_set_status_click, args=(item['id'], 'Pendente', supabase), key=f"reopen_{item['id']}", use_container_width=True)
+                        
+                        btn_c1, btn_c2 = st.columns(2)
+                        with btn_c1:
+                            if st.button("✏️", key=f"edit_{item['id']}", help="Editar item"):
                                 edit_item_dialog(item, supabase)
-                        with sub_c2:
-                            st.button("🗑️", key=f"del_item_{item['id']}", help="Excluir este item", on_click=on_delete_click, args=(item['id'], supabase))
+                        with btn_c2:
+                            st.button("🗑️", key=f"delete_{item['id']}", help="Excluir item", on_click=on_delete_click, args=(item['id'], supabase))
