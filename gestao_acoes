@@ -51,11 +51,18 @@ def on_launch_click(acao, supabase):
         supabase.table("Acoes").update({'lancado_faia': True}).eq('id', acao['id']).execute()
         load_data.clear() # Limpa o cache para garantir que a lista seja atualizada
         
-        # Chama o popup de sucesso
-        aluno_info = load_data("Alunos").query(f"id == '{acao['aluno_id']}'").iloc[0]
-        msg = f"A ação '{acao['nome']}' para o aluno {aluno_info['nome_guerra']} foi lançada na FAIA com sucesso!"
-        show_success_dialog(msg)
+        # Carrega os dados dos alunos para encontrar o nome para a mensagem de sucesso
+        alunos_df = load_data("Alunos")
+        aluno_info_query = alunos_df[alunos_df['id'] == acao['aluno_id']]
         
+        if not aluno_info_query.empty:
+            aluno_info = aluno_info_query.iloc[0]
+            msg = f"A ação '{acao['nome']}' para o aluno {aluno_info['nome_guerra']} foi lançada na FAIA com sucesso!"
+            show_success_dialog(msg)
+        else:
+            # Fallback caso o aluno não seja encontrado
+            show_success_dialog("Ação lançada na FAIA com sucesso!")
+
     except Exception as e:
         st.error(f"Ocorreu um erro ao lançar a ação: {e}")
 
@@ -134,7 +141,6 @@ def show_gestao_acoes():
             data = c5.date_input("Data", datetime.now())
             descricao = st.text_area("Descrição/Justificativa (Opcional)")
 
-            # Checkbox de lançamento direto (com permissão)
             lancar_direto = False
             if check_permission('acesso_pagina_lancamentos_faia'):
                 lancar_direto = st.checkbox("🚀 Lançar diretamente na FAIA (ignorar revisão)")
@@ -143,7 +149,7 @@ def show_gestao_acoes():
                 df_busca = alunos_df.copy()
                 if busca_num_interno: df_busca = df_busca[df_busca['numero_interno'] == busca_num_interno]
                 if busca_nome_guerra: df_busca = df_busca[df_busca['nome_guerra'].str.contains(busca_nome_guerra, case=False, na=False)]
-                if busca_nip: df_busca = df_busca[df_busca['nip'] == busca_nip]
+                if busca_nip and 'nip' in df_busca.columns: df_busca = df_busca[df_busca['nip'] == busca_nip]
 
                 if len(df_busca) == 1:
                     aluno_encontrado = df_busca.iloc[0]
@@ -173,7 +179,6 @@ def show_gestao_acoes():
     filtro_status_lancamento = c2.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"])
     ordenar_por = c3.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
 
-    # --- LÓGICA DE FILTRAGEM E ORDENAÇÃO ---
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
     df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'nome_guerra', 'pelotao']], left_on='aluno_id', right_on='id', how='inner')
     
@@ -183,11 +188,10 @@ def show_gestao_acoes():
 
     if ordenar_por == "Mais Antigos": df_display = df_display.sort_values(by="data", ascending=True)
     elif ordenar_por == "Aluno (A-Z)": df_display = df_display.sort_values(by="nome_guerra", ascending=True)
-    else: df_display = df_display.sort_values(by="data", ascending=False) # Padrão: Mais Recentes
+    else: df_display = df_display.sort_values(by="data", ascending=False) 
 
-    # --- EXPORTAÇÃO COM PRÉ-VISUALIZAÇÃO ---
     with c4:
-        alunos_no_filtro = df_display['nome_guerra'].unique().tolist()
+        alunos_no_filtro = sorted(df_display['nome_guerra'].unique().tolist())
         aluno_para_exportar = st.selectbox("Aluno para Relatório", ["Nenhum"] + alunos_no_filtro)
         if aluno_para_exportar != "Nenhum":
             if st.button("👁️ Visualizar FAIA"):
