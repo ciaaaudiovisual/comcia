@@ -181,7 +181,7 @@ def show_alunos():
     if especialidade_selecionada != "Todas": filtered_df = filtered_df[filtered_df['especialidade'] == especialidade_selecionada]
     if search:
         search_lower = search.lower()
-        # Garante que as colunas de busca existam para evitar erros
+        
         mask_nome_guerra = filtered_df['nome_guerra'].str.lower().str.contains(search_lower, na=False) if 'nome_guerra' in filtered_df else False
         mask_num_interno = filtered_df['numero_interno'].astype(str).str.contains(search_lower, na=False) if 'numero_interno' in filtered_df else False
         mask_nome_completo = filtered_df['nome_completo'].str.lower().str.contains(search_lower, na=False) if 'nome_completo' in filtered_df else False
@@ -211,11 +211,11 @@ def show_alunos():
                 
                 c3, c4 = st.columns(2)
                 pelotao = c3.text_input("Pelotão*")
-                especialidade = c4.text_input("Especialidade")
+                # --- MODIFICAÇÃO: Campo NIP adicionado ao formulário de criação ---
+                nip = c4.text_input("NIP")
                 
-                # --- NOVO CAMPO: Adição de NIP ---
-                nip = st.text_input("NIP")
-                
+                especialidade = st.text_input("Especialidade")
+
                 if st.form_submit_button("Adicionar Aluno"):
                     if not all([numero_interno, nome_guerra, pelotao]):
                         st.warning("Número, Nome de Guerra e Pelotão são obrigatórios.")
@@ -227,7 +227,7 @@ def show_alunos():
                                 'id': str(novo_id), 'numero_interno': numero_interno, 
                                 'nome_guerra': nome_guerra, 'nome_completo': nome_completo, 
                                 'pelotao': pelotao, 'especialidade': especialidade,
-                                'nip': nip # Adicionado ao registo
+                                'nip': nip
                             }
                             supabase.table("Alunos").insert(novo_aluno).execute()
                             st.success(f"Aluno {nome_guerra} adicionado!"); load_data.clear(); st.rerun()
@@ -297,7 +297,8 @@ def show_alunos():
                     st.image(image_source, width=100)
                 
                 with col_info:
-                    st.markdown(f"**{aluno.get('nome_guerra', 'N/A')}** (`{aluno.get('numero_interno', 'N/A')}`)")
+                    # --- MODIFICAÇÃO: Exibição do NIP no card ---
+                    st.markdown(f"**{aluno.get('nome_guerra', 'N/A')}** (`{aluno.get('numero_interno', 'N/A')}`) | **NIP:** `{aluno.get('nip', 'N/A')}`")
                     st.caption(f"Nome: {aluno.get('nome_completo', 'Não informado')}")
                     st.write(f"Pelotão: {aluno.get('pelotao', 'N/A')} | Especialidade: {aluno.get('especialidade', 'N/A')}")
                     cor_conceito = "green" if conceito_final_aluno >= 8.5 else "orange" if conceito_final_aluno >= 7.0 else "red"
@@ -334,18 +335,14 @@ def show_alunos():
                                 st.subheader("Editar Dados do Aluno")
                                 with st.form(key=f"edit_form_{aluno_id}"):
                                     st.subheader("Informações Acadêmicas")
-                                    new_media_academica = st.number_input(
-                                        "Média Acadêmica Final", 
-                                        value=float(aluno.get('media_academica', 0.0)), 
-                                        min_value=0.0, max_value=10.0, step=0.1, format="%.2f"
-                                    )
+                                    new_media_academica = st.number_input("Média Acadêmica Final", value=float(aluno.get('media_academica', 0.0)), min_value=0.0, max_value=10.0, step=0.1, format="%.2f")
                                     st.divider()
                                     
                                     st.subheader("Dados Pessoais")
                                     new_nome_completo = st.text_input("Nome Completo", value=aluno.get('nome_completo', ''))
                                     new_nome_guerra = st.text_input("Nome de Guerra", value=aluno.get('nome_guerra', ''))
                                     new_numero_interno = st.text_input("Número Interno", value=aluno.get('numero_interno', ''))
-                                    # --- NOVO CAMPO: Edição de NIP ---
+                                    # --- MODIFICAÇÃO: Campo de edição para o NIP ---
                                     new_nip = st.text_input("NIP", value=aluno.get('nip', ''))
                                     new_pelotao = st.text_input("Pelotão", value=aluno.get('pelotao', ''))
                                     new_especialidade = st.text_input("Especialidade", value=aluno.get('especialidade', ''))
@@ -360,7 +357,7 @@ def show_alunos():
                                             'pelotao': new_pelotao,
                                             'especialidade': new_especialidade, 
                                             'url_foto': new_url_foto,
-                                            'nip': new_nip # Adicionado à atualização
+                                            'nip': new_nip
                                         }
                                         try:
                                             supabase.table("Alunos").update(dados_update).eq("id", aluno_id).execute()
