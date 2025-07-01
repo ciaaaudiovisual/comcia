@@ -83,7 +83,7 @@ def show_dashboard():
                 opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
                 pelotao_selecionado = st.selectbox("Filtrar por Pelotão:", opcoes_pelotao, key="dash_pelotao")
             with col2:
-                opcoes_especialidade = ["Todas"] + sorted([e for e in alunos_df['especialidade'].unique() if pd.notna(e)])
+                opcoes_especialidade = ["Todos"] + sorted([e for e in alunos_df['especialidade'].unique() if pd.notna(e)])
                 especialidade_selecionada = st.selectbox("Filtrar por Especialidade:", opcoes_especialidade, key="dash_espec")
 
             df_filtrado = alunos_df.copy()
@@ -110,20 +110,24 @@ def show_dashboard():
             
             st.subheader("2. Defina e Registre a Ação")
             with st.form("anotacao_rapida_form_unificada"):
-                nomes_filtrados = df_filtrado['nome_guerra'].tolist()
-                nomes_default = sorted(list(set(nomes_filtrados + st.session_state.alunos_para_selecionar)))
-
                 # --- INÍCIO DA CORREÇÃO ---
-                # Limpa a lista de opções de todos os alunos para evitar o erro de ordenação com valores nulos
+                # Limpa a lista de nomes filtrados para remover valores nulos
+                nomes_unicos_filtrados = df_filtrado['nome_guerra'].unique()
+                nomes_filtrados_limpos = [str(nome) for nome in nomes_unicos_filtrados if pd.notna(nome)]
+                
+                # Junta a lista limpa com os nomes escaneados
+                nomes_default = sorted(list(set(nomes_filtrados_limpos + st.session_state.alunos_para_selecionar)))
+
+                # Limpa a lista de todas as opções de alunos para o seletor
                 nomes_unicos_opcoes = alunos_df['nome_guerra'].unique()
                 nomes_validos_opcoes = sorted([str(nome) for nome in nomes_unicos_opcoes if pd.notna(nome)])
+                # --- FIM DA CORREÇÃO ---
                 
                 alunos_selecionados_nomes = st.multiselect(
                     "Alunos Selecionados (pode refinar a seleção aqui):",
-                    options=nomes_validos_opcoes, # Usa a lista limpa e ordenada
+                    options=nomes_validos_opcoes,
                     default=nomes_default
                 )
-                # --- FIM DA CORREÇÃO ---
                 
                 if len(alunos_selecionados_nomes) > 0:
                     st.info(f"A ação será aplicada a **{len(alunos_selecionados_nomes)}** aluno(s).")
@@ -174,7 +178,9 @@ def show_dashboard():
         st.info("Registre alunos e ações para visualizar os painéis de dados.")
     else:
         acoes_com_pontos_df = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
-        acoes_com_pontos_df['data'] = pd.to_datetime(acoes_com_pontos_df['data'], errors='coerce')
+        if 'data' in acoes_com_pontos_df.columns:
+            acoes_com_pontos_df['data'] = pd.to_datetime(acoes_com_pontos_df['data'], errors='coerce')
+        
         hoje = datetime.now().date()
         acoes_hoje = acoes_com_pontos_df.dropna(subset=['data'])[acoes_com_pontos_df['data'].dt.date == hoje]
 
