@@ -194,7 +194,7 @@ def show_dashboard():
         acoes_hoje = acoes_com_pontos_df.dropna(subset=['data'])[acoes_com_pontos_df['data'].dt.date == hoje] if 'data' in acoes_com_pontos_df else pd.DataFrame()
 
         col1, col2 = st.columns(2)
-        
+      
         with col1:
             st.subheader("Destaques do Dia")
             if not acoes_hoje.empty:
@@ -204,17 +204,22 @@ def show_dashboard():
                     aluno_positivo_id = str(soma_pontos_hoje.idxmax())
                     aluno_info = alunos_df[alunos_df['id'] == aluno_positivo_id]
                     if not aluno_info.empty:
+                        # --- INÍCIO DA CORREÇÃO ---
                         aluno = aluno_info.iloc[0]
                         st.success(f"🌟 **Positivo**: {aluno.get('numero_interno', '')} - {aluno.get('nome_guerra', '')}")
+                        # --- FIM DA CORREÇÃO ---
 
                 if not soma_pontos_hoje[soma_pontos_hoje < 0].empty:
                     aluno_negativo_id = str(soma_pontos_hoje.idxmin())
                     aluno_info = alunos_df[alunos_df['id'] == aluno_negativo_id]
                     if not aluno_info.empty:
+                        # --- INÍCIO DA CORREÇÃO ---
                         aluno = aluno_info.iloc[0]
                         st.warning(f"⚠️ **Negativo**: {aluno.get('numero_interno', '')} - {aluno.get('nome_guerra', '')}")
+                        # --- FIM DA CORREÇÃO ---
             else:
                 st.info("Nenhuma ação registrada hoje.")
+
 
         with col2:
             st.subheader("Conceito Médio por Pelotão")
