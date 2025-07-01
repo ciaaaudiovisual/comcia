@@ -45,7 +45,7 @@ def edit_item_dialog(item_data, supabase):
                 st.error(f"Falha ao salvar as alterações: {e}")
 
 # ==============================================================================
-# FUNÇÕES DE CALLBACK (MODIFICADAS)
+# FUNÇÕES DE CALLBACK (Sem alterações)
 # ==============================================================================
 def on_set_status_click(item_id, new_status, supabase):
     """Atualiza o status de um item para Pendente, Em Andamento ou Concluída."""
@@ -55,7 +55,6 @@ def on_set_status_click(item_id, new_status, supabase):
         update_data['data_conclusao'] = datetime.now().strftime('%Y-%m-%d %H:%M')
         update_data['concluida_por'] = st.session_state.username
     else:
-        # Limpa os dados de conclusão se for reaberto ou movido para outro estado
         update_data['data_conclusao'] = None
         update_data['concluida_por'] = None
 
@@ -88,34 +87,41 @@ def show_parada_diaria():
     parada_diaria_df = load_data("Tarefas")
     usuarios_df = load_data("Users")
     
-    with st.expander("➕ Adicionar Novo Item à Parada Diária"):
-        with st.form("novo_item_parada", clear_on_submit=True):
-            texto = st.text_area("Descrição do Item*")
+    # --- MODIFICAÇÃO: Formulário agora é sempre visível ---
+    st.subheader("➕ Adicionar Novo Item")
+    with st.form("novo_item_parada", clear_on_submit=True):
+        texto = st.text_area("Descrição do Item*", label_visibility="collapsed", placeholder="Escreva a descrição do novo item aqui...")
+        
+        col_form1, col_form2 = st.columns([3, 1])
+        with col_form1:
             opcoes_responsavel = ["Não Atribuído"] + sorted(usuarios_df['username'].unique().tolist())
             responsavel = st.selectbox("Atribuir a:", opcoes_responsavel)
-            
-            if st.form_submit_button("Adicionar Item"):
-                if texto:
-                    try:
-                        ids_numericos = pd.to_numeric(parada_diaria_df['id'], errors='coerce').dropna()
-                        novo_id = int(ids_numericos.max()) + 1 if not ids_numericos.empty else 1
-                        novo_item = {
-                            'id': str(novo_id), 'texto': texto, 'status': 'Pendente',
-                            'responsavel': None if responsavel == "Não Atribuído" else responsavel,
-                            'data_criacao': datetime.now().strftime('%Y-%m-%d'),
-                        }
-                        supabase.table("Tarefas").insert(novo_item).execute()
-                        st.success("Item adicionado!")
-                        load_data.clear(); st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar item: {e}")
-                else:
-                    st.warning("A descrição do item é obrigatória.")
+        with col_form2:
+            st.write("") # Espaçamento
+            st.form_submit_button("Adicionar Item", use_container_width=True)
+
+        if st.session_state.get('form_submitted'):
+            if texto:
+                try:
+                    ids_numericos = pd.to_numeric(parada_diaria_df['id'], errors='coerce').dropna()
+                    novo_id = int(ids_numericos.max()) + 1 if not ids_numericos.empty else 1
+                    novo_item = {
+                        'id': str(novo_id), 'texto': texto, 'status': 'Pendente',
+                        'responsavel': None if responsavel == "Não Atribuído" else responsavel,
+                        'data_criacao': datetime.now().strftime('%Y-%m-%d'),
+                    }
+                    supabase.table("Tarefas").insert(novo_item).execute()
+                    st.success("Item adicionado!")
+                    load_data.clear(); st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar item: {e}")
+            else:
+                st.warning("A descrição do item é obrigatória.")
 
     st.divider()
     st.subheader("Lista de Itens")
     
-    # --- FILTROS ATUALIZADOS ---
+    # Filtros
     col1, col2 = st.columns(2)
     with col1:
         filtro_status = st.multiselect("Filtrar por Status:", 
@@ -132,7 +138,7 @@ def show_parada_diaria():
     if "Todos" not in filtro_resp:
         filtered_df = filtered_df[filtered_df['responsavel'].isin(filtro_resp)]
     
-    # --- LAYOUT DOS CARDS MELHORADO ---
+    # --- MODIFICAÇÃO: NOVO LAYOUT DOS CARDS ---
     if filtered_df.empty:
         st.info("Nenhum item encontrado para os filtros selecionados.")
     else:
@@ -142,40 +148,34 @@ def show_parada_diaria():
         for _, item in filtered_df_sorted.iterrows():
             with st.container(border=True):
                 status_atual = item.get('status', 'Pendente')
-                
-                # Cores e ícones para cada status
                 status_map = {
-                    'Pendente': ('🔵 Pendente', 'rgba(0, 100, 255, 0.1)'),
-                    'Em Andamento': ('🟠 Em Andamento', 'rgba(255, 165, 0, 0.1)'),
-                    'Concluída': ('✅ Concluída', 'rgba(0, 255, 0, 0.1)')
+                    'Pendente': '🔵 Pendente',
+                    'Em Andamento': '🟠 Em Andamento',
+                    'Concluída': '✅ Concluída'
                 }
-                status_display, status_color = status_map.get(status_atual, ('⚪ Desconhecido', 'grey'))
+                status_display = status_map.get(status_atual, '⚪ Desconhecido')
 
-                # Layout do card em colunas
-                col_info, col_actions = st.columns([3, 1])
+                col_status, col_info, col_actions = st.columns([2, 5, 3])
+
+                with col_status:
+                    st.markdown(f"**Status**\n\n{status_display}")
 
                 with col_info:
-                    st.markdown(f"<span style='background-color:{status_color}; padding: 3px 8px; border-radius: 5px;'>{status_display}</span>", unsafe_allow_html=True)
-                    st.markdown(f"**{item['texto']}**")
+                    st.markdown(f"**Descrição**\n\n{item['texto']}")
                     responsavel_text = f"**Responsável:** {item.get('responsavel') or 'Não atribuído'}"
                     st.caption(responsavel_text)
 
                 with col_actions:
-                    st.write("") # Espaçamento
-                    # Botões de status contextuais
+                    st.markdown("**Ações**")
                     if status_atual == 'Pendente':
                         st.button("▶️ Iniciar", on_click=on_set_status_click, args=(item['id'], 'Em Andamento', supabase), key=f"start_{item['id']}", use_container_width=True)
                     elif status_atual == 'Em Andamento':
                         st.button("✅ Concluir", on_click=on_set_status_click, args=(item['id'], 'Concluída', supabase), key=f"finish_{item['id']}", use_container_width=True)
                     
-                    # Botões de gerenciamento para Admins
                     if st.session_state.get('role') == 'admin':
                         if status_atual == 'Concluída':
                            st.button("↩️ Reabrir", on_click=on_set_status_click, args=(item['id'], 'Pendente', supabase), key=f"reopen_{item['id']}", use_container_width=True)
                         
                         btn_c1, btn_c2 = st.columns(2)
-                        with btn_c1:
-                            if st.button("✏️", key=f"edit_{item['id']}", help="Editar item"):
-                                edit_item_dialog(item, supabase)
-                        with btn_c2:
-                            st.button("🗑️", key=f"delete_{item['id']}", help="Excluir item", on_click=on_delete_click, args=(item['id'], supabase))
+                        btn_c1.button("✏️", key=f"edit_{item['id']}", help="Editar item", on_click=lambda i=item: edit_item_dialog(i, supabase), use_container_width=True)
+                        btn_c2.button("🗑️", key=f"delete_{item['id']}", help="Excluir item", on_click=on_delete_click, args=(item['id'], supabase), use_container_width=True)
