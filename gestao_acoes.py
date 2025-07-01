@@ -1,14 +1,3 @@
-Você tem toda a razão, peço desculpa. Na unificação das páginas para o ficheiro `gestao_acoes.py`, a funcionalidade de exclusão de um lançamento individual foi omitida acidentalmente.
-
-Reintroduzi o botão "Excluir" (🗑️) em cada item da lista de ações. Ele ficará visível ao lado do botão "Lançar" ou do status "Lançado", mas **apenas para utilizadores com a permissão adequada** (como `admin` ou `supervisor`), garantindo que a funcionalidade crítica não se perdesse.
-
-Abaixo está o ficheiro **`gestao_acoes.py`** completo e corrigido.
-
------
-
-### `gestao_acoes.py` (Corrigido)
-
-```python
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -301,4 +290,3 @@ def show_gestao_acoes():
                         if can_delete:
                             st.button("🗑️", key=f"delete_{acao['id']}", on_click=on_delete_action_click, args=(acao['id'], supabase), use_container_width=True, help="Excluir lançamento")
                 # --- FIM DA CORREÇÃO ---
-
