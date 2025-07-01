@@ -1,0 +1,17 @@
+# .streamlit/config.toml
+
+[theme]
+# Cor principal para botões primários, links, etc. (azul)
+primaryColor="#5c8ced"
+
+# Cor de fundo do app
+backgroundColor="#FFFFFF"
+
+# Cor de fundo para elementos como a barra lateral
+secondaryBackgroundColor="#F0F2F6"
+
+# Cor do texto
+textColor="#262730"
+
+# Tipo de fonte
+font="sans serif"
