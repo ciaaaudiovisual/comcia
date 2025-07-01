@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.io as pio # <--- ADICIONADO
+import plotly.io as pio
 from datetime import datetime, timedelta
 from database import load_data
 from auth import check_permission
@@ -12,7 +12,6 @@ from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
 # =============================================================================
 
 def render_graficos_tab(acoes_filtradas, alunos_filtrados, config_dict, view_mode):
-    """Renderiza a aba de Gráficos com base no modo de visualização."""
     st.header("Análise Gráfica")
     
     grafico_tipo = st.selectbox(
@@ -28,7 +27,6 @@ def render_graficos_tab(acoes_filtradas, alunos_filtrados, config_dict, view_mod
         show_ranking_acoes(acoes_filtradas)
 
 def render_rankings_tab(acoes_filtradas, alunos_filtrados):
-    """Renderiza a aba de Rankings e o botão de exportação."""
     st.header("Rankings de Alunos (baseado na Variação de Pontos)")
     
     if acoes_filtradas.empty:
@@ -60,7 +58,6 @@ def render_rankings_tab(acoes_filtradas, alunos_filtrados):
                 st.write(f"#{i+1}: **{aluno['nome_guerra']}** ({aluno['pelotao']}) - {aluno['pontuacao_efetiva']:+.2f} pts")
 
 def render_evolucao_tab(acoes_filtradas, alunos_filtrados, config_dict, view_mode):
-    """Renderiza a aba de Evolução com comparação múltipla."""
     st.header("Evolução de Desempenho")
     tipo_visao = st.radio("Analisar por:", ["Individual", "Pelotão"], horizontal=True)
     
@@ -69,7 +66,9 @@ def render_evolucao_tab(acoes_filtradas, alunos_filtrados, config_dict, view_mod
     else:
         show_evolucao_pelotao_comparativa(acoes_filtradas, alunos_filtrados, config_dict, view_mode)
 
-# --- FUNÇÕES DE GRÁFICOS CORRIGIDAS ---
+# =============================================================================
+# FUNÇÕES DE GRÁFICOS CORRIGIDAS
+# =============================================================================
 
 def show_pontuacao_pelotao(alunos_df, acoes_df, config_dict, view_mode):
     titulo = "Conceito Médio por Pelotão" if view_mode == 'Conceito Final' else "Saldo Médio de Pontos por Pelotão"
@@ -89,9 +88,8 @@ def show_pontuacao_pelotao(alunos_df, acoes_df, config_dict, view_mode):
     media_por_pelotao = alunos_com_pontos.groupby('pelotao')['valor_final'].mean().reset_index()
     fig = px.bar(media_por_pelotao, x='pelotao', y='valor_final', title=titulo, text_auto='.2f')
     
-    # --- CORREÇÃO ---
     fig.update_layout(template="plotly_white")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, theme=None) # <-- CORREÇÃO APLICADA
 
 def show_distribuicao_acoes(acoes_df):
     st.subheader("Distribuição de Tipos de Ação")
@@ -100,9 +98,8 @@ def show_distribuicao_acoes(acoes_df):
         contagem_tipos.columns = ['Tipo de Ação', 'Quantidade']
         fig = px.pie(contagem_tipos, values='Quantidade', names='Tipo de Ação', title='Distribuição de Tipos de Ação no Período', hole=0.4)
 
-        # --- CORREÇÃO ---
         fig.update_layout(template="plotly_white")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, theme=None) # <-- CORREÇÃO APLICADA
     else:
         st.info("Nenhuma ação para analisar nos filtros selecionados.")
 
@@ -151,9 +148,8 @@ def show_evolucao_individual_comparativa(acoes_df, alunos_df, config_dict, view_
         titulo = "Evolução do Conceito Final" if view_mode == 'Conceito Final' else "Evolução do Saldo de Pontos"
         fig = px.line(df_plot, x='data', y='valor_final', color='nome_guerra', title=titulo, markers=True, labels={'valor_final': view_mode, 'nome_guerra': 'Aluno'})
 
-        # --- CORREÇÃO ---
         fig.update_layout(template="plotly_white")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, theme=None) # <-- CORREÇÃO APLICADA
 
 def show_evolucao_pelotao_comparativa(acoes_df, alunos_df, config_dict, view_mode):
     st.subheader("Comparativo de Evolução por Pelotão")
@@ -169,26 +165,28 @@ def show_evolucao_pelotao_comparativa(acoes_df, alunos_df, config_dict, view_mod
         acoes_pelotao = acoes_df[acoes_df['aluno_id'].isin(alunos_do_pelotao_ids)].copy()
         if not acoes_pelotao.empty:
             acoes_pelotao.sort_values('data', inplace=True)
-            soma_pontos_acoes = acoes_pelotao['pontuacao_efetiva'].cumsum()
+            soma_pontos_acoes = acoes_pelotao.groupby('data')['pontuacao_efetiva'].sum().cumsum()
             
+            df_temp = soma_pontos_acoes.reset_index()
             if view_mode == 'Conceito Final':
                 linha_base = float(config_dict.get('linha_base_conceito', 8.5))
-                acoes_pelotao['valor_final'] = linha_base + soma_pontos_acoes / len(alunos_do_pelotao_ids)
+                df_temp['valor_final'] = linha_base + df_temp['pontuacao_efetiva'] / len(alunos_do_pelotao_ids)
             else:
-                acoes_pelotao['valor_final'] = soma_pontos_acoes
+                df_temp['valor_final'] = df_temp['pontuacao_efetiva']
             
-            acoes_pelotao['pelotao'] = pelotao
-            df_plot = pd.concat([df_plot, acoes_pelotao])
+            df_temp['pelotao'] = pelotao
+            df_plot = pd.concat([df_plot, df_temp])
     
     if not df_plot.empty:
         titulo = "Evolução do Conceito Médio" if view_mode == 'Conceito Final' else "Evolução do Saldo de Pontos Total"
         fig = px.line(df_plot, x='data', y='valor_final', color='pelotao', title=titulo, markers=True, labels={'valor_final': view_mode})
         
-        # --- CORREÇÃO ---
         fig.update_layout(template="plotly_white")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, theme=None) # <-- CORREÇÃO APLICADA
 
-# --- FUNÇÃO PRINCIPAL DA PÁGINA ---
+# =============================================================================
+# FUNÇÃO PRINCIPAL DA PÁGINA
+# =============================================================================
 def show_relatorios():
     st.title("Relatórios e Análises")
     if not check_permission('acesso_pagina_relatorios'):
