@@ -184,7 +184,6 @@ def show_config_tipos_acao(supabase):
         
     tipos_acao_df = load_data("Tipos_Acao")
     
-    # O formulário para adicionar novas ações não foi alterado.
     with st.expander("➕ Adicionar Novo Tipo de Ação"):
         with st.form("novo_tipo_acao", clear_on_submit=True):
             nome = st.text_input("Nome da Ação*")
@@ -196,7 +195,8 @@ def show_config_tipos_acao(supabase):
                 else:
                     ids = pd.to_numeric(tipos_acao_df['id'], errors='coerce').dropna()
                     novo_id = int(ids.max()) + 1 if not ids.empty else 1
-                    novo_tipo = {'id': str(novo_id), 'nome': nome, 'descricao': descricao, 'pontuacao': pontuacao}
+                    # Adiciona o novo campo com valor padrão True
+                    novo_tipo = {'id': str(novo_id), 'nome': nome, 'descricao': descricao, 'pontuacao': pontuacao, 'exibir_no_grafico': True}
                     try:
                         supabase.table("Tipos_Acao").insert(novo_tipo).execute()
                         st.success("Tipo de ação adicionado!"); load_data.clear()
@@ -206,48 +206,43 @@ def show_config_tipos_acao(supabase):
     st.subheader("Tipos de Ação Cadastrados")
 
     if not tipos_acao_df.empty:
-        # Cabeçalho para a lista de ações
-        col_header1, col_header2, col_header3 = st.columns([6, 3, 2])
+        col_header1, col_header2, col_header3, col_header4 = st.columns([5, 2, 2, 2])
         col_header1.markdown("**Ação**")
         col_header2.markdown("<p style='text-align: center;'><b>Ajuste de Pontos</b></p>", unsafe_allow_html=True)
-        col_header3.markdown("<p style='text-align: center;'><b>Opções</b></p>", unsafe_allow_html=True)
-        st.write("") 
+        col_header3.markdown("<p style='text-align: center;'><b>Visibilidade Gráfico</b></p>", unsafe_allow_html=True)
+        col_header4.markdown("<p style='text-align: center;'><b>Opções</b></p>", unsafe_allow_html=True)
 
-        # Loop para exibir cada item com o layout refinado
         for _, row in tipos_acao_df.sort_values('nome').iterrows():
             pontuacao_atual = float(row.get('pontuacao', 0.0))
             
-            col_info, col_score_ctrl, col_actions = st.columns([6, 3, 2])
+            col_info, col_score_ctrl, col_visibility, col_actions = st.columns([5, 2, 2, 2])
             
             with col_info:
                 st.markdown(f"**{row['nome']}**")
                 st.caption(row.get('descricao', 'Sem descrição.'))
             
-            # --- Grupo de controle de pontuação com ícones e fonte ajustados ---
             with col_score_ctrl:
                 sub_c1, sub_c2, sub_c3 = st.columns([1, 1, 1])
-                
-                # Botão de diminuir com emoji
-                sub_c1.button("➖", key=f"minus_{row['id']}", on_click=on_pontuacao_change, args=(row['id'], pontuacao_atual, -0.1, supabase), use_container_width=True, help="Diminuir 0.1")
-                
-                # Exibição da pontuação com fonte menor
+                sub_c1.button("➖", key=f"minus_{row['id']}", on_click=on_pontuacao_change, args=(row['id'], pontuacao_atual, -0.1, supabase), use_container_width=True)
                 cor = 'red' if pontuacao_atual < 0 else 'green' if pontuacao_atual > 0 else 'gray'
-                sub_c2.markdown(f"""
-                    <p style='font-size: 1.25rem; text-align: center; color: {cor}; margin: 0; font-weight: 500; padding-top: 5px;'>
-                        {pontuacao_atual:+.1f}
-                    </p>
-                """, unsafe_allow_html=True)
-                
-                # Botão de aumentar com emoji
-                sub_c3.button("➕", key=f"plus_{row['id']}", on_click=on_pontuacao_change, args=(row['id'], pontuacao_atual, 0.1, supabase), use_container_width=True, help="Aumentar 0.1")
+                sub_c2.markdown(f"<p style='font-size: 1.25rem; text-align: center; color: {cor}; margin: 0; font-weight: 500; padding-top: 5px;'>{pontuacao_atual:+.1f}</p>", unsafe_allow_html=True)
+                sub_c3.button("➕", key=f"plus_{row['id']}", on_click=on_pontuacao_change, args=(row['id'], pontuacao_atual, 0.1, supabase), use_container_width=True)
+            
+            # --- NOVA CHECKBOX ADICIONADA ---
+            with col_visibility:
+                st.checkbox(
+                    "Exibir",
+                    value=row.get('exibir_no_grafico', True), # Default para True se a coluna não existir
+                    key=f"visible_{row['id']}",
+                    on_change=on_visibility_change,
+                    args=(row['id'], supabase),
+                    label_visibility="collapsed"
+                )
 
-            # --- Grupo de botões de ação (Editar/Excluir) ---
             with col_actions:
                 sub_b1, sub_b2 = st.columns(2)
-                # Botão de Editar
                 if sub_b1.button("✏️", key=f"e_{row['id']}", help="Editar nome/descrição", use_container_width=True):
                     edit_tipo_acao_dialog(row, supabase)
-                # Botão de Excluir
                 sub_b2.button("🗑️", key=f"d_{row['id']}", help="Excluir", on_click=on_delete_tipo_acao_click, args=(row['id'], supabase), use_container_width=True)
             
             st.markdown("---") 
