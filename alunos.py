@@ -30,9 +30,6 @@ def create_csv_template():
 # FUNÇÕES DE CÁLCULO E DIÁLOGOS
 # ==============================================================================
 def calcular_pontuacao_efetiva(acoes_df: pd.DataFrame, tipos_acao_df: pd.DataFrame, config_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Junta ações com seus tipos, calcula a pontuação base e a pontuação efetiva.
-    """
     if acoes_df.empty or tipos_acao_df.empty:
         return pd.DataFrame()
         
@@ -75,7 +72,6 @@ def calcular_pontuacao_efetiva(acoes_df: pd.DataFrame, tipos_acao_df: pd.DataFra
     return acoes_com_pontos
 
 def calcular_conceito_final(soma_pontos_acoes: float, media_academica_aluno: float, todos_alunos_df: pd.DataFrame, config_dict: dict) -> float:
-    """Calcula o Conceito Final dinâmico de um aluno."""
     linha_base = float(config_dict.get('linha_base_conceito', 8.5))
     impacto_max_acoes = float(config_dict.get('impacto_max_acoes', 1.5))
     peso_academico = float(config_dict.get('peso_academico', 1.0))
@@ -97,7 +93,6 @@ def calcular_conceito_final(soma_pontos_acoes: float, media_academica_aluno: flo
 
 @st.dialog("Registrar Nova Ação")
 def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
-    """Exibe um diálogo para registrar uma nova ação para um aluno."""
     st.write(f"Aluno: **{aluno_nome}**")
     tipos_acao_df = load_data("Tipos_Acao")
     if tipos_acao_df.empty:
