@@ -3,19 +3,17 @@ from auth import check_authentication, check_permission, logout
 from database import load_data 
 from dashboard import show_dashboard
 from alunos import show_alunos
-from acoes import show_lancamentos_page
 from programacao import show_programacao
-# --- MODIFICAÇÃO: Importa a nova função da página ---
 from ordens import show_parada_diaria
 from relatorios import show_relatorios
 from config import show_config
 from admin_panel import show_admin_panel
-from lancamentos_faia import show_lancamentos_faia
+from gestao_acoes import show_gestao_acoes
 
 if not check_authentication():
     st.stop()
 
-st.sidebar.title("Sistema de Gestão")
+st.sidebar.title("Sistema de Gestão de Alunos")
 user_display_name = st.session_state.get('full_name', st.session_state.get('username', ''))
 st.sidebar.markdown(f"Usuário: **{user_display_name}**")
 if st.sidebar.button("Logout"):
@@ -23,23 +21,23 @@ if st.sidebar.button("Logout"):
     st.rerun()
 st.sidebar.divider()
 
-st.sidebar.header("Navegação")
+st.sidebar.header("Menu de Navegação")
 if st.sidebar.button("🔄 Recarregar Dados"):
     load_data.clear()
     st.toast("Os dados foram recarregados com sucesso!", icon="✅")
     st.rerun()
 
-# --- MODIFICAÇÃO: Atualiza o dicionário do menu ---
+# --- MODIFICAÇÃO: Menu atualizado com a página unificada ---
 menu_options = {
     "Dashboard": show_dashboard,
     "Programação": show_programacao,
     "Alunos": show_alunos,
-    "Lançamento de Ações": show_lancamentos_page,
-    "Parada Diária": show_parada_diaria, # Nome da página atualizado
+    "Gestão de Ações": show_gestao_acoes, # Nova página unificada
+    "Parada Diária": show_parada_diaria,
 }
 
-if check_permission('acesso_pagina_lancamentos_faia'):
-    menu_options["Lançamentos (FAIA)"] = show_lancamentos_faia
+# As permissões agora controlam o acesso à página unificada.
+# A permissão 'acesso_pagina_lancamentos_faia' ainda é útil para controlar quem pode lançar.
 if check_permission('acesso_pagina_relatorios'):
     menu_options["Relatórios"] = show_relatorios
 if check_permission('acesso_pagina_configuracoes'):
