@@ -168,7 +168,7 @@ def show_alunos():
         opcoes_especialidade = ["Todas"] + sorted([e for e in alunos_df['especialidade'].unique() if pd.notna(e)])
         especialidade_selecionada = st.selectbox("Filtrar por Especialidade:", opcoes_especialidade, on_change=reset_page)
     with col2:
-        search = st.text_input("Buscar por nome ou número...", key="search_aluno", on_change=reset_page)
+        search = st.text_input("Buscar por nome, número ou NIP...", key="search_aluno", on_change=reset_page)
         sort_option = st.selectbox(
             "Ordenar por:",
             ["Padrão (Nº Interno)", "Maior Conceito", "Menor Conceito"],
@@ -181,10 +181,13 @@ def show_alunos():
     if especialidade_selecionada != "Todas": filtered_df = filtered_df[filtered_df['especialidade'] == especialidade_selecionada]
     if search:
         search_lower = search.lower()
-        mask = (filtered_df['nome_guerra'].str.lower().str.contains(search_lower, na=False) | 
-                filtered_df['numero_interno'].astype(str).str.contains(search_lower, na=False) |
-                filtered_df['nome_completo'].str.lower().str.contains(search_lower, na=False))
-        filtered_df = filtered_df[mask]
+        # Garante que as colunas de busca existam para evitar erros
+        mask_nome_guerra = filtered_df['nome_guerra'].str.lower().str.contains(search_lower, na=False) if 'nome_guerra' in filtered_df else False
+        mask_num_interno = filtered_df['numero_interno'].astype(str).str.contains(search_lower, na=False) if 'numero_interno' in filtered_df else False
+        mask_nome_completo = filtered_df['nome_completo'].str.lower().str.contains(search_lower, na=False) if 'nome_completo' in filtered_df else False
+        mask_nip = filtered_df['nip'].astype(str).str.contains(search_lower, na=False) if 'nip' in filtered_df else False
+        
+        filtered_df = filtered_df[mask_nome_guerra | mask_num_interno | mask_nome_completo | mask_nip]
 
     if sort_option == "Maior Conceito":
         filtered_df = filtered_df.sort_values(by='conceito_final_calculado', ascending=False)
@@ -200,13 +203,19 @@ def show_alunos():
         with st.expander("➕ Opções de Cadastro"):
             st.subheader("Adicionar Novo Aluno")
             with st.form("add_aluno_form", clear_on_submit=True):
-                c1,c2 = st.columns(2)
+                c1, c2 = st.columns(2)
                 numero_interno = c1.text_input("Número Interno*")
                 nome_guerra = c2.text_input("Nome de Guerra*")
+                
                 nome_completo = st.text_input("Nome Completo")
-                c3,c4 = st.columns(2)
+                
+                c3, c4 = st.columns(2)
                 pelotao = c3.text_input("Pelotão*")
                 especialidade = c4.text_input("Especialidade")
+                
+                # --- NOVO CAMPO: Adição de NIP ---
+                nip = st.text_input("NIP")
+                
                 if st.form_submit_button("Adicionar Aluno"):
                     if not all([numero_interno, nome_guerra, pelotao]):
                         st.warning("Número, Nome de Guerra e Pelotão são obrigatórios.")
@@ -217,7 +226,8 @@ def show_alunos():
                             novo_aluno = {
                                 'id': str(novo_id), 'numero_interno': numero_interno, 
                                 'nome_guerra': nome_guerra, 'nome_completo': nome_completo, 
-                                'pelotao': pelotao, 'especialidade': especialidade
+                                'pelotao': pelotao, 'especialidade': especialidade,
+                                'nip': nip # Adicionado ao registo
                             }
                             supabase.table("Alunos").insert(novo_aluno).execute()
                             st.success(f"Aluno {nome_guerra} adicionado!"); load_data.clear(); st.rerun()
@@ -253,9 +263,7 @@ def show_alunos():
                             supabase.table("Alunos").upsert(records_to_upsert, on_conflict='numero_interno').execute()
                         
                         st.success(f"Importação concluída! {len(records_to_upsert)} registos foram processados.")
-                        load_data.clear()
-                        st.rerun()
-
+                        load_data.clear(); st.rerun()
                 except Exception as e:
                     st.error(f"Ocorreu um erro ao processar o ficheiro: {e}")
                     st.warning("Verifique se o seu ficheiro CSV usa o separador ';' e a codificação UTF-8.")
@@ -337,6 +345,8 @@ def show_alunos():
                                     new_nome_completo = st.text_input("Nome Completo", value=aluno.get('nome_completo', ''))
                                     new_nome_guerra = st.text_input("Nome de Guerra", value=aluno.get('nome_guerra', ''))
                                     new_numero_interno = st.text_input("Número Interno", value=aluno.get('numero_interno', ''))
+                                    # --- NOVO CAMPO: Edição de NIP ---
+                                    new_nip = st.text_input("NIP", value=aluno.get('nip', ''))
                                     new_pelotao = st.text_input("Pelotão", value=aluno.get('pelotao', ''))
                                     new_especialidade = st.text_input("Especialidade", value=aluno.get('especialidade', ''))
                                     new_url_foto = st.text_input("URL da Foto", value=aluno.get('url_foto', ''))
@@ -349,7 +359,8 @@ def show_alunos():
                                             'numero_interno': new_numero_interno, 
                                             'pelotao': new_pelotao,
                                             'especialidade': new_especialidade, 
-                                            'url_foto': new_url_foto
+                                            'url_foto': new_url_foto,
+                                            'nip': new_nip # Adicionado à atualização
                                         }
                                         try:
                                             supabase.table("Alunos").update(dados_update).eq("id", aluno_id).execute()
