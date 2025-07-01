@@ -110,16 +110,16 @@ def show_dashboard():
             
             with st.form("anotacao_rapida_form_simplificada"):
                 st.subheader("1. Selecione os Alunos")
-                st.info("Pode selecionar alunos individualmente na caixa abaixo OU deixar a caixa vazia e usar os filtros de Pelotão/Especialidade para uma anotação em grupo.")
+                st.info("Pode selecionar alunos individualmente OU usar os filtros de grupo (se a seleção manual estiver vazia).")
 
-                opcoes_labels = sorted(alunos_df['label'].unique())
+                opcoes_labels = sorted(alunos_df['label'].unique()) if not alunos_df.empty else []
                 alunos_selecionados_labels = st.multiselect(
                     "Seleção Manual de Alunos:",
                     options=opcoes_labels,
                     default=st.session_state.alunos_selecionados_scanner_labels
                 )
 
-                st.markdown("--- **OU** ---")
+                st.markdown("--- **OU, se a seleção acima estiver vazia, use os filtros abaixo** ---")
                 
                 col1, col2 = st.columns(2)
                 opcoes_pelotao = ["Nenhum"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p) and p])
@@ -142,10 +142,8 @@ def show_dashboard():
                 
                 if st.form_submit_button("Registrar Ação"):
                     alunos_para_anotar_ids = []
-                    # Prioriza a seleção manual
                     if alunos_selecionados_labels:
                         alunos_para_anotar_ids = [label_to_id_map[label] for label in alunos_selecionados_labels]
-                    # Se a seleção manual estiver vazia, usa os filtros de grupo
                     elif pelotao_selecionado != "Nenhum" or especialidade_selecionada != "Nenhuma":
                         df_filtrado = alunos_df.copy()
                         if pelotao_selecionado != "Nenhum":
@@ -158,12 +156,31 @@ def show_dashboard():
                         st.warning("Nenhum aluno foi selecionado. Por favor, selecione alunos manualmente ou use um filtro de grupo.")
                     else:
                         try:
-                            # (Lógica para salvar os dados no Supabase - inalterada)
-                            pass
+                            tipo_acao_id = tipos_opcoes[tipo_selecionado_label]
+                            tipo_acao_info = tipos_acao_df[tipos_acao_df['id'] == tipo_acao_id].iloc[0]
+                            
+                            ids_numericos = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
+                            ultimo_id = int(ids_numericos.max()) if not ids_numericos.empty else 0
+                            
+                            novas_acoes = []
+                            for i, aluno_id in enumerate(alunos_para_anotar_ids):
+                                novo_id = ultimo_id + 1 + i
+                                nova_acao = {
+                                    'id': str(novo_id), 'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_acao_id),
+                                    'tipo': tipo_acao_info['nome'], 'descricao': descricao, 'data': datetime.now().strftime('%Y-%m-%d'),
+                                    'usuario': st.session_state.username, 'lancado_faia': False
+                                }
+                                novas_acoes.append(nova_acao)
+                                
+                            if novas_acoes:
+                                supabase.table("Acoes").insert(novas_acoes).execute()
+                                st.success(f"Ação registrada com sucesso para {len(novas_acoes)} aluno(s)!")
+                                st.session_state.alunos_selecionados_scanner_labels = []
+                                load_data.clear()
+                                st.rerun()
                         except Exception as e:
                             st.error(f"Falha ao salvar a(s) ação(ões): {e}")
 
-   
     st.divider()
     
     if alunos_df.empty or acoes_df.empty:
@@ -187,7 +204,6 @@ def show_dashboard():
                     aluno_positivo_id = str(soma_pontos_hoje.idxmax())
                     aluno_info = alunos_df[alunos_df['id'] == aluno_positivo_id]
                     if not aluno_info.empty:
-                        # --- MODIFICAÇÃO: Exibe Número Interno e Nome de Guerra ---
                         aluno = aluno_info.iloc[0]
                         st.success(f"🌟 **Positivo**: {aluno.get('numero_interno', '')} - {aluno.get('nome_guerra', '')}")
 
@@ -195,7 +211,6 @@ def show_dashboard():
                     aluno_negativo_id = str(soma_pontos_hoje.idxmin())
                     aluno_info = alunos_df[alunos_df['id'] == aluno_negativo_id]
                     if not aluno_info.empty:
-                        # --- MODIFICAÇÃO: Exibe Número Interno e Nome de Guerra ---
                         aluno = aluno_info.iloc[0]
                         st.warning(f"⚠️ **Negativo**: {aluno.get('numero_interno', '')} - {aluno.get('nome_guerra', '')}")
             else:
@@ -203,15 +218,21 @@ def show_dashboard():
 
         with col2:
             st.subheader("Conceito Médio por Pelotão")
-            # ... (código para calcular a média por pelotão) ...
+            soma_pontos_por_aluno = acoes_com_pontos_df.groupby('aluno_id')['pontuacao_efetiva'].sum()
+            alunos_com_pontuacao = pd.merge(alunos_df, soma_pontos_por_aluno.rename('soma_pontos'), left_on='id', right_on='aluno_id', how='left').fillna(0)
+            
+            config_dict = config_df.set_index('chave')['valor'].to_dict()
+            alunos_com_pontuacao['pontuacao_final'] = alunos_com_pontuacao.apply(
+                lambda row: calcular_conceito_final(
+                    row['soma_pontos'], float(row.get('media_academica', 0.0)), alunos_df, config_dict
+                ), axis=1
+            )
+            media_por_pelotao = alunos_com_pontuacao.groupby('pelotao')['pontuacao_final'].mean().reset_index()
             
             fig = px.bar(media_por_pelotao, x='pelotao', y='pontuacao_final', title='Conceito Médio Atual', labels={'pelotao': 'Pelotão', 'pontuacao_final': 'Conceito Médio'}, color='pontuacao_final', color_continuous_scale='RdYlGn', text_auto='.2f')
             
-            # --- NOVA LINHA ADICIONADA AQUI ---
-            # Força o gráfico a usar o tema padrão do Plotly com fundo branco
             fig.update_layout(template="plotly_white")
             
-            # A chamada st.plotly_chart agora não precisa do theme=None
             st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
