@@ -230,7 +230,10 @@ def show_dashboard():
             media_por_pelotao = alunos_com_pontuacao.groupby('pelotao')['pontuacao_final'].mean().reset_index()
             
             fig = px.bar(media_por_pelotao, x='pelotao', y='pontuacao_final', title='Conceito Médio Atual', labels={'pelotao': 'Pelotão', 'pontuacao_final': 'Conceito Médio'}, color='pontuacao_final', color_continuous_scale='RdYlGn', text_auto='.2f')
-            st.plotly_chart(fig, use_container_width=True)
+            
+            # --- MODIFICAÇÃO APLICADA AQUI ---
+            # Adicionado o parâmetro theme=None para preservar as cores do gráfico
+            st.plotly_chart(fig, use_container_width=True, theme=None)
 
         st.divider()
 
