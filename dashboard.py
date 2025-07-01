@@ -6,7 +6,6 @@ from PIL import Image
 import numpy as np
 from pyzbar.pyzbar import decode
 import plotly.express as px
-# --- MODIFICAÇÃO: Importa as funções de cálculo a partir de 'alunos.py' ---
 from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
 from auth import check_permission
 
