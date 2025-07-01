@@ -1,3 +1,14 @@
+Você tem toda a razão, peço desculpa. Na unificação das páginas para o ficheiro `gestao_acoes.py`, a funcionalidade de exclusão de um lançamento individual foi omitida acidentalmente.
+
+Reintroduzi o botão "Excluir" (🗑️) em cada item da lista de ações. Ele ficará visível ao lado do botão "Lançar" ou do status "Lançado", mas **apenas para utilizadores com a permissão adequada** (como `admin` ou `supervisor`), garantindo que a funcionalidade crítica não se perdesse.
+
+Abaixo está o ficheiro **`gestao_acoes.py`** completo e corrigido.
+
+-----
+
+### `gestao_acoes.py` (Corrigido)
+
+```python
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -60,6 +71,16 @@ def on_launch_click(acao, supabase):
 
     except Exception as e:
         st.error(f"Ocorreu um erro ao lançar a ação: {e}")
+
+# --- NOVO: Callback para excluir uma ação ---
+def on_delete_action_click(action_id, supabase):
+    """Callback para excluir uma ação específica."""
+    try:
+        supabase.table("Acoes").delete().eq('id', action_id).execute()
+        st.toast("Ação excluída com sucesso!")
+        load_data.clear()
+    except Exception as e:
+        st.error(f"Erro ao excluir a ação: {e}")
 
 def launch_selected_actions(selected_ids, supabase):
     """Callback para lançar MÚLTIPLAS ações selecionadas."""
@@ -237,40 +258,47 @@ def show_gestao_acoes():
     if df_display.empty:
         st.info("Nenhuma ação encontrada para os filtros selecionados.")
     else:
-        # --- INÍCIO DA CORREÇÃO ---
-        # Remove quaisquer linhas duplicadas com base no ID da ação antes de exibir
         df_display.drop_duplicates(subset=['id'], keep='first', inplace=True)
-        # --- FIM DA CORREÇÃO ---
 
         for _, acao in df_display.iterrows():
             with st.container(border=True):
                 is_launched = acao.get('lancado_faia', False)
                 
-                if not is_launched and check_permission('acesso_pagina_lancamentos_faia'):
-                    c_check, c_info, c_actions = st.columns([1, 6, 2])
-                    with c_check:
-                        # Garante que a chave de seleção seja única
+                # --- INÍCIO DA CORREÇÃO ---
+                # Define a estrutura de colunas com base nos estados e permissões
+                can_launch = check_permission('acesso_pagina_lancamentos_faia')
+                can_delete = check_permission('pode_excluir_lancamento_faia')
+                
+                # A primeira coluna é sempre para o checkbox (se aplicável)
+                cols = st.columns([1, 6, 3]) if not is_launched and can_launch else st.columns([1, 6, 2])
+
+                # Lógica para o checkbox de seleção em massa
+                if not is_launched and can_launch:
+                    with cols[0]:
                         st.session_state.action_selection[acao['id']] = st.checkbox(
                             "Select", 
                             key=f"select_{acao['id']}", 
                             value=st.session_state.action_selection.get(acao['id'], False),
                             label_visibility="collapsed"
                         )
-                else:
-                    c_info, c_actions = st.columns([7, 2])
 
-                with c_info:
+                # Coluna de Informações da Ação
+                with cols[1]:
                     cor = "green" if acao['pontuacao_efetiva'] > 0 else "red" if acao['pontuacao_efetiva'] < 0 else "gray"
                     st.markdown(f"**{acao['nome_guerra']}** ({acao['pelotao']}) em {pd.to_datetime(acao['data']).strftime('%d/%m/%Y')}")
                     st.markdown(f"**Ação:** {acao['nome']} <span style='color:{cor}; font-weight:bold;'>({acao['pontuacao_efetiva']:+.1f} pts)</span>", unsafe_allow_html=True)
                     st.caption(f"Descrição: {acao['descricao']}" if acao['descricao'] else "Sem descrição.")
                 
-                with c_actions:
+                # Coluna de Botões de Ação
+                with cols[2]:
                     if is_launched:
                         st.success("✅ Lançado")
+                        if can_delete:
+                            st.button("🗑️", key=f"delete_{acao['id']}", on_click=on_delete_action_click, args=(acao['id'], supabase), use_container_width=True, help="Excluir lançamento")
                     else:
-                        if check_permission('acesso_pagina_lancamentos_faia'):
-                            st.button("Lançar", key=f"launch_{acao['id']}", 
-                                      on_click=on_launch_click, 
-                                      args=(acao, supabase), 
-                                      use_container_width=True)
+                        if can_launch:
+                            st.button("Lançar", key=f"launch_{acao['id']}", on_click=on_launch_click, args=(acao, supabase), use_container_width=True)
+                        if can_delete:
+                            st.button("🗑️", key=f"delete_{acao['id']}", on_click=on_delete_action_click, args=(acao['id'], supabase), use_container_width=True, help="Excluir lançamento")
+                # --- FIM DA CORREÇÃO ---
+
