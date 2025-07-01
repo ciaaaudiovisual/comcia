@@ -61,7 +61,6 @@ def on_launch_click(acao, supabase):
     except Exception as e:
         st.error(f"Ocorreu um erro ao lançar a ação: {e}")
 
-# --- NOVO: Callback para excluir uma ação ---
 def on_delete_action_click(action_id, supabase):
     """Callback para excluir uma ação específica."""
     try:
@@ -200,11 +199,16 @@ def show_gestao_acoes():
     st.divider()
     st.subheader("Fila de Revisão e Ações Lançadas")
 
-    c1, c2, c3, c4 = st.columns(4)
-    filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
-    filtro_status_lancamento = c2.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"])
-    ordenar_por = c3.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
+    # --- MODIFICAÇÃO: FILTROS DENTRO DE UM FORMULÁRIO ---
+    with st.form(key="filter_form"):
+        c1, c2, c3 = st.columns(3)
+        filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
+        filtro_status_lancamento = c2.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"])
+        ordenar_por = c3.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
+        
+        st.form_submit_button("🔎 Aplicar Filtros")
 
+    # A lógica de filtragem agora usa os valores do formulário submetido
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
     df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'nome_guerra', 'pelotao', 'nome_completo']], left_on='aluno_id', right_on='id', how='inner')
     
@@ -216,13 +220,15 @@ def show_gestao_acoes():
     elif ordenar_por == "Aluno (A-Z)": df_display = df_display.sort_values(by="nome_guerra", ascending=True)
     else: df_display = df_display.sort_values(by="data", ascending=False) 
 
-    with c4:
+    # Secção de exportação movida para fora do formulário de filtros
+    st.write("---")
+    with st.container():
         nomes_unicos = df_display['nome_guerra'].unique()
         nomes_validos = sorted([str(nome) for nome in nomes_unicos if pd.notna(nome)])
-        aluno_para_exportar = st.selectbox("Aluno para Relatório", ["Nenhum"] + nomes_validos)
+        aluno_para_exportar = st.selectbox("Selecione um Aluno para Gerar Relatório:", ["Nenhum"] + nomes_validos)
         
         if aluno_para_exportar != "Nenhum":
-            if st.button("👁️ Visualizar FAIA"):
+            if st.button("👁️ Visualizar FAIA para Exportar"):
                 aluno_info = df_display[df_display['nome_guerra'] == aluno_para_exportar].iloc[0]
                 acoes_do_aluno = df_display[df_display['nome_guerra'] == aluno_para_exportar]
                 preview_faia_dialog(aluno_info, acoes_do_aluno)
@@ -248,45 +254,34 @@ def show_gestao_acoes():
         st.info("Nenhuma ação encontrada para os filtros selecionados.")
     else:
         df_display.drop_duplicates(subset=['id'], keep='first', inplace=True)
-
         for _, acao in df_display.iterrows():
             with st.container(border=True):
                 is_launched = acao.get('lancado_faia', False)
                 
-                # --- INÍCIO DA CORREÇÃO ---
-                # Define a estrutura de colunas com base nos estados e permissões
                 can_launch = check_permission('acesso_pagina_lancamentos_faia')
                 can_delete = check_permission('pode_excluir_lancamento_faia')
                 
-                # A primeira coluna é sempre para o checkbox (se aplicável)
-                cols = st.columns([1, 6, 3]) if not is_launched and can_launch else st.columns([1, 6, 2])
-
-                # Lógica para o checkbox de seleção em massa
                 if not is_launched and can_launch:
+                    cols = st.columns([1, 6, 3])
                     with cols[0]:
-                        st.session_state.action_selection[acao['id']] = st.checkbox(
-                            "Select", 
-                            key=f"select_{acao['id']}", 
-                            value=st.session_state.action_selection.get(acao['id'], False),
-                            label_visibility="collapsed"
-                        )
+                        st.session_state.action_selection[acao['id']] = st.checkbox("Select", key=f"select_{acao['id']}", value=st.session_state.action_selection.get(acao['id'], False), label_visibility="collapsed")
+                    info_col, actions_col = cols[1], cols[2]
+                else:
+                    info_col, actions_col = st.columns([7, 3])
 
-                # Coluna de Informações da Ação
-                with cols[1]:
+                with info_col:
                     cor = "green" if acao['pontuacao_efetiva'] > 0 else "red" if acao['pontuacao_efetiva'] < 0 else "gray"
                     st.markdown(f"**{acao['nome_guerra']}** ({acao['pelotao']}) em {pd.to_datetime(acao['data']).strftime('%d/%m/%Y')}")
                     st.markdown(f"**Ação:** {acao['nome']} <span style='color:{cor}; font-weight:bold;'>({acao['pontuacao_efetiva']:+.1f} pts)</span>", unsafe_allow_html=True)
                     st.caption(f"Descrição: {acao['descricao']}" if acao['descricao'] else "Sem descrição.")
                 
-                # Coluna de Botões de Ação
-                with cols[2]:
+                with actions_col:
                     if is_launched:
                         st.success("✅ Lançado")
                         if can_delete:
-                            st.button("🗑️", key=f"delete_{acao['id']}", on_click=on_delete_action_click, args=(acao['id'], supabase), use_container_width=True, help="Excluir lançamento")
+                            st.button("🗑️ Excluir", key=f"delete_{acao['id']}", on_click=on_delete_action_click, args=(acao['id'], supabase), use_container_width=True)
                     else:
                         if can_launch:
                             st.button("Lançar", key=f"launch_{acao['id']}", on_click=on_launch_click, args=(acao, supabase), use_container_width=True)
                         if can_delete:
-                            st.button("🗑️", key=f"delete_{acao['id']}", on_click=on_delete_action_click, args=(acao['id'], supabase), use_container_width=True, help="Excluir lançamento")
-                # --- FIM DA CORREÇÃO ---
+                            st.button("🗑️ Excluir", key=f"delete_{acao['id']}", on_click=on_delete_action_click, args=(acao['id'], supabase), use_container_width=True)
