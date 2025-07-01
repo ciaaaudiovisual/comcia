@@ -4,13 +4,40 @@ from datetime import datetime
 from database import load_data, init_supabase_client
 from auth import check_permission
 import math
+from io import StringIO
 
-# --- FUNÇÃO HELPER DE CÁLCULO DE PONTUAÇÃO (Sem alterações) ---
+# ==============================================================================
+# FUNÇÃO DE APOIO PARA IMPORTAÇÃO
+# ==============================================================================
+def create_csv_template():
+    """Cria um template CSV em memória para o utilizador baixar."""
+    template_data = {
+        'numero_interno': ['101', '102'],
+        'nome_guerra': ['JOKER', 'PENGUIN'],
+        'nome_completo': ['Jack Napier', 'Oswald Cobblepot'],
+        'pelotao': ['Alfa', 'Bravo'],
+        'especialidade': ['Infantaria', 'Artilharia'],
+        'nip': ['12345678', '87654321'],
+        'url_foto': ['http://exemplo.com/foto1.png', 'http://exemplo.com/foto2.png'],
+        'media_academica': [8.5, 7.9],
+        'data_nascimento': ['1990-04-01', '1988-11-25']
+    }
+    df = pd.DataFrame(template_data)
+    # Usa ponto e vírgula como separador para compatibilidade com Excel em português
+    return df.to_csv(index=False, sep=';').encode('utf-8')
+
+# ==============================================================================
+# FUNÇÕES DE CÁLCULO E DIÁLOGOS
+# ==============================================================================
 def calcular_pontuacao_efetiva(acoes_df: pd.DataFrame, tipos_acao_df: pd.DataFrame, config_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Junta ações com seus tipos, calcula a pontuação base e a pontuação efetiva.
+    """
     if acoes_df.empty or tipos_acao_df.empty:
         return pd.DataFrame()
         
     if 'pontuacao' not in tipos_acao_df.columns:
+        st.error("ERRO CRÍTICO: A coluna 'pontuacao' não existe na tabela 'Tipos_Acao'.")
         return pd.DataFrame()
 
     acoes_copy = acoes_df.copy()
@@ -47,8 +74,8 @@ def calcular_pontuacao_efetiva(acoes_df: pd.DataFrame, tipos_acao_df: pd.DataFra
     acoes_com_pontos['pontuacao_efetiva'] = acoes_com_pontos.apply(aplicar_fator, axis=1)
     return acoes_com_pontos
 
-# --- FUNÇÃO PARA CALCULAR O CONCEITO FINAL (Sem alterações) ---
 def calcular_conceito_final(soma_pontos_acoes: float, media_academica_aluno: float, todos_alunos_df: pd.DataFrame, config_dict: dict) -> float:
+    """Calcula o Conceito Final dinâmico de um aluno."""
     linha_base = float(config_dict.get('linha_base_conceito', 8.5))
     impacto_max_acoes = float(config_dict.get('impacto_max_acoes', 1.5))
     peso_academico = float(config_dict.get('peso_academico', 1.0))
@@ -68,9 +95,9 @@ def calcular_conceito_final(soma_pontos_acoes: float, media_academica_aluno: flo
     conceito_final = linha_base + impacto_acoes + impacto_academico
     return max(0.0, min(conceito_final, 10.0))
 
-# --- DIÁLOGO DE REGISTRO DE AÇÃO (Sem alterações) ---
 @st.dialog("Registrar Nova Ação")
 def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
+    """Exibe um diálogo para registrar uma nova ação para um aluno."""
     st.write(f"Aluno: **{aluno_nome}**")
     tipos_acao_df = load_data("Tipos_Acao")
     if tipos_acao_df.empty:
@@ -94,7 +121,9 @@ def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
             except Exception as e:
                 st.error(f"Falha ao registrar a ação: {e}")
 
-# --- PÁGINA PRINCIPAL ---
+# ==============================================================================
+# PÁGINA PRINCIPAL
+# ==============================================================================
 def show_alunos():
     st.title("Gestão de Alunos")
     supabase = init_supabase_client()
@@ -176,30 +205,74 @@ def show_alunos():
         with st.expander("➕ Opções de Cadastro"):
             st.subheader("Adicionar Novo Aluno")
             with st.form("add_aluno_form", clear_on_submit=True):
-                c1,c2 = st.columns(2); numero_interno = c1.text_input("Número Interno*"); nome_guerra = c2.text_input("Nome de Guerra*")
+                c1,c2 = st.columns(2)
+                numero_interno = c1.text_input("Número Interno*")
+                nome_guerra = c2.text_input("Nome de Guerra*")
                 nome_completo = st.text_input("Nome Completo")
-                c3,c4 = st.columns(2); pelotao = c3.text_input("Pelotão*"); especialidade = c4.text_input("Especialidade")
+                c3,c4 = st.columns(2)
+                pelotao = c3.text_input("Pelotão*")
+                especialidade = c4.text_input("Especialidade")
                 if st.form_submit_button("Adicionar Aluno"):
-                    if not all([numero_interno, nome_guerra, pelotao]): st.warning("Número, Nome de Guerra e Pelotão são obrigatórios.")
+                    if not all([numero_interno, nome_guerra, pelotao]):
+                        st.warning("Número, Nome de Guerra e Pelotão são obrigatórios.")
                     else:
                         try:
                             ids = pd.to_numeric(alunos_df['id'], errors='coerce').dropna()
                             novo_id = int(ids.max()) + 1 if not ids.empty else 1
-                            novo_aluno = {'id': str(novo_id), 'numero_interno': numero_interno, 'nome_guerra': nome_guerra, 'nome_completo': nome_completo, 'pelotao': pelotao, 'especialidade': especialidade}
+                            novo_aluno = {
+                                'id': str(novo_id), 'numero_interno': numero_interno, 
+                                'nome_guerra': nome_guerra, 'nome_completo': nome_completo, 
+                                'pelotao': pelotao, 'especialidade': especialidade
+                            }
                             supabase.table("Alunos").insert(novo_aluno).execute()
                             st.success(f"Aluno {nome_guerra} adicionado!"); load_data.clear(); st.rerun()
-                        except Exception as e: st.error(f"Erro ao adicionar aluno: {e}")
+                        except Exception as e:
+                            st.error(f"Erro ao adicionar aluno: {e}")
             
             st.divider()
+            
             st.subheader("Importar Alunos em Massa (CSV)")
-            st.info("Funcionalidade de importação de CSV a ser implementada.")
+            st.info("Use o modelo para garantir a formatação correta. A importação irá ATUALIZAR alunos existentes (pelo Nº Interno) e ADICIONAR novos.")
+            
+            csv_template = create_csv_template()
+            st.download_button(
+                label="Baixar Modelo CSV",
+                data=csv_template,
+                file_name="modelo_alunos.csv",
+                mime="text/csv"
+            )
+
+            uploaded_file = st.file_uploader("Escolha um ficheiro CSV", type="csv")
+            if uploaded_file is not None:
+                try:
+                    new_alunos_df = pd.read_csv(uploaded_file, sep=';', dtype=str)
+                    new_alunos_df.fillna('', inplace=True)
+                    
+                    required_columns = ['numero_interno', 'nome_guerra', 'pelotao']
+                    if not all(col in new_alunos_df.columns for col in required_columns):
+                        st.error(f"Erro: O ficheiro CSV deve conter as colunas obrigatórias: {', '.join(required_columns)}")
+                    else:
+                        records_to_upsert = new_alunos_df.to_dict(orient='records')
+                        
+                        with st.spinner("A processar e importar alunos..."):
+                            supabase.table("Alunos").upsert(records_to_upsert, on_conflict='numero_interno').execute()
+                        
+                        st.success(f"Importação concluída! {len(records_to_upsert)} registos foram processados.")
+                        load_data.clear()
+                        st.rerun()
+
+                except Exception as e:
+                    st.error(f"Ocorreu um erro ao processar o ficheiro: {e}")
+                    st.warning("Verifique se o seu ficheiro CSV usa o separador ';' e a codificação UTF-8.")
 
     st.divider()
     
     ITEMS_PER_PAGE = 30
-    total_items = len(filtered_df); total_pages = math.ceil(total_items / ITEMS_PER_PAGE) if total_items > 0 else 1
+    total_items = len(filtered_df)
+    total_pages = math.ceil(total_items / ITEMS_PER_PAGE) if total_items > 0 else 1
     if st.session_state.page_num > total_pages: st.session_state.page_num = total_pages
-    start_idx = (st.session_state.page_num - 1) * ITEMS_PER_PAGE; end_idx = start_idx + ITEMS_PER_PAGE
+    start_idx = (st.session_state.page_num - 1) * ITEMS_PER_PAGE
+    end_idx = start_idx + ITEMS_PER_PAGE
     paginated_df = filtered_df.iloc[start_idx:end_idx]
     st.subheader(f"Alunos Exibidos ({len(paginated_df)} de {total_items})")
 
@@ -212,20 +285,13 @@ def show_alunos():
                 soma_pontos_observacional = aluno['soma_pontos_acoes']
                 conceito_final_aluno = aluno['conceito_final_calculado']
 
-                # --- INÍCIO DA CORREÇÃO ---
                 with col_img:
-                    # Obtém a URL do dataframe
                     foto_url = aluno.get('url_foto')
-
-                    # Verifica se a URL é uma string válida que começa com http
                     if isinstance(foto_url, str) and foto_url.startswith(('http://', 'https://')):
                         image_source = foto_url
                     else:
-                        # Se for inválida ou nula, usa a imagem de placeholder
                         image_source = "https://via.placeholder.com/100?text=Sem+Foto"
-                    
                     st.image(image_source, width=100)
-                # --- FIM DA CORREÇÃO ---
                 
                 with col_info:
                     st.markdown(f"**{aluno.get('nome_guerra', 'N/A')}** (`{aluno.get('numero_interno', 'N/A')}`)")
@@ -293,8 +359,7 @@ def show_alunos():
                                         try:
                                             supabase.table("Alunos").update(dados_update).eq("id", aluno_id).execute()
                                             st.success("Dados atualizados!")
-                                            load_data.clear()
-                                            st.rerun()
+                                            load_data.clear(); st.rerun()
                                         except Exception as e:
                                             st.error(f"Erro ao atualizar: {e}")
                             else:
