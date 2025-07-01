@@ -24,28 +24,27 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
     tipos_opcoes = {f"{tipo['nome']} ({float(tipo.get('pontuacao', 0.0)):.1f} pts)": tipo for _, tipo in tipos_acao_df.iterrows()}
     opcoes_labels = list(tipos_opcoes.keys())
 
-    # --- LÓGICA MODIFICADA: Encontra o índice da ação padrão ---
     default_index = 0
     try:
-        # Procura por uma opção que contenha as palavras-chave (ignora maiúsculas/minúsculas)
         default_option = next(s for s in opcoes_labels if "realizado" in s.lower() and "presença" in s.lower())
         default_index = opcoes_labels.index(default_option)
     except StopIteration:
-        default_index = 0 # Mantém o primeiro item se não encontrar
+        default_index = 0
 
     tipo_selecionado_str = st.selectbox(
         "Selecione o tipo de ação a ser lançada:",
         options=opcoes_labels,
-        index=default_index # Usa o índice encontrado como padrão
+        index=default_index
     )
 
-    # --- LÓGICA MODIFICADA: Botões renomeados e reordenados ---
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("Apenas FINALIZAR"):
+        # --- MODIFICAÇÃO: Botão secundário (cinza) ---
+        if st.button("Apenas FINALIZAR", type="secondary"):
             st.rerun()
             
     with col2:
+        # --- MODIFICAÇÃO: Botão primário (azul) ---
         if st.button("FINALIZAR E LANÇAR NA FAIA", type="primary"):
             if not tipo_selecionado_str:
                 st.warning("Por favor, selecione um tipo de ação."); return
@@ -164,7 +163,7 @@ def on_delete_click(evento_id, supabase):
         st.error(f"Falha ao excluir o evento: {e}")
 
 def create_excel_modelo():
-    sample_data = {'data': ['2025-06-30'],'horario': ['07:30'],'descricao': ['Guarnecimento dos postos'],'local': ['Portão Principal'],'responsavel': ['CIAA-34'],'obs': ['-'],'destinatarios': ['Todos']}
+    sample_data = {'data': ['2025-07-01'],'horario': ['07:30'],'descricao': ['Guarnecimento dos postos'],'local': ['Portão Principal'],'responsavel': ['CIAA-34'],'obs': ['-'],'destinatarios': ['Todos']}
     modelo_df = pd.DataFrame(sample_data); output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         modelo_df.to_excel(writer, index=False, sheet_name='Programacao')
@@ -248,7 +247,6 @@ def show_programacao():
             
             uploaded_file = st.file_uploader("Escolha um arquivo XLSX", type="xlsx")
             if uploaded_file:
-                # Lógica de importação de Excel pode ser adicionada aqui
                 st.info("Funcionalidade de importação de XLSX a ser implementada.")
             
     st.header("Agenda")
