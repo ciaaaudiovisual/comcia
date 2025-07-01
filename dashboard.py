@@ -219,22 +219,16 @@ def show_dashboard():
 
         with col2:
             st.subheader("Conceito Médio por Pelotão")
-            soma_pontos_por_aluno = acoes_com_pontos_df.groupby('aluno_id')['pontuacao_efetiva'].sum()
-            alunos_com_pontuacao = pd.merge(alunos_df, soma_pontos_por_aluno.rename('soma_pontos'), left_on='id', right_on='aluno_id', how='left').fillna(0)
-            
-            config_dict = config_df.set_index('chave')['valor'].to_dict()
-            alunos_com_pontuacao['pontuacao_final'] = alunos_com_pontuacao.apply(
-                lambda row: calcular_conceito_final(
-                    row['soma_pontos'], float(row.get('media_academica', 0.0)), alunos_df, config_dict
-                ), axis=1
-            )
-            media_por_pelotao = alunos_com_pontuacao.groupby('pelotao')['pontuacao_final'].mean().reset_index()
+            # ... (código para calcular a média por pelotão) ...
             
             fig = px.bar(media_por_pelotao, x='pelotao', y='pontuacao_final', title='Conceito Médio Atual', labels={'pelotao': 'Pelotão', 'pontuacao_final': 'Conceito Médio'}, color='pontuacao_final', color_continuous_scale='RdYlGn', text_auto='.2f')
             
-            # --- MODIFICAÇÃO APLICADA AQUI ---
-            # Adicionado o parâmetro theme=None para preservar as cores do gráfico
-            st.plotly_chart(fig, use_container_width=True, theme=None)
+            # --- NOVA LINHA ADICIONADA AQUI ---
+            # Força o gráfico a usar o tema padrão do Plotly com fundo branco
+            fig.update_layout(template="plotly_white")
+            
+            # A chamada st.plotly_chart agora não precisa do theme=None
+            st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
 
