@@ -105,12 +105,10 @@ def show_gestao_acoes():
     st.title("Gestão de Ações dos Alunos")
     supabase = init_supabase_client()
 
-    # Inicialização dos estados da sessão
     if 'action_selection' not in st.session_state: st.session_state.action_selection = {}
-    if 'search_results_df' not in st.session_state: st.session_state.search_results_df = pd.DataFrame()
+    if 'search_results_df_gestao' not in st.session_state: st.session_state.search_results_df_gestao = pd.DataFrame()
     if 'selected_student_id_gestao' not in st.session_state: st.session_state.selected_student_id_gestao = None
 
-    # Carregamento de dados
     alunos_df = load_data("Alunos")
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
@@ -118,42 +116,51 @@ def show_gestao_acoes():
     
     with st.expander("➕ Registrar Nova Ação", expanded=True):
         
-        # --- PAINEL DE BUSCA DE ALUNO ---
-        with st.form("search_form"):
+        # --- PAINEL DE BUSCA DE ALUNO COM CAMPOS SEPARADOS ---
+        with st.form("search_form_gestao"):
             st.subheader("Passo 1: Buscar Aluno")
-            query = st.text_input("Buscar por Nº Interno, Nome de Guerra, Nome Completo ou NIP:")
+            st.info("Preencha um ou mais campos e clique em 'Buscar'. A busca combinará todos os critérios.")
+            
+            c1, c2 = st.columns(2)
+            busca_num_interno = c1.text_input("Nº Interno")
+            busca_nome_guerra = c2.text_input("Nome de Guerra")
+            
+            c3, c4 = st.columns(2)
+            busca_nip = c3.text_input("NIP")
+            busca_nome_completo = c4.text_input("Nome Completo")
+            
             if st.form_submit_button("🔎 Buscar Aluno"):
-                if query:
-                    search_lower = query.lower()
-                    mask = (
-                        alunos_df['nome_guerra'].str.lower().str.contains(search_lower, na=False) | 
-                        alunos_df['numero_interno'].astype(str).str.contains(search_lower, na=False) |
-                        (alunos_df['nip'].astype(str).str.contains(search_lower, na=False) if 'nip' in alunos_df.columns else False) |
-                        (alunos_df['nome_completo'].str.lower().str.contains(search_lower, na=False) if 'nome_completo' in alunos_df.columns else False)
-                    )
-                    st.session_state.search_results_df = alunos_df[mask]
-                    st.session_state.selected_student_id_gestao = None # Limpa seleção anterior
-                else:
-                    st.session_state.search_results_df = pd.DataFrame()
+                df_busca = alunos_df.copy()
+                if busca_num_interno:
+                    df_busca = df_busca[df_busca['numero_interno'].astype(str).str.contains(busca_num_interno, na=False)]
+                if busca_nome_guerra:
+                    df_busca = df_busca[df_busca['nome_guerra'].str.contains(busca_nome_guerra, case=False, na=False)]
+                if busca_nip and 'nip' in df_busca.columns:
+                    df_busca = df_busca[df_busca['nip'].astype(str).str.contains(busca_nip, na=False)]
+                if busca_nome_completo and 'nome_completo' in df_busca.columns:
+                    df_busca = df_busca[df_busca['nome_completo'].str.contains(busca_nome_completo, case=False, na=False)]
+                
+                st.session_state.search_results_df_gestao = df_busca
+                st.session_state.selected_student_id_gestao = None
 
         # --- EXIBIÇÃO DOS RESULTADOS E SELEÇÃO ---
-        if not st.session_state.search_results_df.empty:
+        search_results_df = st.session_state.search_results_df_gestao
+        if not search_results_df.empty:
             st.write("Resultados da busca:")
-            search_results_df = st.session_state.search_results_df
-            search_results_df['label'] = search_results_df.apply(lambda row: f"{row.get('numero_interno', '')} - {row.get('nome_guerra', '')}", axis=1)
+            search_results_df['label'] = search_results_df.apply(lambda row: f"{row.get('numero_interno', '')} - {row.get('nome_guerra', '')} ({row.get('pelotao', '')})", axis=1)
             opcoes_encontradas = pd.Series(search_results_df.id.values, index=search_results_df.label).to_dict()
             
             aluno_selecionado_label = st.radio("Selecione um aluno:", options=opcoes_encontradas.keys(), index=None)
             if aluno_selecionado_label:
                 st.session_state.selected_student_id_gestao = str(opcoes_encontradas[aluno_selecionado_label])
-
+        
         # --- FORMULÁRIO DE REGISTO DE AÇÃO ---
         if st.session_state.selected_student_id_gestao:
             st.divider()
             aluno_selecionado = alunos_df[alunos_df['id'] == st.session_state.selected_student_id_gestao].iloc[0]
             st.subheader(f"Passo 2: Registrar Ação para {aluno_selecionado['nome_guerra']}")
 
-            with st.form("form_nova_acao", clear_on_submit=True):
+            with st.form("form_nova_acao"):
                 c1, c2 = st.columns(2)
                 if not acoes_df.empty and 'tipo_acao_id' in acoes_df.columns:
                     contagem = acoes_df['tipo_acao_id'].value_counts().to_dict()
@@ -184,12 +191,14 @@ def show_gestao_acoes():
                             }
                             supabase.table("Acoes").insert(nova_acao).execute()
                             st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!")
-                            st.session_state.search_results_df = pd.DataFrame()
+                            st.session_state.search_results_df_gestao = pd.DataFrame()
                             st.session_state.selected_student_id_gestao = None
-                            load_data.clear()
+                            load_data.clear(); st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao registrar ação: {e}")
-
+        else:
+            st.info("⬅️ Busque e selecione um aluno acima para registrar uma nova ação.")
+    
     st.divider()
     st.subheader("Fila de Revisão e Ações Lançadas")
 
