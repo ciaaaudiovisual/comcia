@@ -73,13 +73,20 @@ def show_dashboard():
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
+    
+    # --- INÍCIO DA CORREÇÃO ---
+    # Limpa espaços em branco extras nas colunas de filtro para garantir correspondência correta
+    if 'pelotao' in alunos_df.columns:
+        alunos_df['pelotao'] = alunos_df['pelotao'].str.strip()
+    if 'especialidade' in alunos_df.columns:
+        alunos_df['especialidade'] = alunos_df['especialidade'].str.strip()
+    # --- FIM DA CORREÇÃO ---
 
     if check_permission('pode_escanear_cracha'):
         with st.expander("⚡ Anotação Rápida em Massa", expanded=True):
             
             st.subheader("1. Selecione os Alunos")
             
-            # --- LÓGICA DE FILTROS MELHORADA ---
             col1, col2, col3 = st.columns([2, 2, 1])
             opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
             pelotao_selecionado = col1.selectbox("Filtrar por Pelotão:", opcoes_pelotao)
@@ -89,8 +96,6 @@ def show_dashboard():
 
             if col3.button("Limpar Seleção e Filtros"):
                 st.session_state.alunos_selecionados_scanner = []
-                # Para limpar os selectbox, precisaríamos de chaves e uma função de callback,
-                # mas um rerun já força a reavaliação e limpeza visual se o default mudar.
                 st.rerun()
 
             df_filtrado = alunos_df.copy()
@@ -117,11 +122,9 @@ def show_dashboard():
             
             st.subheader("2. Defina e Registre a Ação")
             with st.form("anotacao_rapida_form_unificada"):
-                # A lista de opções e pré-selecionados agora é controlada pelos filtros e scanner
                 nomes_filtrados_unicos = df_filtrado['nome_guerra'].unique()
                 nomes_filtrados_limpos = [str(nome) for nome in nomes_filtrados_unicos if pd.notna(nome)]
                 
-                # Junta a lista limpa com os nomes escaneados para criar a seleção final
                 nomes_para_exibir = sorted(list(set(nomes_filtrados_limpos + st.session_state.alunos_selecionados_scanner)))
                 
                 alunos_selecionados_nomes = st.multiselect(
@@ -183,7 +186,7 @@ def show_dashboard():
             acoes_com_pontos_df['data'] = pd.to_datetime(acoes_com_pontos_df['data'], errors='coerce')
         
         hoje = datetime.now().date()
-        acoes_hoje = acoes_com_pontos_df.dropna(subset=['data'])[acoes_com_pontos_df['data'].dt.date == hoje]
+        acoes_hoje = acoes_com_pontos_df.dropna(subset=['data'])[acoes_com_pontos_df['data'].dt.date == hoje] if 'data' in acoes_com_pontos_df else pd.DataFrame()
 
         col1, col2 = st.columns(2)
         
