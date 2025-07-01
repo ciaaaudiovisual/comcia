@@ -66,8 +66,8 @@ def show_dashboard():
     
     supabase = init_supabase_client()
     
-    if 'alunos_para_selecionar' not in st.session_state:
-        st.session_state.alunos_para_selecionar = []
+    if 'alunos_selecionados_scanner' not in st.session_state:
+        st.session_state.alunos_selecionados_scanner = []
 
     alunos_df = load_data("Alunos")
     acoes_df = load_data("Acoes")
@@ -78,18 +78,25 @@ def show_dashboard():
         with st.expander("⚡ Anotação Rápida em Massa", expanded=True):
             
             st.subheader("1. Selecione os Alunos")
-            col1, col2 = st.columns(2)
-            with col1:
-                opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
-                pelotao_selecionado = st.selectbox("Filtrar por Pelotão:", opcoes_pelotao, key="dash_pelotao")
-            with col2:
-                opcoes_especialidade = ["Todos"] + sorted([e for e in alunos_df['especialidade'].unique() if pd.notna(e)])
-                especialidade_selecionada = st.selectbox("Filtrar por Especialidade:", opcoes_especialidade, key="dash_espec")
+            
+            # --- LÓGICA DE FILTROS MELHORADA ---
+            col1, col2, col3 = st.columns([2, 2, 1])
+            opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
+            pelotao_selecionado = col1.selectbox("Filtrar por Pelotão:", opcoes_pelotao)
+
+            opcoes_especialidade = ["Todos"] + sorted([e for e in alunos_df['especialidade'].unique() if pd.notna(e)])
+            especialidade_selecionada = col2.selectbox("Filtrar por Especialidade:", opcoes_especialidade)
+
+            if col3.button("Limpar Seleção e Filtros"):
+                st.session_state.alunos_selecionados_scanner = []
+                # Para limpar os selectbox, precisaríamos de chaves e uma função de callback,
+                # mas um rerun já força a reavaliação e limpeza visual se o default mudar.
+                st.rerun()
 
             df_filtrado = alunos_df.copy()
             if pelotao_selecionado != "Todos":
                 df_filtrado = df_filtrado[df_filtrado['pelotao'] == pelotao_selecionado]
-            if especialidade_selecionada != "Todas":
+            if especialidade_selecionada != "Todos":
                 df_filtrado = df_filtrado[df_filtrado['especialidade'] == especialidade_selecionada]
             
             if st.toggle("Ativar Leitor de Crachás 📸"):
@@ -100,8 +107,8 @@ def show_dashboard():
                         alunos_encontrados_df = alunos_df[alunos_df['nip'].isin(nips)]
                         if not alunos_encontrados_df.empty:
                             nomes_encontrados = alunos_encontrados_df['nome_guerra'].tolist()
-                            novos_nomes = [n for n in nomes_encontrados if n not in st.session_state.alunos_para_selecionar]
-                            st.session_state.alunos_para_selecionar.extend(novos_nomes)
+                            novos_nomes = [n for n in nomes_encontrados if n not in st.session_state.alunos_selecionados_scanner]
+                            st.session_state.alunos_selecionados_scanner.extend(novos_nomes)
                             if novos_nomes:
                                 st.toast(f"Adicionado(s): {', '.join(novos_nomes)}", icon="✅")
                                 st.balloons()
@@ -110,23 +117,17 @@ def show_dashboard():
             
             st.subheader("2. Defina e Registre a Ação")
             with st.form("anotacao_rapida_form_unificada"):
-                # --- INÍCIO DA CORREÇÃO ---
-                # Limpa a lista de nomes filtrados para remover valores nulos
-                nomes_unicos_filtrados = df_filtrado['nome_guerra'].unique()
-                nomes_filtrados_limpos = [str(nome) for nome in nomes_unicos_filtrados if pd.notna(nome)]
+                # A lista de opções e pré-selecionados agora é controlada pelos filtros e scanner
+                nomes_filtrados_unicos = df_filtrado['nome_guerra'].unique()
+                nomes_filtrados_limpos = [str(nome) for nome in nomes_filtrados_unicos if pd.notna(nome)]
                 
-                # Junta a lista limpa com os nomes escaneados
-                nomes_default = sorted(list(set(nomes_filtrados_limpos + st.session_state.alunos_para_selecionar)))
-
-                # Limpa a lista de todas as opções de alunos para o seletor
-                nomes_unicos_opcoes = alunos_df['nome_guerra'].unique()
-                nomes_validos_opcoes = sorted([str(nome) for nome in nomes_unicos_opcoes if pd.notna(nome)])
-                # --- FIM DA CORREÇÃO ---
+                # Junta a lista limpa com os nomes escaneados para criar a seleção final
+                nomes_para_exibir = sorted(list(set(nomes_filtrados_limpos + st.session_state.alunos_selecionados_scanner)))
                 
                 alunos_selecionados_nomes = st.multiselect(
-                    "Alunos Selecionados (pode refinar a seleção aqui):",
-                    options=nomes_validos_opcoes,
-                    default=nomes_default
+                    "Alunos Selecionados:",
+                    options=nomes_para_exibir,
+                    default=nomes_para_exibir
                 )
                 
                 if len(alunos_selecionados_nomes) > 0:
@@ -166,7 +167,7 @@ def show_dashboard():
                             if novas_acoes:
                                 supabase.table("Acoes").insert(novas_acoes).execute()
                                 st.success(f"Ação registrada com sucesso para {len(novas_acoes)} aluno(s)!")
-                                st.session_state.alunos_para_selecionar = []
+                                st.session_state.alunos_selecionados_scanner = []
                                 load_data.clear()
                                 st.rerun()
                         except Exception as e:
