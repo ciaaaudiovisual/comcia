@@ -242,7 +242,7 @@ def show_dashboard():
             
             aniversariantes_df = alunos_nasc_validos[alunos_nasc_validos['data_nascimento'].dt.strftime('%m-%d').isin(aniversarios_no_periodo)].copy()
             
-            if not anivesariantes_df.empty:
+            if not aniversariantes_df.empty:
                 aniversariantes_df['dia_mes'] = aniversariantes_df['data_nascimento'].dt.strftime('%m-%d')
                 aniversariantes_df = aniversariantes_df.sort_values(by='dia_mes')
                 for _, aluno in aniversariantes_df.iterrows():
