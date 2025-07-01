@@ -61,7 +61,6 @@ def on_set_status_click(item_id, new_status, supabase):
     try:
         supabase.table("Tarefas").update(update_data).eq('id', item_id).execute()
         st.toast(f"Item movido para '{new_status}'!")
-        # Apenas limpamos o cache. O st.rerun() é desnecessário e será removido.
         load_data.clear()
     except Exception as e:
         st.error(f"Erro ao atualizar status: {e}")
@@ -71,13 +70,12 @@ def on_delete_click(item_id, supabase):
     try:
         supabase.table("Tarefas").delete().eq('id', item_id).execute()
         st.success("Item excluído com sucesso.")
-        # Apenas limpamos o cache. O st.rerun() é desnecessário e será removido.
         load_data.clear()
     except Exception as e:
         st.error(f"Erro ao excluir: {e}")
 
 # ==============================================================================
-# PÁGINA PRINCIPAL (MODIFICADA)
+# PÁGINA PRINCIPAL
 # ==============================================================================
 def show_parada_diaria():
     st.title("Parada Diária")
@@ -87,32 +85,32 @@ def show_parada_diaria():
     parada_diaria_df = load_data("Tarefas")
     usuarios_df = load_data("Users")
     
-    # --- MODIFICAÇÃO: Formulário agora é sempre visível ---
+    # --- MODIFICAÇÃO: Layout do formulário simplificado para robustez ---
     st.subheader("➕ Adicionar Novo Item")
     with st.form("novo_item_parada", clear_on_submit=True):
-        texto = st.text_area("Descrição do Item*", label_visibility="collapsed", placeholder="Escreva a descrição do novo item aqui...")
+        # Os elementos agora são colocados verticalmente
+        texto = st.text_area("Descrição do Item*", placeholder="Escreva a descrição do novo item aqui...")
         
-        col_form1, col_form2 = st.columns([3, 1])
-        with col_form1:
-            opcoes_responsavel = ["Não Atribuído"] + sorted(usuarios_df['username'].unique().tolist())
-            responsavel = st.selectbox("Atribuir a:", opcoes_responsavel)
-        with col_form2:
-            st.write("") # Espaçamento
-            st.form_submit_button("Adicionar Item", use_container_width=True)
-
-        if st.session_state.get('form_submitted'):
+        opcoes_responsavel = ["Não Atribuído"] + sorted(usuarios_df['username'].unique().tolist())
+        responsavel = st.selectbox("Atribuir a:", opcoes_responsavel)
+        
+        # O botão de submissão do formulário
+        if st.form_submit_button("Adicionar Item", use_container_width=True):
             if texto:
                 try:
                     ids_numericos = pd.to_numeric(parada_diaria_df['id'], errors='coerce').dropna()
                     novo_id = int(ids_numericos.max()) + 1 if not ids_numericos.empty else 1
                     novo_item = {
-                        'id': str(novo_id), 'texto': texto, 'status': 'Pendente',
+                        'id': str(novo_id), 
+                        'texto': texto, 
+                        'status': 'Pendente',
                         'responsavel': None if responsavel == "Não Atribuído" else responsavel,
                         'data_criacao': datetime.now().strftime('%Y-%m-%d'),
                     }
                     supabase.table("Tarefas").insert(novo_item).execute()
                     st.success("Item adicionado!")
-                    load_data.clear(); st.rerun()
+                    load_data.clear()
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao salvar item: {e}")
             else:
@@ -121,7 +119,6 @@ def show_parada_diaria():
     st.divider()
     st.subheader("Lista de Itens")
     
-    # Filtros
     col1, col2 = st.columns(2)
     with col1:
         filtro_status = st.multiselect("Filtrar por Status:", 
@@ -131,14 +128,12 @@ def show_parada_diaria():
         opcoes_filtro_resp = ["Todos"] + sorted(parada_diaria_df['responsavel'].dropna().unique().tolist())
         filtro_resp = st.multiselect("Filtrar por Responsável:", opcoes_filtro_resp, default=["Todos"])
 
-    # Lógica de filtragem
     filtered_df = parada_diaria_df
     if filtro_status:
         filtered_df = filtered_df[filtered_df['status'].isin(filtro_status)]
     if "Todos" not in filtro_resp:
         filtered_df = filtered_df[filtered_df['responsavel'].isin(filtro_resp)]
     
-    # --- MODIFICAÇÃO: NOVO LAYOUT DOS CARDS ---
     if filtered_df.empty:
         st.info("Nenhum item encontrado para os filtros selecionados.")
     else:
