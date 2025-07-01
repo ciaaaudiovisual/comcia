@@ -55,6 +55,16 @@ def display_pending_items():
                 st.info(f"**Tarefa:** {tarefa.get('texto', 'N/A')} - *(Atribuída a: {tarefa.get('responsavel') or 'Todos'})*")
         st.divider()
 
+def create_student_label(row):
+    """Cria uma etiqueta única e informativa para cada aluno."""
+    nome_guerra = str(row.get('nome_guerra', '')).strip()
+    numero_interno = str(row.get('numero_interno', 'S/N')).strip()
+    
+    if nome_guerra:
+        return f"{numero_interno} - {nome_guerra}"
+    else:
+        return f"{numero_interno} - (NOME DE GUERRA PENDENTE)"
+
 # ==============================================================================
 # PÁGINA PRINCIPAL DO DASHBOARD
 # ==============================================================================
@@ -66,58 +76,41 @@ def show_dashboard():
     
     supabase = init_supabase_client()
     
-    if 'alunos_selecionados_scanner' not in st.session_state:
-        st.session_state.alunos_selecionados_scanner = []
+    if 'alunos_selecionados_scanner_labels' not in st.session_state:
+        st.session_state.alunos_selecionados_scanner_labels = []
 
     alunos_df = load_data("Alunos")
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
     
+    # Cria a etiqueta e um mapa de etiqueta para ID para todos os alunos
+    if not alunos_df.empty:
+        alunos_df['label'] = alunos_df.apply(create_student_label, axis=1)
+        label_to_id_map = pd.Series(alunos_df.id.values, index=alunos_df.label).to_dict()
+
     if check_permission('pode_escanear_cracha'):
         with st.expander("⚡ Anotação Rápida em Massa", expanded=True):
-            
-            debug_mode = st.checkbox("Ativar Modo de Depuração")
             
             st.subheader("1. Selecione os Alunos")
             
             col1, col2, col3 = st.columns([2, 2, 1])
-            
-            # Normaliza os dados para os filtros
-            if 'pelotao' in alunos_df.columns:
-                alunos_df['pelotao_norm'] = alunos_df['pelotao'].astype(str).str.strip().str.upper()
-            else:
-                alunos_df['pelotao_norm'] = ''
-            
-            if 'especialidade' in alunos_df.columns:
-                alunos_df['especialidade_norm'] = alunos_df['especialidade'].astype(str).str.strip().str.upper()
-            else:
-                alunos_df['especialidade_norm'] = ''
-
-            opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao_norm'].unique() if pd.notna(p) and p])
+            opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p) and p])
             pelotao_selecionado = col1.selectbox("Filtrar por Pelotão:", opcoes_pelotao)
 
-            opcoes_especialidade = ["Todos"] + sorted([e for e in alunos_df['especialidade_norm'].unique() if pd.notna(e) and e])
+            opcoes_especialidade = ["Todos"] + sorted([e for e in alunos_df['especialidade'].unique() if pd.notna(e) and e])
             especialidade_selecionada = col2.selectbox("Filtrar por Especialidade:", opcoes_especialidade)
 
             if col3.button("Limpar Seleção e Filtros"):
-                st.session_state.alunos_selecionados_scanner = []
+                st.session_state.alunos_selecionados_scanner_labels = []
                 st.rerun()
 
             df_filtrado = alunos_df.copy()
             if pelotao_selecionado != "Todos":
-                df_filtrado = df_filtrado[df_filtrado['pelotao_norm'] == pelotao_selecionado]
+                df_filtrado = df_filtrado[df_filtrado['pelotao'] == pelotao_selecionado]
             if especialidade_selecionada != "Todos":
-                df_filtrado = df_filtrado[df_filtrado['especialidade_norm'] == especialidade_selecionada]
+                df_filtrado = df_filtrado[df_filtrado['especialidade'] == especialidade_selecionada]
             
-            if debug_mode:
-                st.write("--- MODO DE DEPURAÇÃO ATIVO ---")
-                st.write(f"**Opções de Pelotão no Filtro:**", opcoes_pelotao)
-                st.write(f"**Pelotão Selecionado:** `{pelotao_selecionado}`")
-                st.write("**Resultado do Filtro (df_filtrado):**")
-                st.dataframe(df_filtrado)
-                st.write("--- FIM DA DEPURAÇÃO ---")
-
             if st.toggle("Ativar Leitor de Crachás 📸"):
                 imagem_cracha = st.camera_input("Aponte a câmara para o código de barras", label_visibility="collapsed")
                 if imagem_cracha:
@@ -125,30 +118,28 @@ def show_dashboard():
                     if nips and 'nip' in alunos_df.columns:
                         alunos_encontrados_df = alunos_df[alunos_df['nip'].isin(nips)]
                         if not alunos_encontrados_df.empty:
-                            nomes_encontrados = alunos_encontrados_df['nome_guerra'].tolist()
-                            novos_nomes = [n for n in nomes_encontrados if n not in st.session_state.alunos_selecionados_scanner]
-                            st.session_state.alunos_selecionados_scanner.extend(novos_nomes)
-                            if novos_nomes:
-                                st.toast(f"Adicionado(s): {', '.join(novos_nomes)}", icon="✅")
-                                st.balloons()
+                            for _, aluno_row in alunos_encontrados_df.iterrows():
+                                label = create_student_label(aluno_row)
+                                if label not in st.session_state.alunos_selecionados_scanner_labels:
+                                    st.session_state.alunos_selecionados_scanner_labels.append(label)
+                            st.toast("Aluno(s) adicionado(s) à seleção!", icon="✅")
+                            st.balloons()
                     else:
                         st.error(msg)
             
             st.subheader("2. Defina e Registre a Ação")
             with st.form("anotacao_rapida_form_unificada"):
-                nomes_filtrados_unicos = df_filtrado['nome_guerra'].unique()
-                nomes_filtrados_limpos = [str(nome) for nome in nomes_filtrados_unicos if pd.notna(nome)]
+                labels_filtrados = df_filtrado['label'].tolist()
+                labels_default = sorted(list(set(labels_filtrados + st.session_state.alunos_selecionados_scanner_labels)))
                 
-                nomes_para_exibir = sorted(list(set(nomes_filtrados_limpos + st.session_state.alunos_selecionados_scanner)))
-                
-                alunos_selecionados_nomes = st.multiselect(
+                alunos_selecionados_labels = st.multiselect(
                     "Alunos Selecionados:",
-                    options=nomes_para_exibir,
-                    default=nomes_para_exibir
+                    options=sorted(alunos_df['label'].unique()),
+                    default=labels_default
                 )
                 
-                if len(alunos_selecionados_nomes) > 0:
-                    st.info(f"A ação será aplicada a **{len(alunos_selecionados_nomes)}** aluno(s).")
+                if len(alunos_selecionados_labels) > 0:
+                    st.info(f"A ação será aplicada a **{len(alunos_selecionados_labels)}** aluno(s).")
                 
                 if not acoes_df.empty:
                     contagem = acoes_df['tipo_acao_id'].value_counts().to_dict()
@@ -160,11 +151,11 @@ def show_dashboard():
                 descricao = st.text_area("Descrição da Ação (Opcional)")
                 
                 if st.form_submit_button("Registrar Ação em Massa"):
-                    if not alunos_selecionados_nomes or not tipo_selecionado_label:
+                    if not alunos_selecionados_labels or not tipo_selecionado_label:
                         st.warning("Selecione ao menos um aluno e um tipo de ação.")
                     else:
                         try:
-                            alunos_para_anotar_ids = alunos_df[alunos_df['nome_guerra'].isin(alunos_selecionados_nomes)]['id'].tolist()
+                            alunos_para_anotar_ids = [label_to_id_map[label] for label in alunos_selecionados_labels]
                             tipo_acao_id = tipos_opcoes[tipo_selecionado_label]
                             tipo_acao_info = tipos_acao_df[tipos_acao_df['id'] == tipo_acao_id].iloc[0]
                             
@@ -184,11 +175,12 @@ def show_dashboard():
                             if novas_acoes:
                                 supabase.table("Acoes").insert(novas_acoes).execute()
                                 st.success(f"Ação registrada com sucesso para {len(novas_acoes)} aluno(s)!")
-                                st.session_state.alunos_selecionados_scanner = []
+                                st.session_state.alunos_selecionados_scanner_labels = []
                                 load_data.clear()
                                 st.rerun()
                         except Exception as e:
                             st.error(f"Falha ao salvar a(s) ação(ões): {e}")
+
 
     st.divider()
     
