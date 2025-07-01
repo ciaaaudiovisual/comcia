@@ -39,12 +39,10 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
 
     col1, col2 = st.columns(2)
     with col1:
-        # --- MODIFICAÇÃO: Botão secundário (cinza) ---
         if st.button("Apenas FINALIZAR", type="secondary"):
             st.rerun()
             
     with col2:
-        # --- MODIFICAÇÃO: Botão primário (azul) ---
         if st.button("FINALIZAR E LANÇAR NA FAIA", type="primary"):
             if not tipo_selecionado_str:
                 st.warning("Por favor, selecione um tipo de ação."); return
@@ -150,7 +148,7 @@ def on_finalize_click(evento, supabase):
             
         st.toast("Evento finalizado!", icon="🎉")
         load_data.clear()
-        st.rerun()
+        # st.rerun() foi removido daqui para corrigir o aviso "no-op"
     except Exception as e:
         st.error(f"Falha ao finalizar o evento: {e}")
 
