@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.io as pio # <--- ADICIONADO
 from datetime import datetime, timedelta
-from database import load_data, init_supabase_client
+from database import load_data
 from auth import check_permission
 from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
 
@@ -26,7 +27,7 @@ def render_graficos_tab(acoes_filtradas, alunos_filtrados, config_dict, view_mod
     elif grafico_tipo == "Ranking de Ações (Top 5)":
         show_ranking_acoes(acoes_filtradas)
 
-def render_rankings_tab(acoes_filtradas, alunos_filtrados, periodo_selecionado, pelotao_selecionado):
+def render_rankings_tab(acoes_filtradas, alunos_filtrados):
     """Renderiza a aba de Rankings e o botão de exportação."""
     st.header("Rankings de Alunos (baseado na Variação de Pontos)")
     
@@ -68,7 +69,7 @@ def render_evolucao_tab(acoes_filtradas, alunos_filtrados, config_dict, view_mod
     else:
         show_evolucao_pelotao_comparativa(acoes_filtradas, alunos_filtrados, config_dict, view_mode)
 
-# --- NOVAS E APRIMORADAS FUNÇÕES DE GRÁFICOS ---
+# --- FUNÇÕES DE GRÁFICOS CORRIGIDAS ---
 
 def show_pontuacao_pelotao(alunos_df, acoes_df, config_dict, view_mode):
     titulo = "Conceito Médio por Pelotão" if view_mode == 'Conceito Final' else "Saldo Médio de Pontos por Pelotão"
@@ -87,6 +88,9 @@ def show_pontuacao_pelotao(alunos_df, acoes_df, config_dict, view_mode):
 
     media_por_pelotao = alunos_com_pontos.groupby('pelotao')['valor_final'].mean().reset_index()
     fig = px.bar(media_por_pelotao, x='pelotao', y='valor_final', title=titulo, text_auto='.2f')
+    
+    # --- CORREÇÃO ---
+    fig.update_layout(template="plotly_white")
     st.plotly_chart(fig, use_container_width=True)
 
 def show_distribuicao_acoes(acoes_df):
@@ -95,6 +99,9 @@ def show_distribuicao_acoes(acoes_df):
         contagem_tipos = acoes_df['nome'].value_counts().reset_index()
         contagem_tipos.columns = ['Tipo de Ação', 'Quantidade']
         fig = px.pie(contagem_tipos, values='Quantidade', names='Tipo de Ação', title='Distribuição de Tipos de Ação no Período', hole=0.4)
+
+        # --- CORREÇÃO ---
+        fig.update_layout(template="plotly_white")
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Nenhuma ação para analisar nos filtros selecionados.")
@@ -120,7 +127,7 @@ def show_evolucao_individual_comparativa(acoes_df, alunos_df, config_dict, view_
     st.subheader("Comparativo de Evolução Individual")
     
     opcoes_alunos = {aluno['id']: f"{aluno['nome_guerra']} ({aluno.get('pelotao', 'N/A')})" for _, aluno in alunos_df.iterrows()}
-    alunos_selecionados_ids = st.multiselect("Selecione um ou mais alunos para comparar:", options=opcoes_alunos.keys(), format_func=opcoes_alunos.get)
+    alunos_selecionados_ids = st.multiselect("Selecione um ou mais alunos para comparar:", options=list(opcoes_alunos.keys()), format_func=opcoes_alunos.get)
 
     if not alunos_selecionados_ids:
         st.info("Selecione pelo menos um aluno para ver a evolução."); return
@@ -143,6 +150,9 @@ def show_evolucao_individual_comparativa(acoes_df, alunos_df, config_dict, view_
     if not df_plot.empty:
         titulo = "Evolução do Conceito Final" if view_mode == 'Conceito Final' else "Evolução do Saldo de Pontos"
         fig = px.line(df_plot, x='data', y='valor_final', color='nome_guerra', title=titulo, markers=True, labels={'valor_final': view_mode, 'nome_guerra': 'Aluno'})
+
+        # --- CORREÇÃO ---
+        fig.update_layout(template="plotly_white")
         st.plotly_chart(fig, use_container_width=True)
 
 def show_evolucao_pelotao_comparativa(acoes_df, alunos_df, config_dict, view_mode):
@@ -156,14 +166,12 @@ def show_evolucao_pelotao_comparativa(acoes_df, alunos_df, config_dict, view_mod
     df_plot = pd.DataFrame()
     for pelotao in pelotoes_selecionados:
         alunos_do_pelotao_ids = alunos_df[alunos_df['pelotao'] == pelotao]['id'].tolist()
-        # Variável corrigida nesta linha
         acoes_pelotao = acoes_df[acoes_df['aluno_id'].isin(alunos_do_pelotao_ids)].copy()
         if not acoes_pelotao.empty:
             acoes_pelotao.sort_values('data', inplace=True)
             soma_pontos_acoes = acoes_pelotao['pontuacao_efetiva'].cumsum()
             
             if view_mode == 'Conceito Final':
-                # Nota: O conceito de um pelotão é uma média complexa. Aqui, simplificamos para a média do saldo de pontos aplicada à linha de base.
                 linha_base = float(config_dict.get('linha_base_conceito', 8.5))
                 acoes_pelotao['valor_final'] = linha_base + soma_pontos_acoes / len(alunos_do_pelotao_ids)
             else:
@@ -175,6 +183,9 @@ def show_evolucao_pelotao_comparativa(acoes_df, alunos_df, config_dict, view_mod
     if not df_plot.empty:
         titulo = "Evolução do Conceito Médio" if view_mode == 'Conceito Final' else "Evolução do Saldo de Pontos Total"
         fig = px.line(df_plot, x='data', y='valor_final', color='pelotao', title=titulo, markers=True, labels={'valor_final': view_mode})
+        
+        # --- CORREÇÃO ---
+        fig.update_layout(template="plotly_white")
         st.plotly_chart(fig, use_container_width=True)
 
 # --- FUNÇÃO PRINCIPAL DA PÁGINA ---
@@ -183,8 +194,13 @@ def show_relatorios():
     if not check_permission('acesso_pagina_relatorios'):
         st.error("Acesso negado."); return
 
-    alunos_df = load_data("Alunos"); acoes_df = load_data("Acoes"); tipos_acao_df = load_data("Tipos_Acao"); config_df = load_data("Config")
-    if alunos_df.empty or acoes_df.empty: st.warning("Dados insuficientes para gerar relatórios."); return
+    alunos_df = load_data("Alunos")
+    acoes_df = load_data("Acoes")
+    tipos_acao_df = load_data("Tipos_Acao")
+    config_df = load_data("Config")
+    
+    if alunos_df.empty or acoes_df.empty:
+        st.warning("Dados insuficientes para gerar relatórios."); return
 
     acoes_com_pontos_df = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
     config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
@@ -235,6 +251,6 @@ def show_relatorios():
     with tab1:
         render_graficos_tab(acoes_filtradas, alunos_filtrados, config_dict, view_mode)
     with tab2:
-        render_rankings_tab(acoes_filtradas, alunos_filtrados, periodo_tipo, pelotao_selecionado)
+        render_rankings_tab(acoes_filtradas, alunos_filtrados)
     with tab3:
         render_evolucao_tab(acoes_filtradas, alunos_filtrados, config_dict, view_mode)
