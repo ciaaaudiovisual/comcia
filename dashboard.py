@@ -74,24 +74,30 @@ def show_dashboard():
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
     
-    # --- INÍCIO DA CORREÇÃO ---
-    # Normaliza os dados de filtro para garantir correspondências corretas
-    if 'pelotao' in alunos_df.columns:
-        alunos_df['pelotao'] = alunos_df['pelotao'].astype(str).str.strip().str.upper()
-    if 'especialidade' in alunos_df.columns:
-        alunos_df['especialidade'] = alunos_df['especialidade'].astype(str).str.strip().str.upper()
-    # --- FIM DA CORREÇÃO ---
-
     if check_permission('pode_escanear_cracha'):
         with st.expander("⚡ Anotação Rápida em Massa", expanded=True):
+            
+            debug_mode = st.checkbox("Ativar Modo de Depuração")
             
             st.subheader("1. Selecione os Alunos")
             
             col1, col2, col3 = st.columns([2, 2, 1])
-            opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p) and p])
+            
+            # Normaliza os dados para os filtros
+            if 'pelotao' in alunos_df.columns:
+                alunos_df['pelotao_norm'] = alunos_df['pelotao'].astype(str).str.strip().str.upper()
+            else:
+                alunos_df['pelotao_norm'] = ''
+            
+            if 'especialidade' in alunos_df.columns:
+                alunos_df['especialidade_norm'] = alunos_df['especialidade'].astype(str).str.strip().str.upper()
+            else:
+                alunos_df['especialidade_norm'] = ''
+
+            opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao_norm'].unique() if pd.notna(p) and p])
             pelotao_selecionado = col1.selectbox("Filtrar por Pelotão:", opcoes_pelotao)
 
-            opcoes_especialidade = ["Todos"] + sorted([e for e in alunos_df['especialidade'].unique() if pd.notna(e) and e])
+            opcoes_especialidade = ["Todos"] + sorted([e for e in alunos_df['especialidade_norm'].unique() if pd.notna(e) and e])
             especialidade_selecionada = col2.selectbox("Filtrar por Especialidade:", opcoes_especialidade)
 
             if col3.button("Limpar Seleção e Filtros"):
@@ -100,10 +106,18 @@ def show_dashboard():
 
             df_filtrado = alunos_df.copy()
             if pelotao_selecionado != "Todos":
-                df_filtrado = df_filtrado[df_filtrado['pelotao'] == pelotao_selecionado]
+                df_filtrado = df_filtrado[df_filtrado['pelotao_norm'] == pelotao_selecionado]
             if especialidade_selecionada != "Todos":
-                df_filtrado = df_filtrado[df_filtrado['especialidade'] == especialidade_selecionada]
+                df_filtrado = df_filtrado[df_filtrado['especialidade_norm'] == especialidade_selecionada]
             
+            if debug_mode:
+                st.write("--- MODO DE DEPURAÇÃO ATIVO ---")
+                st.write(f"**Opções de Pelotão no Filtro:**", opcoes_pelotao)
+                st.write(f"**Pelotão Selecionado:** `{pelotao_selecionado}`")
+                st.write("**Resultado do Filtro (df_filtrado):**")
+                st.dataframe(df_filtrado)
+                st.write("--- FIM DA DEPURAÇÃO ---")
+
             if st.toggle("Ativar Leitor de Crachás 📸"):
                 imagem_cracha = st.camera_input("Aponte a câmara para o código de barras", label_visibility="collapsed")
                 if imagem_cracha:
@@ -236,7 +250,7 @@ def show_dashboard():
             
             aniversariantes_df = alunos_nasc_validos[alunos_nasc_validos['data_nascimento'].dt.strftime('%m-%d').isin(aniversarios_no_periodo)].copy()
             
-            if not aniversariantes_df.empty:
+            if not anivesariantes_df.empty:
                 aniversariantes_df['dia_mes'] = aniversariantes_df['data_nascimento'].dt.strftime('%m-%d')
                 aniversariantes_df = aniversariantes_df.sort_values(by='dia_mes')
                 for _, aluno in aniversariantes_df.iterrows():
