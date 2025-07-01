@@ -77,7 +77,9 @@ def show_pontuacao_pelotao(alunos_df, acoes_df, config_dict, view_mode):
     titulo = "Conceito Médio por Pelotão" if view_mode == 'Conceito Final' else "Saldo Médio de Pontos por Pelotão"
     st.subheader(titulo)
 
-    if acoes_df.empty: st.info("Dados de ações insuficientes para gerar este relatório."); return
+    if acoes_df.empty: 
+        st.info("Dados de ações insuficientes para gerar este relatório.")
+        return
 
     soma_pontos_por_aluno = acoes_df.groupby('aluno_id')['pontuacao_efetiva'].sum()
     alunos_com_pontos = pd.merge(alunos_df, soma_pontos_por_aluno.rename('pontos_acoes'), left_on='id', right_on='aluno_id', how='left')
@@ -90,20 +92,21 @@ def show_pontuacao_pelotao(alunos_df, acoes_df, config_dict, view_mode):
 
     media_por_pelotao = alunos_com_pontos.groupby('pelotao')['valor_final'].mean().reset_index()
     
-    # --- CORREÇÃO DEFINITIVA: Define uma sequência de cores explícita ---
+    # --- INÍCIO DA CORREÇÃO ---
+    # Altera o 'color' para o valor numérico e usa uma escala de cor contínua
     fig = px.bar(
         media_por_pelotao, 
         x='pelotao', 
         y='valor_final', 
         title=titulo, 
         text_auto='.2f',
-        color='pelotao', # Colore cada barra com base no pelotão
-        color_discrete_sequence=px.colors.qualitative.Vivid # Usa uma paleta de cores variada
+        color='valor_final',  # Colore as barras com base no valor final (permite o degradê)
+        color_continuous_scale='RdYlGn' # Define a escala de cores vermelho-amarelo-verde
     )
+    # --- FIM DA CORREÇÃO ---
     
-    fig.update_layout(template="plotly_white", showlegend=False) # 'showlegend=False' para não mostrar a legenda de cores dos pelotões
+    fig.update_layout(template="plotly_white")
     st.plotly_chart(fig, use_container_width=True, theme=None)
-
 def show_distribuicao_acoes(acoes_df, tipos_acao_df):
     st.subheader("Distribuição de Tipos de Ação")
     
