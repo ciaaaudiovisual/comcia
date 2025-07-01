@@ -74,18 +74,16 @@ def show_dashboard():
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
 
-    # --- SEÇÃO DE ANOTAÇÃO RÁPIDA ---
     if check_permission('pode_escanear_cracha'):
         with st.expander("⚡ Anotação Rápida em Massa", expanded=True):
             
-            # --- FILTROS DE ALUNOS ---
             st.subheader("1. Selecione os Alunos")
             col1, col2 = st.columns(2)
             with col1:
                 opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
                 pelotao_selecionado = st.selectbox("Filtrar por Pelotão:", opcoes_pelotao, key="dash_pelotao")
             with col2:
-                opcoes_especialidade = ["Todos"] + sorted([e for e in alunos_df['especialidade'].unique() if pd.notna(e)])
+                opcoes_especialidade = ["Todas"] + sorted([e for e in alunos_df['especialidade'].unique() if pd.notna(e)])
                 especialidade_selecionada = st.selectbox("Filtrar por Especialidade:", opcoes_especialidade, key="dash_espec")
 
             df_filtrado = alunos_df.copy()
@@ -94,7 +92,6 @@ def show_dashboard():
             if especialidade_selecionada != "Todas":
                 df_filtrado = df_filtrado[df_filtrado['especialidade'] == especialidade_selecionada]
             
-            # --- SCANNER DE CRACHÁS ---
             if st.toggle("Ativar Leitor de Crachás 📸"):
                 imagem_cracha = st.camera_input("Aponte a câmara para o código de barras", label_visibility="collapsed")
                 if imagem_cracha:
@@ -111,17 +108,22 @@ def show_dashboard():
                     else:
                         st.error(msg)
             
-            # --- FORMULÁRIO DE AÇÃO ---
             st.subheader("2. Defina e Registre a Ação")
             with st.form("anotacao_rapida_form_unificada"):
                 nomes_filtrados = df_filtrado['nome_guerra'].tolist()
                 nomes_default = sorted(list(set(nomes_filtrados + st.session_state.alunos_para_selecionar)))
 
+                # --- INÍCIO DA CORREÇÃO ---
+                # Limpa a lista de opções de todos os alunos para evitar o erro de ordenação com valores nulos
+                nomes_unicos_opcoes = alunos_df['nome_guerra'].unique()
+                nomes_validos_opcoes = sorted([str(nome) for nome in nomes_unicos_opcoes if pd.notna(nome)])
+                
                 alunos_selecionados_nomes = st.multiselect(
                     "Alunos Selecionados (pode refinar a seleção aqui):",
-                    options=sorted(alunos_df['nome_guerra'].unique()),
+                    options=nomes_validos_opcoes, # Usa a lista limpa e ordenada
                     default=nomes_default
                 )
+                # --- FIM DA CORREÇÃO ---
                 
                 if len(alunos_selecionados_nomes) > 0:
                     st.info(f"A ação será aplicada a **{len(alunos_selecionados_nomes)}** aluno(s).")
@@ -168,7 +170,6 @@ def show_dashboard():
 
     st.divider()
     
-    # --- VISUALIZAÇÕES DO DASHBOARD ---
     if alunos_df.empty or acoes_df.empty:
         st.info("Registre alunos e ações para visualizar os painéis de dados.")
     else:
