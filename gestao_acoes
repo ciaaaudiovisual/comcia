@@ -53,7 +53,7 @@ def on_launch_click(acao, supabase):
         
         # Carrega os dados dos alunos para encontrar o nome para a mensagem de sucesso
         alunos_df = load_data("Alunos")
-        aluno_info_query = alunos_df[alunos_df['id'] == acao['aluno_id']]
+        aluno_info_query = alunos_df[alunos_df['id'] == str(acao['aluno_id'])]
         
         if not aluno_info_query.empty:
             aluno_info = aluno_info_query.iloc[0]
@@ -131,7 +131,7 @@ def show_gestao_acoes():
             
             # Detalhes da Ação
             c4, c5 = st.columns(2)
-            if not acoes_df.empty:
+            if not acoes_df.empty and 'tipo_acao_id' in acoes_df.columns:
                 contagem = acoes_df['tipo_acao_id'].value_counts().to_dict()
                 tipos_acao_df['contagem'] = tipos_acao_df['id'].astype(str).map(contagem).fillna(0)
                 tipos_acao_df = tipos_acao_df.sort_values('contagem', ascending=False)
@@ -175,16 +175,16 @@ def show_gestao_acoes():
 
     # --- FILTROS E ORDENAÇÃO ---
     c1, c2, c3, c4 = st.columns(4)
-    filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted(alunos_df['pelotao'].unique().tolist()))
+    filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
     filtro_status_lancamento = c2.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"])
     ordenar_por = c3.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
 
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
-    df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'nome_guerra', 'pelotao']], left_on='aluno_id', right_on='id', how='inner')
+    df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'nome_guerra', 'pelotao', 'nome_completo']], left_on='aluno_id', right_on='id', how='inner')
     
     if filtro_pelotao != "Todos": df_display = df_display[df_display['pelotao'] == filtro_pelotao]
-    if filtro_status_lancamento == "A Lançar": df_display = df_display[~df_display['lancado_faia']]
-    elif filtro_status_lancamento == "Lançados": df_display = df_display[df_display['lancado_faia']]
+    if filtro_status_lancamento == "A Lançar": df_display = df_display[df_display['lancado_faia'] == False]
+    elif filtro_status_lancamento == "Lançados": df_display = df_display[df_display['lancado_faia'] == True]
 
     if ordenar_por == "Mais Antigos": df_display = df_display.sort_values(by="data", ascending=True)
     elif ordenar_por == "Aluno (A-Z)": df_display = df_display.sort_values(by="nome_guerra", ascending=True)
@@ -195,7 +195,7 @@ def show_gestao_acoes():
         aluno_para_exportar = st.selectbox("Aluno para Relatório", ["Nenhum"] + alunos_no_filtro)
         if aluno_para_exportar != "Nenhum":
             if st.button("👁️ Visualizar FAIA"):
-                aluno_info = alunos_df[alunos_df['nome_guerra'] == aluno_para_exportar].iloc[0]
+                aluno_info = df_display[df_display['nome_guerra'] == aluno_para_exportar].iloc[0]
                 acoes_do_aluno = df_display[df_display['nome_guerra'] == aluno_para_exportar]
                 preview_faia_dialog(aluno_info, acoes_do_aluno)
 
