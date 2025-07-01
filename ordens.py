@@ -18,7 +18,6 @@ def edit_item_dialog(item_data, supabase):
     if not usuarios_df.empty:
         opcoes_responsavel.extend(sorted(usuarios_df['username'].unique().tolist()))
     
-    # Define o índice do responsável atual para o selectbox
     responsavel_atual = item_data.get('responsavel') or "Não Atribuído"
     index_responsavel = opcoes_responsavel.index(responsavel_atual) if responsavel_atual in opcoes_responsavel else 0
 
@@ -62,7 +61,6 @@ def on_status_change(item_id, supabase, key_name):
     }
     
     try:
-        # O nome da tabela no backend continua "Tarefas"
         supabase.table("Tarefas").update(update_data).eq('id', item_id).execute()
         st.toast("Status atualizado!")
         load_data.clear()
@@ -89,11 +87,9 @@ def show_parada_diaria():
     st.caption("Controle unificado de itens e tarefas pendentes.")
     supabase = init_supabase_client()
 
-    # Carrega os dados. A tabela no backend permanece "Tarefas" por consistência.
     parada_diaria_df = load_data("Tarefas")
     usuarios_df = load_data("Users")
     
-    # Formulário para adicionar novos itens
     with st.expander("➕ Adicionar Novo Item à Parada Diária"):
         with st.form("novo_item_parada", clear_on_submit=True):
             texto = st.text_area("Descrição do Item*")
@@ -107,15 +103,24 @@ def show_parada_diaria():
             if st.form_submit_button("Adicionar Item"):
                 if texto:
                     try:
+                        # --- INÍCIO DA CORREÇÃO ---
+                        # Calcula o próximo ID disponível para evitar o erro de valor nulo.
+                        ids_numericos = pd.to_numeric(parada_diaria_df['id'], errors='coerce').dropna()
+                        novo_id = int(ids_numericos.max()) + 1 if not ids_numericos.empty else 1
+                        
                         novo_item = {
+                            'id': str(novo_id), # Adiciona o novo ID ao registo
                             'texto': texto,
                             'status': 'Pendente',
                             'responsavel': None if responsavel == "Não Atribuído" else responsavel,
                             'data_criacao': datetime.now().strftime('%Y-%m-%d'),
                         }
+                        # --- FIM DA CORREÇÃO ---
+
                         supabase.table("Tarefas").insert(novo_item).execute()
                         st.success("Item adicionado!")
                         load_data.clear()
+                        st.rerun() # Garante que a página seja atualizada
                     except Exception as e:
                         st.error(f"Erro ao salvar item: {e}")
                 else:
@@ -123,7 +128,6 @@ def show_parada_diaria():
 
     st.divider()
 
-    # Filtros para a lista de itens
     st.subheader("Lista de Itens")
     col1, col2 = st.columns(2)
     with col1:
@@ -132,7 +136,6 @@ def show_parada_diaria():
         opcoes_filtro_resp = ["Todos"] + sorted(parada_diaria_df['responsavel'].dropna().unique().tolist())
         filtro_resp = st.multiselect("Filtrar por Responsável:", opcoes_filtro_resp, default=["Todos"])
 
-    # Lógica de filtragem
     filtered_df = parada_diaria_df
     if filtro_status:
         filtered_df = filtered_df[filtered_df['status'].isin(filtro_status)]
@@ -140,7 +143,6 @@ def show_parada_diaria():
         mask = filtered_df['responsavel'].isin(filtro_resp)
         filtered_df = filtered_df[mask]
     
-    # Exibição dos itens
     if filtered_df.empty:
         st.info("Nenhum item encontrado para os filtros selecionados.")
     else:
@@ -151,7 +153,6 @@ def show_parada_diaria():
             with st.container(border=True):
                 is_done = (item['status'] == 'Concluída')
                 
-                # Colunas para Checkbox, Informação e Botões de Ação
                 col_check, col_info, col_actions = st.columns([1, 8, 2])
                 
                 with col_check:
@@ -178,7 +179,6 @@ def show_parada_diaria():
                         st.caption(f"👤 {responsavel_text} | 🗓️ {data_criacao_fmt}")
 
                 with col_actions:
-                    # Botões de Editar e Excluir (visíveis para admin)
                     if st.session_state.get('role') == 'admin':
                         sub_c1, sub_c2 = st.columns(2)
                         with sub_c1:
