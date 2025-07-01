@@ -4,10 +4,10 @@ from datetime import datetime
 from database import load_data, init_supabase_client
 from auth import check_permission
 from io import BytesIO
-import zipfile
+import xlsxwriter
 
 # ==============================================================================
-# DIÁLOGOS E FUNÇÕES DE CALLBACK (MODIFICADO)
+# DIÁLOGOS E FUNÇÕES DE CALLBACK
 # ==============================================================================
 
 @st.dialog("Registrar Participação na FAIA")
@@ -200,8 +200,56 @@ def show_programacao():
 
     if check_permission('pode_importar_eventos'):
         with st.expander("➕ Opções de Cadastro de Eventos"):
-            # ... (código para adicionar e importar eventos permanece o mesmo) ...
-            pass
+            st.subheader("Adicionar Novo Evento")
+            with st.form("novo_evento_form", clear_on_submit=True):
+                pelotoes = sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
+                opcoes_destinatarios = ["Todos"] + pelotoes
+                nova_descricao = st.text_input("Descrição do Evento*")
+                cols_data = st.columns(2)
+                nova_data = cols_data[0].date_input("Data do Evento", datetime.now())
+                novo_horario_str = cols_data[1].text_input("Horário (ex: 08:00)", "08:00")
+                destinatarios_selecionados = st.multiselect("Destinatários*", options=opcoes_destinatarios, default=["Todos"])
+                cols_info = st.columns(2)
+                novo_local = cols_info[0].text_input("Local")
+                novo_responsavel = cols_info[1].text_input("Responsável")
+                nova_obs = st.text_input("Observações")
+                
+                if st.form_submit_button("Adicionar Evento"):
+                    if not nova_descricao or not destinatarios_selecionados: 
+                        st.warning("Descrição e Destinatários são obrigatórios.")
+                    else:
+                        destinatarios_str = ", ".join(destinatarios_selecionados) 
+                        if "Todos" in destinatarios_str: destinatarios_str = "Todos"
+                        
+                        ids_numericos = pd.to_numeric(programacao_df['id'], errors='coerce').dropna()
+                        novo_id = int(ids_numericos.max()) + 1 if not ids_numericos.empty else 1
+                        
+                        novo_evento = {
+                            'id': str(novo_id), 'data': nova_data.strftime('%Y-%m-%d'), 
+                            'horario': novo_horario_str, 'descricao': nova_descricao, 
+                            'local': novo_local, 'responsavel': novo_responsavel, 
+                            'obs': nova_obs, 'destinatarios': destinatarios_str, 
+                            'status': 'A Realizar', 'pelotoes_concluidos': ''
+                        }
+                        try:
+                            supabase.table("Programacao").insert(novo_evento).execute()
+                            st.success("Evento adicionado com sucesso!")
+                            load_data.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao adicionar evento: {e}")
+
+            st.divider()
+            
+            st.subheader("Importar Eventos em Massa (XLSX)")
+            st.info("O sistema irá atualizar eventos com mesma data, horário e descrição, ou adicionar novos.")
+            excel_modelo_bytes = create_excel_modelo()
+            st.download_button("Baixar Modelo XLSX", excel_modelo_bytes, "modelo_programacao.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            
+            uploaded_file = st.file_uploader("Escolha um arquivo XLSX", type="xlsx")
+            if uploaded_file:
+                # Lógica de importação de Excel pode ser adicionada aqui
+                st.info("Funcionalidade de importação de XLSX a ser implementada.")
             
     st.header("Agenda")
     if df_filtrado.empty:
@@ -211,6 +259,34 @@ def show_programacao():
         for data_evento, eventos_do_dia in df_filtrado.groupby(df_filtrado['data'].dt.date):
             st.subheader(f"🗓️ {data_evento.strftime('%d/%m/%Y')}") 
             for _, evento in eventos_do_dia.iterrows():
-                # ... (código para exibir os cards de evento permanece o mesmo) ...
-                pass
+                status = evento.get('status', 'A Realizar')
+                cor_status = {"A Realizar": "blue", "Em Andamento": "orange", "Concluído": "green"}.get(status, "gray")
+                info_conclusao = ""
+                if status == 'Concluído': 
+                    info_conclusao = f"<br><small><b>Concluído por:</b> {evento.get('concluido_por', '')} em {evento.get('data_conclusao', '')}</small>"
+                elif status == 'Em Andamento': 
+                    info_conclusao = f"<br><small><b>Turmas Concluídas:</b> {evento.get('pelotoes_concluidos', 'Nenhuma')}</small>"
+
+                with st.container(border=True):
+                    st.markdown(f"""
+                        <p style="margin-bottom: 0.2rem;"><span style="color:{cor_status};"><b>{evento.get('horario', '')}</b></span> - <b>{evento.get('descricao', '')}</b></p>
+                        <small><b>Local:</b> {evento.get('local', 'N/A')}</small>
+                        <br><small><b>Responsável:</b> {evento.get('responsavel', 'N/A')}</small>
+                        <br><small><b>Para:</b> {evento.get('destinatarios', 'Todos')}</small>
+                        {info_conclusao}
+                    """, unsafe_allow_html=True)
+
+                    if check_permission('pode_finalizar_evento_programacao') or check_permission('pode_excluir_evento_programacao'):
+                        st.write("")
+                        cols_botoes = st.columns(3)
+                        with cols_botoes[0]:
+                            if check_permission('pode_finalizar_evento_programacao'):
+                                st.button("Finalizar", key=f"finish_{evento['id']}", help="Marcar como concluído para todas as turmas.", type="primary", disabled=(status == 'Concluído'), on_click=on_finalize_click, args=(evento, supabase))
+                        with cols_botoes[1]:
+                            if check_permission('pode_finalizar_evento_programacao'):
+                                if st.button("Status Parcial", key=f"status_{evento['id']}", help="Gerenciar status por turma."):
+                                    gerenciar_status_dialog(evento, supabase)
+                        with cols_botoes[2]:
+                            if check_permission('pode_excluir_evento_programacao'):
+                                st.button("🗑️ Excluir", key=f"delete_{evento['id']}", help="Excluir permanentemente.", on_click=on_delete_click, args=(evento['id'], supabase))
             st.divider()
