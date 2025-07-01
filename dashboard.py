@@ -8,6 +8,7 @@ from pyzbar.pyzbar import decode
 import plotly.express as px
 from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
 from auth import check_permission
+import plotly.io as pio
 
 # ==============================================================================
 # FUNÇÕES DE APOIO
