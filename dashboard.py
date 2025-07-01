@@ -84,7 +84,6 @@ def show_dashboard():
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
     
-    # Cria a etiqueta e um mapa de etiqueta para ID para todos os alunos
     if not alunos_df.empty:
         alunos_df['label'] = alunos_df.apply(create_student_label, axis=1)
         label_to_id_map = pd.Series(alunos_df.id.values, index=alunos_df.label).to_dict()
@@ -93,7 +92,8 @@ def show_dashboard():
         with st.expander("⚡ Anotação Rápida em Massa", expanded=True):
             
             st.subheader("1. Selecione os Alunos")
-            
+            st.caption("Use os filtros para encontrar os alunos mais facilmente na caixa de seleção abaixo.")
+
             col1, col2, col3 = st.columns([2, 2, 1])
             opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p) and p])
             pelotao_selecionado = col1.selectbox("Filtrar por Pelotão:", opcoes_pelotao)
@@ -105,11 +105,11 @@ def show_dashboard():
                 st.session_state.alunos_selecionados_scanner_labels = []
                 st.rerun()
 
-            df_filtrado = alunos_df.copy()
+            df_opcoes = alunos_df.copy()
             if pelotao_selecionado != "Todos":
-                df_filtrado = df_filtrado[df_filtrado['pelotao'] == pelotao_selecionado]
+                df_opcoes = df_opcoes[df_opcoes['pelotao'] == pelotao_selecionado]
             if especialidade_selecionada != "Todos":
-                df_filtrado = df_filtrado[df_filtrado['especialidade'] == especialidade_selecionada]
+                df_opcoes = df_opcoes[df_opcoes['especialidade'] == especialidade_selecionada]
             
             if st.toggle("Ativar Leitor de Crachás 📸"):
                 imagem_cracha = st.camera_input("Aponte a câmara para o código de barras", label_visibility="collapsed")
@@ -129,17 +129,15 @@ def show_dashboard():
             
             st.subheader("2. Defina e Registre a Ação")
             with st.form("anotacao_rapida_form_unificada"):
-                labels_filtrados = df_filtrado['label'].tolist()
-                labels_default = sorted(list(set(labels_filtrados + st.session_state.alunos_selecionados_scanner_labels)))
+                # --- MODIFICAÇÃO: A lista de opções é filtrada, mas a seleção padrão (default) está vazia ---
+                opcoes_para_selecao = sorted(df_opcoes['label'].unique())
+                selecao_default = st.session_state.alunos_selecionados_scanner_labels
                 
                 alunos_selecionados_labels = st.multiselect(
-                    "Alunos Selecionados:",
-                    options=sorted(alunos_df['label'].unique()),
-                    default=labels_default
+                    "Alunos Selecionados (a lista de opções é afetada pelos filtros acima):",
+                    options=opcoes_para_selecao,
+                    default=selecao_default
                 )
-                
-                if len(alunos_selecionados_labels) > 0:
-                    st.info(f"A ação será aplicada a **{len(alunos_selecionados_labels)}** aluno(s).")
                 
                 if not acoes_df.empty:
                     contagem = acoes_df['tipo_acao_id'].value_counts().to_dict()
@@ -181,7 +179,6 @@ def show_dashboard():
                         except Exception as e:
                             st.error(f"Falha ao salvar a(s) ação(ões): {e}")
 
-
     st.divider()
     
     if alunos_df.empty or acoes_df.empty:
@@ -204,12 +201,18 @@ def show_dashboard():
                 if not soma_pontos_hoje[soma_pontos_hoje > 0].empty:
                     aluno_positivo_id = str(soma_pontos_hoje.idxmax())
                     aluno_info = alunos_df[alunos_df['id'] == aluno_positivo_id]
-                    if not aluno_info.empty: st.success(f"🌟 **Positivo**: {aluno_info.iloc[0]['nome_guerra']}")
+                    if not aluno_info.empty:
+                        # --- MODIFICAÇÃO: Exibe Número Interno e Nome de Guerra ---
+                        aluno = aluno_info.iloc[0]
+                        st.success(f"🌟 **Positivo**: {aluno.get('numero_interno', '')} - {aluno.get('nome_guerra', '')}")
 
                 if not soma_pontos_hoje[soma_pontos_hoje < 0].empty:
                     aluno_negativo_id = str(soma_pontos_hoje.idxmin())
                     aluno_info = alunos_df[alunos_df['id'] == aluno_negativo_id]
-                    if not aluno_info.empty: st.warning(f"⚠️ **Negativo**: {aluno_info.iloc[0]['nome_guerra']}")
+                    if not aluno_info.empty:
+                        # --- MODIFICAÇÃO: Exibe Número Interno e Nome de Guerra ---
+                        aluno = aluno_info.iloc[0]
+                        st.warning(f"⚠️ **Negativo**: {aluno.get('numero_interno', '')} - {aluno.get('nome_guerra', '')}")
             else:
                 st.info("Nenhuma ação registrada hoje.")
 
