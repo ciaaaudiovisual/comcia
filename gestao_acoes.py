@@ -130,7 +130,6 @@ def show_gestao_acoes():
         with st.form("novo_lancamento_unificado", clear_on_submit=True):
             st.info("Preencha um ou mais campos para encontrar o aluno e depois os detalhes da ação.")
             
-            # --- MODIFICAÇÃO: Adicionado busca por Nome Completo ---
             col1, col2 = st.columns(2)
             busca_num_interno = col1.text_input("Buscar por Nº Interno")
             busca_nome_guerra = col2.text_input("Buscar por Nome de Guerra")
@@ -156,7 +155,6 @@ def show_gestao_acoes():
             if check_permission('acesso_pagina_lancamentos_faia'):
                 lancar_direto = st.checkbox("🚀 Lançar diretamente na FAIA (ignorar revisão)")
 
-            # --- MODIFICAÇÃO: Checkbox de confirmação ---
             st.divider()
             confirmacao_registro = st.checkbox("Confirmo que os dados estão corretos para o registo.")
 
@@ -209,7 +207,6 @@ def show_gestao_acoes():
     else: df_display = df_display.sort_values(by="data", ascending=False) 
 
     with c4:
-        # --- CORREÇÃO DO ERRO TypeError ---
         nomes_unicos = df_display['nome_guerra'].unique()
         nomes_validos = sorted([str(nome) for nome in nomes_unicos if pd.notna(nome)])
         aluno_para_exportar = st.selectbox("Aluno para Relatório", ["Nenhum"] + nomes_validos)
@@ -240,6 +237,11 @@ def show_gestao_acoes():
     if df_display.empty:
         st.info("Nenhuma ação encontrada para os filtros selecionados.")
     else:
+        # --- INÍCIO DA CORREÇÃO ---
+        # Remove quaisquer linhas duplicadas com base no ID da ação antes de exibir
+        df_display.drop_duplicates(subset=['id'], keep='first', inplace=True)
+        # --- FIM DA CORREÇÃO ---
+
         for _, acao in df_display.iterrows():
             with st.container(border=True):
                 is_launched = acao.get('lancado_faia', False)
@@ -247,9 +249,15 @@ def show_gestao_acoes():
                 if not is_launched and check_permission('acesso_pagina_lancamentos_faia'):
                     c_check, c_info, c_actions = st.columns([1, 6, 2])
                     with c_check:
-                        st.session_state.action_selection[acao['id']] = st.checkbox("Select", key=f"select_{acao['id']}", value=st.session_state.action_selection.get(acao['id'], False), label_visibility="collapsed")
+                        # Garante que a chave de seleção seja única
+                        st.session_state.action_selection[acao['id']] = st.checkbox(
+                            "Select", 
+                            key=f"select_{acao['id']}", 
+                            value=st.session_state.action_selection.get(acao['id'], False),
+                            label_visibility="collapsed"
+                        )
                 else:
-                    _, c_info, c_actions = st.columns([1, 6, 2])
+                    c_info, c_actions = st.columns([7, 2])
 
                 with c_info:
                     cor = "green" if acao['pontuacao_efetiva'] > 0 else "red" if acao['pontuacao_efetiva'] < 0 else "gray"
@@ -262,4 +270,7 @@ def show_gestao_acoes():
                         st.success("✅ Lançado")
                     else:
                         if check_permission('acesso_pagina_lancamentos_faia'):
-                            st.button("Lançar", key=f"launch_{acao['id']}", on_click=on_launch_click, args=(acao, supabase), use_container_width=True)
+                            st.button("Lançar", key=f"launch_{acao['id']}", 
+                                      on_click=on_launch_click, 
+                                      args=(acao, supabase), 
+                                      use_container_width=True)
