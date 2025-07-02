@@ -132,7 +132,7 @@ def show_gestao_acoes():
     config_df = load_data("Config")
     
     with st.expander("➕ Registrar Nova Ação", expanded=True):
-        with st.form("search_form"):
+        with st.form("search_form_gestao"):
             st.subheader("Passo 1: Buscar Aluno")
             st.info("Preencha um ou mais campos e clique em 'Buscar'. A busca combinará todos os critérios.")
             
@@ -146,6 +146,7 @@ def show_gestao_acoes():
             
             if st.form_submit_button("🔎 Buscar Aluno"):
                 df_busca = alunos_df.copy()
+                # Converte os termos de busca para maiúsculas para busca case-insensitive
                 if busca_num_interno:
                     df_busca = df_busca[df_busca['numero_interno'].astype(str).str.upper().str.contains(busca_num_interno.upper(), na=False)]
                 if busca_nome_guerra:
@@ -176,9 +177,7 @@ def show_gestao_acoes():
             with st.form("form_nova_acao"):
                 c1, c2 = st.columns(2)
                 
-                # --- LÓGICA DE ORGANIZAÇÃO DOS TIPOS DE AÇÃO ---
                 tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
-                
                 positivas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome')
                 neutras_df = tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome')
                 negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
@@ -204,7 +203,7 @@ def show_gestao_acoes():
                         label = f"{row['nome']} ({row['pontuacao']:.1f} pts)"
                         opcoes_finais.append(label)
                         tipos_opcoes_map[label] = row
-
+                
                 tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_finais)
                 data = c2.date_input("Data", datetime.now())
                 descricao = st.text_area("Descrição/Justificativa (Opcional)")
@@ -213,26 +212,20 @@ def show_gestao_acoes():
                 confirmacao_registro = st.checkbox("Confirmo que os dados estão corretos para o registo.")
 
                 if st.form_submit_button("Registrar Ação"):
-                    if not confirmacao_registro:
+                    if tipo_selecionado_str.startswith("---"):
+                        st.warning("Por favor, selecione um tipo de ação válido, não um cabeçalho de categoria.")
+                    elif not confirmacao_registro:
                         st.warning("Por favor, confirme que os dados estão corretos.")
                     else:
                         try:
                             tipo_info = tipos_opcoes_map[tipo_selecionado_str]
-                            
-                            # --- LÓGICA PARA GERAR UM NOVO ID ÚNICO ---
                             ids = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
                             novo_id = int(ids.max()) + 1 if not ids.empty else 1
-                            # -----------------------------------------
-
                             nova_acao = {
-                                'id': str(novo_id), # ID é gerado e incluído
-                                'aluno_id': str(st.session_state.selected_student_id_gestao), 
-                                'tipo_acao_id': str(tipo_info['id']), 
-                                'tipo': tipo_info['nome'], 
-                                'descricao': descricao, 
-                                'data': data.strftime('%Y-%m-%d'),
-                                'usuario': st.session_state.username, 
-                                'lancado_faia': lancar_direto
+                                'id': str(novo_id), 'aluno_id': str(st.session_state.selected_student_id_gestao), 
+                                'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 
+                                'descricao': descricao, 'data': data.strftime('%Y-%m-%d'),
+                                'usuario': st.session_state.username, 'lancado_faia': lancar_direto
                             }
                             supabase.table("Acoes").insert(nova_acao).execute()
                             st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!")
@@ -287,7 +280,6 @@ def show_gestao_acoes():
             
             if aluno_para_exportar != "Nenhum":
                 if st.button("👁️ Visualizar FAIA para Exportar"):
-                    # iloc[0] é seguro pois estamos a filtrar por um nome único da lista
                     aluno_info = df_display[df_display['nome_guerra'] == aluno_para_exportar].iloc[0]
                     acoes_do_aluno = df_display[df_display['nome_guerra'] == aluno_para_exportar]
                     preview_faia_dialog(aluno_info, acoes_do_aluno)
@@ -315,17 +307,16 @@ def show_gestao_acoes():
                 can_launch = check_permission('acesso_pagina_lancamentos_faia')
                 can_delete = check_permission('pode_excluir_lancamento_faia')
                 
-                # Define a estrutura de colunas
                 if not is_launched and can_launch:
                     cols = st.columns([1, 6, 3])
                     with cols[0]:
-                        st.checkbox("Select", key=f"select_{acao['id']}", value=st.session_state.action_selection.get(acao['id'], False), label_visibility="collapsed")
+                        st.session_state.action_selection[acao['id']] = st.checkbox("Select", key=f"select_{acao['id']}", value=st.session_state.action_selection.get(acao['id'], False), label_visibility="collapsed")
                     info_col, actions_col = cols[1], cols[2]
                 else:
                     info_col, actions_col = st.columns([7, 3])
 
                 with info_col:
-                    cor = "green" if acao['pontuacao_efetiva'] > 0 else "red" if aco['pontuacao_efetiva'] < 0 else "gray"
+                    cor = "green" if acao['pontuacao_efetiva'] > 0 else "red" if acao['pontuacao_efetiva'] < 0 else "gray"
                     st.markdown(f"**{acao['nome_guerra']}** ({acao['pelotao']}) em {pd.to_datetime(acao['data']).strftime('%d/%m/%Y')}")
                     st.markdown(f"**Ação:** {acao['nome']} <span style='color:{cor}; font-weight:bold;'>({acao['pontuacao_efetiva']:+.1f} pts)</span>", unsafe_allow_html=True)
                     st.caption(f"Descrição: {acao['descricao']}" if acao['descricao'] else "Sem descrição.")
