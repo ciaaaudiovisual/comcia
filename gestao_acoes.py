@@ -27,7 +27,7 @@ def preview_faia_dialog(aluno_info, acoes_aluno_df):
     st.download_button(label="✅ Exportar Relatório", data=texto_relatorio.encode('utf-8'), file_name=nome_arquivo, mime="text/plain")
 
 # ==============================================================================
-# FUNÇÕES DE CALLBACK
+# FUNÇÕES DE CALLBACK (CORRIGIDAS)
 # ==============================================================================
 def on_launch_click(acao, supabase):
     """Callback para lançar UMA ÚNICA ação e recarregar a página."""
@@ -35,7 +35,7 @@ def on_launch_click(acao, supabase):
         supabase.table("Acoes").update({'lancado_faia': True}).eq('id', acao['id']).execute()
         load_data.clear()
         st.toast(f"Ação para {acao.get('nome_guerra', 'N/A')} foi lançada com sucesso!")
-        st.rerun() # Garante que a página é atualizada
+        st.rerun() # Garante a atualização imediata da lista
     except Exception as e:
         st.error(f"Ocorreu um erro ao lançar a ação: {e}")
 
@@ -43,9 +43,9 @@ def on_delete_action_click(action_id, supabase):
     """Callback para excluir uma ação específica e recarregar a página."""
     try:
         supabase.table("Acoes").delete().eq('id', action_id).execute()
-        st.toast("Ação excluída com sucesso!")
         load_data.clear()
-        st.rerun() # Garante que a página é atualizada
+        st.toast("Ação excluída com sucesso!")
+        st.rerun() # Garante a atualização imediata da lista
     except Exception as e:
         st.error(f"Erro ao excluir a ação: {e}")
 
@@ -221,20 +221,15 @@ def show_gestao_acoes():
     st.subheader("Fila de Revisão e Ações Lançadas")
 
     with st.form(key="filter_form"):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            filtro_pelotao = st.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
-        with c2:
-            filtro_status_lancamento = st.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"], index=1)
-        with c3:
-            ordenar_por = st.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
-        
+        c1, c2, c3, c4 = st.columns(4)
+        filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
+        filtro_status_lancamento = c2.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"], index=1)
         opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
-        filtro_tipo_acao = st.selectbox("Filtrar por Ação", opcoes_tipo_acao)
+        filtro_tipo_acao = c3.selectbox("Filtrar por Ação", opcoes_tipo_acao)
+        ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
         st.form_submit_button("🔎 Aplicar Filtros")
 
-    acoes_df = load_data("Acoes")
-    acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
+    acoes_com_pontos = calcular_pontuacao_efetiva(load_data("Acoes"), tipos_acao_df, config_df)
     
     if acoes_com_pontos.empty or 'aluno_id' not in acoes_com_pontos.columns:
         df_display = pd.DataFrame()
