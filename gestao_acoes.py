@@ -115,9 +115,7 @@ def show_gestao_acoes():
     config_df = load_data("Config")
     
     with st.expander("➕ Registrar Nova Ação", expanded=True):
-        
-        # --- PAINEL DE BUSCA DE ALUNO COM CAMPOS SEPARADOS ---
-        with st.form("search_form_gestao"):
+        with st.form("search_form"):
             st.subheader("Passo 1: Buscar Aluno")
             st.info("Preencha um ou mais campos e clique em 'Buscar'. A busca combinará todos os critérios.")
             
@@ -143,7 +141,6 @@ def show_gestao_acoes():
                 st.session_state.search_results_df_gestao = df_busca
                 st.session_state.selected_student_id_gestao = None
 
-        # --- EXIBIÇÃO DOS RESULTADOS E SELEÇÃO ---
         search_results_df = st.session_state.search_results_df_gestao
         if not search_results_df.empty:
             st.write("Resultados da busca:")
@@ -154,7 +151,6 @@ def show_gestao_acoes():
             if aluno_selecionado_label:
                 st.session_state.selected_student_id_gestao = str(opcoes_encontradas[aluno_selecionado_label])
         
-        # --- FORMULÁRIO DE REGISTO DE AÇÃO ---
         if st.session_state.selected_student_id_gestao:
             st.divider()
             aluno_selecionado = alunos_df[alunos_df['id'] == st.session_state.selected_student_id_gestao].iloc[0]
@@ -202,11 +198,18 @@ def show_gestao_acoes():
     st.divider()
     st.subheader("Fila de Revisão e Ações Lançadas")
 
+    # --- INÍCIO DA MODIFICAÇÃO ---
     with st.form(key="filter_form"):
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4) # Adicionada uma coluna extra
         filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
         filtro_status_lancamento = c2.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"])
-        ordenar_por = c3.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
+        
+        # Novo filtro por tipo de ação
+        opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
+        filtro_tipo_acao = c3.selectbox("Filtrar por Ação", opcoes_tipo_acao)
+
+        ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
+        
         st.form_submit_button("🔎 Aplicar Filtros")
 
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
@@ -216,9 +219,14 @@ def show_gestao_acoes():
     if filtro_status_lancamento == "A Lançar": df_display = df_display[df_display['lancado_faia'] == False]
     elif filtro_status_lancamento == "Lançados": df_display = df_display[df_display['lancado_faia'] == True]
 
+    # Nova lógica de filtro por tipo de ação
+    if filtro_tipo_acao != "Todos":
+        # A coluna com o nome da ação é 'nome' após o merge em calcular_pontuacao_efetiva
+        df_display = df_display[df_display['nome'] == filtro_tipo_acao]
+
     if ordenar_por == "Mais Antigos": df_display = df_display.sort_values(by="data", ascending=True)
     elif ordenar_por == "Aluno (A-Z)": df_display = df_display.sort_values(by="nome_guerra", ascending=True)
-    else: df_display = df_display.sort_values(by="data", ascending=False) 
+    else: df_display = df_display.sort_values(by="data", ascending=False)
 
     with st.container():
         nomes_unicos = df_display['nome_guerra'].unique()
