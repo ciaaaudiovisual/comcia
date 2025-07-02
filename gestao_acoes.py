@@ -170,7 +170,6 @@ def show_gestao_acoes():
 
             with st.form("form_nova_acao"):
                 c1, c2 = st.columns(2)
-                
                 tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
                 positivas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome')
                 neutras_df = tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome')
@@ -183,11 +182,9 @@ def show_gestao_acoes():
                     opcoes_finais.append("--- AÇÕES NEUTRAS ---"); [opcoes_finais.append(f"{r['nome']} (0.0 pts)") or tipos_opcoes_map.update({f"{r['nome']} (0.0 pts)": r}) for _, r in neutras_df.iterrows()]
                 if not negativas_df.empty:
                     opcoes_finais.append("--- AÇÕES NEGATIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in negativas_df.iterrows()]
-                
                 tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_finais)
                 data = c2.date_input("Data e Hora da Ação", datetime.now())
                 descricao = st.text_area("Descrição/Justificativa (Opcional)")
-
                 lancar_direto = st.checkbox("🚀 Lançar diretamente na FAIA") if check_permission('acesso_pagina_lancamentos_faia') else False
                 confirmacao_registro = st.checkbox("Confirmo que os dados estão corretos para o registo.")
 
@@ -199,34 +196,26 @@ def show_gestao_acoes():
                             response = supabase.table("Acoes").select("id", count='exact').execute()
                             ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
                             novo_id = max(ids_existentes) + 1 if ids_existentes else 1
-                            
                             tipo_info = tipos_opcoes_map[tipo_selecionado_str]
-                            nova_acao = {
-                                'id': str(novo_id), 'aluno_id': str(st.session_state.selected_student_id_gestao), 
-                                'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 
-                                'descricao': descricao, 'data': data.isoformat(),
-                                'usuario': st.session_state.username, 'lancado_faia': lancar_direto
-                            }
+                            nova_acao = {'id': str(novo_id), 'aluno_id': str(st.session_state.selected_student_id_gestao), 'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 'descricao': descricao, 'data': data.isoformat(), 'usuario': st.session_state.username, 'lancado_faia': lancar_direto}
                             supabase.table("Acoes").insert(nova_acao).execute()
-                            st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!")
-                            load_data.clear(); st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao registrar ação: {e}")
+                            st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!"); load_data.clear(); st.rerun()
+                        except Exception as e: st.error(f"Erro ao registrar ação: {e}")
         else:
             st.info("⬅️ Busque e selecione um aluno acima para registrar uma nova ação.")
     
     st.divider()
     st.subheader("Fila de Revisão e Ações Lançadas")
 
-    with st.form(key="filter_form"):
-        c1, c2, c3, c4 = st.columns(4)
-        filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
-        filtro_status_lancamento = c2.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"], index=1)
-        opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
-        filtro_tipo_acao = c3.selectbox("Filtrar por Ação", opcoes_tipo_acao)
-        ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
-        st.form_submit_button("🔎 Aplicar Filtros")
-
+    # --- INÍCIO DA MODIFICAÇÃO: FILTROS INDEPENDENTES ---
+    c1, c2, c3, c4 = st.columns(4)
+    filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
+    filtro_status_lancamento = c2.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"], index=1)
+    opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
+    filtro_tipo_acao = c3.selectbox("Filtrar por Ação", opcoes_tipo_acao)
+    ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
+    # --- FIM DA MODIFICAÇÃO ---
+    
     acoes_df = load_data("Acoes")
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
     
@@ -290,7 +279,7 @@ def show_gestao_acoes():
                     data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y %H:%M')
                     st.markdown(f"**{acao.get('numero_interno', 'S/N')} - {acao.get('nome_guerra', 'N/A')}** em {data_formatada}")
                     st.markdown(f"**Ação:** {acao['nome']} <span style='color:{cor}; font-weight:bold;'>({acao['pontuacao_efetiva']:+.1f} pts)</span>", unsafe_allow_html=True)
-                    st.caption(f"Descrição: {acao['descricao']}" if acao.get('descricao') else "Sem descrição.")
+                    st.caption(f"Descrição: {acao['descricao']}" if acao['descricao'] else "Sem descrição.")
                 
                 with actions_col:
                     if is_launched:
