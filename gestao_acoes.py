@@ -50,17 +50,38 @@ def on_delete_action_click(action_id, supabase):
     except Exception as e:
         st.error(f"Erro ao excluir a ação: {e}")
 
+# --- FUNÇÃO MODIFICADA PARA PROCESSAMENTO EM LOTES ---
 def launch_selected_actions(selected_ids, supabase):
+    """Callback para lançar MÚLTIPLAS ações em lotes para evitar timeouts."""
     if not selected_ids:
         st.warning("Nenhuma ação foi selecionada.")
         return
+
+    BATCH_SIZE = 50  # Processa 50 itens de cada vez
+    total_items = len(selected_ids)
+    progress_bar = st.progress(0, text="Iniciando lançamento em massa...")
+    
     try:
-        supabase.table("Acoes").update({'lancado_faia': True}).in_('id', selected_ids).execute()
+        processed_count = 0
+        for i in range(0, total_items, BATCH_SIZE):
+            batch_ids = selected_ids[i:i + BATCH_SIZE]
+            
+            progress_text = f"Processando lote {i//BATCH_SIZE + 1}... ({processed_count}/{total_items})"
+            progress_bar.progress(i / total_items, text=progress_text)
+
+            # Envia o lote atual para a base de dados
+            supabase.table("Acoes").update({'lancado_faia': True}).in_('id', batch_ids).execute()
+            
+            processed_count += len(batch_ids)
+
+        progress_bar.progress(1.0, text="Lançamento concluído!")
         st.session_state.action_selection = {}
         load_data.clear()
-        show_success_dialog(f"{len(selected_ids)} ações foram lançadas na FAIA com sucesso!")
+        show_success_dialog(f"{processed_count} de {total_items} ações foram lançadas na FAIA com sucesso!")
+
     except Exception as e:
-        st.error(f"Ocorreu um erro ao lançar as ações em massa: {e}")
+        st.error(f"Ocorreu um erro durante o lançamento em massa: {e}")
+        progress_bar.empty()
 
 # ==============================================================================
 # FUNÇÕES DE APOIO
