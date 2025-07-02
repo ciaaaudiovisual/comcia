@@ -8,61 +8,27 @@ from io import BytesIO
 import zipfile
 
 # ==============================================================================
-# DIÁLOGOS E POPUPS
+# DIÁLOGOS E FUNÇÕES DE APOIO (Inalterados)
 # ==============================================================================
 @st.dialog("Sucesso!")
 def show_success_dialog(message):
-    """Exibe um popup de sucesso que o utilizador precisa de fechar manualmente."""
     st.success(message)
     if st.button("OK"):
         st.rerun()
 
 @st.dialog("Pré-visualização da FAIA")
 def preview_faia_dialog(aluno_info, acoes_aluno_df):
-    """Exibe o conteúdo da FAIA e o botão para exportar."""
     st.header(f"FAIA de: {aluno_info.get('nome_guerra', 'N/A')}")
     texto_relatorio = formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df)
     st.text_area("Conteúdo do Relatório:", value=texto_relatorio, height=300)
     nome_arquivo = f"FAIA_{aluno_info.get('numero_interno','SN')}_{aluno_info.get('nome_guerra','N/A')}.txt"
     st.download_button(label="✅ Exportar Relatório", data=texto_relatorio.encode('utf-8'), file_name=nome_arquivo, mime="text/plain")
 
-# ==============================================================================
-# FUNÇÕES DE CALLBACK (APENAS PARA AÇÕES EM MASSA)
-# ==============================================================================
-def launch_selected_actions(selected_ids, supabase):
-    """Callback para lançar MÚLTIPLAS ações em lotes para evitar timeouts."""
-    if not selected_ids:
-        st.warning("Nenhuma ação foi selecionada.")
-        return
-    BATCH_SIZE = 50
-    total_items = len(selected_ids)
-    progress_bar = st.progress(0, text="Iniciando lançamento em massa...")
-    try:
-        processed_count = 0
-        for i in range(0, total_items, BATCH_SIZE):
-            batch_ids = selected_ids[i:i + BATCH_SIZE]
-            progress_text = f"Processando lote {i//BATCH_SIZE + 1}... ({processed_count}/{total_items})"
-            progress_bar.progress(i / total_items, text=progress_text)
-            supabase.table("Acoes").update({'lancado_faia': True}).in_('id', batch_ids).execute()
-            processed_count += len(batch_ids)
-        progress_bar.progress(1.0, text="Lançamento concluído!")
-        st.session_state.action_selection = {}
-        load_data.clear()
-        show_success_dialog(f"{processed_count} de {total_items} ações foram lançadas na FAIA com sucesso!")
-    except Exception as e:
-        st.error(f"Ocorreu um erro durante o lançamento em massa: {e}")
-        progress_bar.empty()
-
-# ==============================================================================
-# FUNÇÕES DE APOIO
-# ==============================================================================
 def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
-    """Formata os dados de um único aluno para uma string de texto."""
     texto = [
         "============================================================",
-        "      FICHA DE ACOMPANHAMENTO INDIVIDUAL DO ALUNO (FAIA)",
-        "============================================================",
-        f"\nPelotão: {aluno_info.get('pelotao', 'N/A')}",
+        f"FICHA DE ACOMPANHAMENTO INDIVIDUAL DO ALUNO (FAIA)\n",
+        f"Pelotão: {aluno_info.get('pelotao', 'N/A')}",
         f"Aluno: {aluno_info.get('nome_completo', 'N/A')}",
         f"Nome de Guerra: {aluno_info.get('nome_guerra', 'N/A')}",
         f"Numero Interno: {aluno_info.get('numero_interno', 'N/A')}",
@@ -80,7 +46,7 @@ def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
                 f"Pontos: {acao.get('pontuacao_efetiva', 0.0):+.1f}",
                 f"Descrição: {acao.get('descricao', '')}",
                 f"Registrado por: {acao.get('usuario', 'N/A')}",
-                f"Lançado na FAIA: {'Sim' if acao.get('lancado_faia') else 'Não'}",
+                f"Status: {acao.get('status', 'N/A')}",
                 "\n-----------------------------------\n"
             ])
     texto.extend([
@@ -97,7 +63,6 @@ def show_gestao_acoes():
     st.title("Lançamentos de Ações dos Alunos")
     supabase = init_supabase_client()
 
-    if 'action_selection' not in st.session_state: st.session_state.action_selection = {}
     if 'search_results_df_gestao' not in st.session_state: st.session_state.search_results_df_gestao = pd.DataFrame()
     if 'selected_student_id_gestao' not in st.session_state: st.session_state.selected_student_id_gestao = None
 
@@ -109,27 +74,18 @@ def show_gestao_acoes():
     with st.expander("➕ Registrar Nova Ação", expanded=True):
         with st.form("search_form_gestao"):
             st.subheader("Passo 1: Buscar Aluno")
-            st.info("Preencha um ou mais campos e clique em 'Buscar'. A busca combinará todos os critérios.")
-            
             c1, c2 = st.columns(2)
             busca_num_interno = c1.text_input("Nº Interno")
             busca_nome_guerra = c2.text_input("Nome de Guerra")
-            
             c3, c4 = st.columns(2)
             busca_nip = c3.text_input("NIP")
             busca_nome_completo = c4.text_input("Nome Completo")
-            
             if st.form_submit_button("🔎 Buscar Aluno"):
                 df_busca = alunos_df.copy()
-                if busca_num_interno:
-                    df_busca = df_busca[df_busca['numero_interno'].astype(str).str.contains(busca_num_interno, na=False)]
-                if busca_nome_guerra:
-                    df_busca = df_busca[df_busca['nome_guerra'].str.contains(busca_nome_guerra, case=False, na=False)]
-                if busca_nip and 'nip' in df_busca.columns:
-                    df_busca = df_busca[df_busca['nip'].astype(str).str.contains(busca_nip, na=False)]
-                if busca_nome_completo and 'nome_completo' in df_busca.columns:
-                    df_busca = df_busca[df_busca['nome_completo'].str.contains(busca_nome_completo, case=False, na=False)]
-                
+                if busca_num_interno: df_busca = df_busca[df_busca['numero_interno'].astype(str).str.contains(busca_num_interno, na=False)]
+                if busca_nome_guerra: df_busca = df_busca[df_busca['nome_guerra'].str.contains(busca_nome_guerra, case=False, na=False)]
+                if busca_nip and 'nip' in df_busca.columns: df_busca = df_busca[df_busca['nip'].astype(str).str.contains(busca_nip, na=False)]
+                if busca_nome_completo and 'nome_completo' in df_busca.columns: df_busca = df_busca[df_busca['nome_completo'].str.contains(busca_nome_completo, case=False, na=False)]
                 st.session_state.search_results_df_gestao = df_busca
                 st.session_state.selected_student_id_gestao = None
 
@@ -138,7 +94,6 @@ def show_gestao_acoes():
             st.write("Resultados da busca:")
             search_results_df['label'] = search_results_df.apply(lambda row: f"{row.get('numero_interno', '')} - {row.get('nome_guerra', '')} ({row.get('pelotao', '')})", axis=1)
             opcoes_encontradas = pd.Series(search_results_df.id.values, index=search_results_df.label).to_dict()
-            
             aluno_selecionado_label = st.radio("Selecione um aluno:", options=opcoes_encontradas.keys(), index=None)
             if aluno_selecionado_label:
                 st.session_state.selected_student_id_gestao = str(opcoes_encontradas[aluno_selecionado_label])
@@ -147,28 +102,22 @@ def show_gestao_acoes():
             st.divider()
             aluno_selecionado = alunos_df[alunos_df['id'] == st.session_state.selected_student_id_gestao].iloc[0]
             st.subheader(f"Passo 2: Registrar Ação para {aluno_selecionado['nome_guerra']}")
-
             with st.form("form_nova_acao"):
                 c1, c2 = st.columns(2)
-                
                 tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
                 positivas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome')
                 neutras_df = tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome')
                 negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
-                opcoes_finais = []
-                tipos_opcoes_map = {}
+                opcoes_finais, tipos_opcoes_map = [], {}
                 if not positivas_df.empty:
                     opcoes_finais.append("--- AÇÕES POSITIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in positivas_df.iterrows()]
                 if not neutras_df.empty:
                     opcoes_finais.append("--- AÇÕES NEUTRAS ---"); [opcoes_finais.append(f"{r['nome']} (0.0 pts)") or tipos_opcoes_map.update({f"{r['nome']} (0.0 pts)": r}) for _, r in neutras_df.iterrows()]
                 if not negativas_df.empty:
                     opcoes_finais.append("--- AÇÕES NEGATIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in negativas_df.iterrows()]
-                
                 tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_finais)
                 data = c2.date_input("Data e Hora da Ação", datetime.now())
                 descricao = st.text_area("Descrição/Justificativa (Opcional)")
-
-                lancar_direto = st.checkbox("🚀 Lançar diretamente na FAIA") if check_permission('acesso_pagina_lancamentos_faia') else False
                 confirmacao_registro = st.checkbox("Confirmo que os dados estão corretos para o registo.")
 
                 if st.form_submit_button("Registrar Ação"):
@@ -179,73 +128,42 @@ def show_gestao_acoes():
                             response = supabase.table("Acoes").select("id", count='exact').execute()
                             ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
                             novo_id = max(ids_existentes) + 1 if ids_existentes else 1
-                            
                             tipo_info = tipos_opcoes_map[tipo_selecionado_str]
                             nova_acao = {
                                 'id': str(novo_id), 'aluno_id': str(st.session_state.selected_student_id_gestao), 
                                 'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 
                                 'descricao': descricao, 'data': data.isoformat(),
-                                'usuario': st.session_state.username, 'lancado_faia': lancar_direto
+                                'usuario': st.session_state.username, 'status': 'Pendente'
                             }
                             supabase.table("Acoes").insert(nova_acao).execute()
-                            st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!")
-                            load_data.clear(); st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao registrar ação: {e}")
+                            st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!"); load_data.clear(); st.rerun()
+                        except Exception as e: st.error(f"Erro ao registrar ação: {e}")
         else:
             st.info("⬅️ Busque e selecione um aluno acima para registrar uma nova ação.")
     
     st.divider()
-    st.subheader("Fila de Revisão e Ações Lançadas")
+    st.subheader("Fila de Revisão e Ações")
 
-    # --- INÍCIO DA NOVA LÓGICA DE FILTROS ---
     c1, c2, c3, c4 = st.columns(4)
-    filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]), key="filtro_pelotao_gestao")
-    filtro_status_lancamento = c2.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"], index=1, key="filtro_status_gestao")
+    filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
+    filtro_status = c2.selectbox("Filtrar Status", ["Pendente", "Lançado", "Arquivado", "Todos"], index=0)
     opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
-    filtro_tipo_acao = c3.selectbox("Filtrar por Ação", opcoes_tipo_acao, key="filtro_tipo_acao_gestao")
-    ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"], key="ordenar_por_gestao")
-    # --- FIM DA NOVA LÓGICA DE FILTROS ---
+    filtro_tipo_acao = c3.selectbox("Filtrar por Ação", opcoes_tipo_acao)
+    ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
 
-    acoes_com_pontos = calcular_pontuacao_efetiva(load_data("Acoes"), tipos_acao_df, config_df)
-    
-    if acoes_com_pontos.empty or 'aluno_id' not in acoes_com_pontos.columns:
-        df_display = pd.DataFrame()
-    else:
+    acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
+    df_display = pd.DataFrame()
+    if not acoes_com_pontos.empty:
         df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'numero_interno', 'nome_guerra', 'pelotao', 'nome_completo']], left_on='aluno_id', right_on='id', how='inner')
     
     if not df_display.empty:
         if filtro_pelotao != "Todos": df_display = df_display[df_display['pelotao'] == filtro_pelotao]
-        if filtro_status_lancamento == "A Lançar": df_display = df_display[df_display['lancado_faia'] == False]
-        elif filtro_status_lancamento == "Lançados": df_display = df_display[df_display['lancado_faia'] == True]
-        if filtro_tipo_acao != "Todos":
-            df_display = df_display[df_display['nome'] == filtro_tipo_acao]
+        if filtro_status != "Todos": df_display = df_display[df_display['status'] == filtro_status]
+        if filtro_tipo_acao != "Todos": df_display = df_display[df_display['nome'] == filtro_tipo_acao]
         if ordenar_por == "Mais Antigos": df_display = df_display.sort_values(by="data", ascending=True)
         elif ordenar_por == "Aluno (A-Z)": df_display = df_display.sort_values(by="nome_guerra", ascending=True)
         else: df_display = df_display.sort_values(by="data", ascending=False) 
 
-    with st.container():
-        if not df_display.empty:
-            nomes_unicos = df_display['nome_guerra'].unique()
-            nomes_validos = sorted([str(nome) for nome in nomes_unicos if pd.notna(nome)])
-            aluno_para_exportar = st.selectbox("Selecione um Aluno para Gerar Relatório:", ["Nenhum"] + nomes_validos)
-            if aluno_para_exportar != "Nenhum":
-                if st.button("👁️ Visualizar FAIA para Exportar"):
-                    aluno_info = df_display[df_display['nome_guerra'] == aluno_para_exportar].iloc[0]
-                    acoes_do_aluno = df_display[df_display['nome_guerra'] == aluno_para_exportar]
-                    preview_faia_dialog(aluno_info, acoes_do_aluno)
-
-    acoes_pendentes_visiveis = df_display[~df_display['lancado_faia']] if 'lancado_faia' in df_display.columns else pd.DataFrame()
-    if not acoes_pendentes_visiveis.empty and check_permission('acesso_pagina_lancamentos_faia'):
-        st.write("---")
-        col_massa1, col_massa2 = st.columns([1, 3])
-        select_all = col_massa1.toggle("Marcar/Desmarcar Todas as Visíveis")
-        for _, row in acoes_pendentes_visiveis.iterrows():
-            st.session_state.action_selection[row['id']] = select_all
-        selected_ids = [k for k, v in st.session_state.action_selection.items() if v]
-        if selected_ids:
-            col_massa2.button(f"🚀 Lançar {len(selected_ids)} Ações Selecionadas", type="primary", on_click=launch_selected_actions, args=(selected_ids, supabase))
-    
     if df_display.empty:
         st.info("Nenhuma ação encontrada para os filtros selecionados.")
     else:
@@ -253,7 +171,6 @@ def show_gestao_acoes():
         for _, acao in df_display.iterrows():
             with st.container(border=True):
                 info_col, actions_col = st.columns([7, 3])
-
                 with info_col:
                     cor = "green" if acao['pontuacao_efetiva'] > 0 else "red" if acao['pontuacao_efetiva'] < 0 else "gray"
                     data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y %H:%M')
@@ -262,40 +179,22 @@ def show_gestao_acoes():
                     st.caption(f"Descrição: {acao['descricao']}" if acao['descricao'] else "Sem descrição.")
                 
                 with actions_col:
-                    is_launched = acao.get('lancado_faia', False)
+                    status_atual = acao.get('status', 'Pendente')
                     can_launch = check_permission('acesso_pagina_lancamentos_faia')
                     can_delete = check_permission('pode_excluir_lancamento_faia')
 
-                    if is_launched:
+                    if status_atual == 'Lançado':
                         st.success("✅ Lançado")
-                        if can_delete:
-                            with st.form(f"delete_launched_form_{acao['id']}"):
-                                if st.form_submit_button("🗑️ Excluir", use_container_width=True, help="Excluir permanentemente"):
-                                    try:
-                                        supabase.table("Acoes").delete().eq('id', acao['id']).execute()
-                                        st.toast("Ação excluída com sucesso!")
-                                        load_data.clear(); st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Erro ao excluir: {e}")
-                    else:
-                        action_buttons_cols = st.columns(2) if can_launch and can_delete else st.columns(1)
-                        if can_launch:
-                            with action_buttons_cols[0]:
-                                with st.form(f"launch_form_{acao['id']}"):
-                                    if st.form_submit_button("Lançar", use_container_width=True):
-                                        try:
-                                            supabase.table("Acoes").update({'lancado_faia': True}).eq('id', acao['id']).execute()
-                                            st.toast("Ação lançada com sucesso!")
-                                            load_data.clear(); st.rerun()
-                                        except Exception as e:
-                                            st.error(f"Erro ao lançar: {e}")
-                        if can_delete:
-                             with action_buttons_cols[-1]:
-                                with st.form(f"delete_pending_form_{acao['id']}"):
-                                    if st.form_submit_button("🗑️", help="Excluir", use_container_width=True):
-                                        try:
-                                            supabase.table("Acoes").delete().eq('id', acao['id']).execute()
-                                            st.toast("Ação excluída com sucesso!")
-                                            load_data.clear(); st.rerun()
-                                        except Exception as e:
-                                            st.error(f"Erro ao excluir: {e}")
+                    elif status_atual == 'Arquivado':
+                        st.warning("🗄️ Arquivado")
+                    elif status_atual == 'Pendente' and can_launch:
+                        with st.form(f"launch_form_{acao['id']}"):
+                            if st.form_submit_button("🚀 Lançar", use_container_width=True):
+                                supabase.table("Acoes").update({'status': 'Lançado'}).eq('id', acao['id']).execute()
+                                load_data.clear(); st.rerun()
+                    
+                    if status_atual != 'Arquivado' and can_delete:
+                        with st.form(f"archive_form_{acao['id']}"):
+                            if st.form_submit_button("🗑️ Arquivar", use_container_width=True):
+                                supabase.table("Acoes").update({'status': 'Arquivado'}).eq('id', acao['id']).execute()
+                                load_data.clear(); st.rerun()
