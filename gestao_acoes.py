@@ -30,27 +30,22 @@ def preview_faia_dialog(aluno_info, acoes_aluno_df):
 # FUNÇÕES DE CALLBACK
 # ==============================================================================
 def on_launch_click(acao, supabase):
-    """Callback para lançar UMA ÚNICA ação e mostrar o popup de sucesso."""
+    """Callback para lançar UMA ÚNICA ação e recarregar a página."""
     try:
         supabase.table("Acoes").update({'lancado_faia': True}).eq('id', acao['id']).execute()
         load_data.clear()
-        alunos_df = load_data("Alunos")
-        aluno_info_query = alunos_df[alunos_df['id'] == str(acao['aluno_id'])]
-        if not aluno_info_query.empty:
-            aluno_info = aluno_info_query.iloc[0]
-            msg = f"A ação '{acao['nome']}' para o aluno {aluno_info.get('nome_guerra', 'N/A')} foi lançada na FAIA com sucesso!"
-            show_success_dialog(msg)
-        else:
-            show_success_dialog("Ação lançada na FAIA com sucesso!")
+        st.toast(f"Ação para {acao.get('nome_guerra', 'N/A')} foi lançada com sucesso!")
+        st.rerun() # Garante que a página é atualizada
     except Exception as e:
         st.error(f"Ocorreu um erro ao lançar a ação: {e}")
 
 def on_delete_action_click(action_id, supabase):
-    """Callback para excluir uma ação específica."""
+    """Callback para excluir uma ação específica e recarregar a página."""
     try:
         supabase.table("Acoes").delete().eq('id', action_id).execute()
         st.toast("Ação excluída com sucesso!")
         load_data.clear()
+        st.rerun() # Garante que a página é atualizada
     except Exception as e:
         st.error(f"Erro ao excluir a ação: {e}")
 
@@ -100,7 +95,7 @@ def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
     else:
         for _, acao in acoes_aluno_df.sort_values(by='data').iterrows():
             texto.extend([
-                f"Data: {pd.to_datetime(acao['data']).strftime('%Y-%m-%d')}",
+                f"Data: {pd.to_datetime(acao['data']).strftime('%d/%m/%Y %H:%M')}",
                 f"Tipo: {acao.get('nome', 'Tipo Desconhecido')}",
                 f"Pontos: {acao.get('pontuacao_efetiva', 0.0):+.1f}",
                 f"Descrição: {acao.get('descricao', '')}",
@@ -127,6 +122,7 @@ def show_gestao_acoes():
     if 'selected_student_id_gestao' not in st.session_state: st.session_state.selected_student_id_gestao = None
 
     alunos_df = load_data("Alunos")
+    acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
     
@@ -189,7 +185,7 @@ def show_gestao_acoes():
                     opcoes_finais.append("--- AÇÕES NEGATIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in negativas_df.iterrows()]
                 
                 tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_finais)
-                data = c2.date_input("Data", datetime.now())
+                data = c2.date_input("Data e Hora da Ação", datetime.now())
                 descricao = st.text_area("Descrição/Justificativa (Opcional)")
 
                 lancar_direto = st.checkbox("🚀 Lançar diretamente na FAIA") if check_permission('acesso_pagina_lancamentos_faia') else False
@@ -208,7 +204,7 @@ def show_gestao_acoes():
                             nova_acao = {
                                 'id': str(novo_id), 'aluno_id': str(st.session_state.selected_student_id_gestao), 
                                 'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 
-                                'descricao': descricao, 'data': data.strftime('%Y-%m-%d %H:%M:%S'),
+                                'descricao': descricao, 'data': data.isoformat(),
                                 'usuario': st.session_state.username, 'lancado_faia': lancar_direto
                             }
                             supabase.table("Acoes").insert(nova_acao).execute()
@@ -243,7 +239,7 @@ def show_gestao_acoes():
     if acoes_com_pontos.empty or 'aluno_id' not in acoes_com_pontos.columns:
         df_display = pd.DataFrame()
     else:
-        df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'nome_guerra', 'pelotao', 'nome_completo']], left_on='aluno_id', right_on='id', how='inner')
+        df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'numero_interno', 'nome_guerra', 'pelotao', 'nome_completo']], left_on='aluno_id', right_on='id', how='inner')
     
     if not df_display.empty:
         if filtro_pelotao != "Todos": df_display = df_display[df_display['pelotao'] == filtro_pelotao]
@@ -298,7 +294,7 @@ def show_gestao_acoes():
                 with info_col:
                     cor = "green" if acao['pontuacao_efetiva'] > 0 else "red" if acao['pontuacao_efetiva'] < 0 else "gray"
                     data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y %H:%M')
-                    st.markdown(f"**{acao['nome_guerra']}** ({acao['pelotao']}) em {data_formatada}")
+                    st.markdown(f"**{acao.get('numero_interno', 'S/N')} - {acao.get('nome_guerra', 'N/A')}** em {data_formatada}")
                     st.markdown(f"**Ação:** {acao['nome']} <span style='color:{cor}; font-weight:bold;'>({acao['pontuacao_efetiva']:+.1f} pts)</span>", unsafe_allow_html=True)
                     st.caption(f"Descrição: {acao['descricao']}" if acao['descricao'] else "Sem descrição.")
                 
