@@ -213,20 +213,26 @@ def show_gestao_acoes():
                 confirmacao_registro = st.checkbox("Confirmo que os dados estão corretos para o registo.")
 
                 if st.form_submit_button("Registrar Ação"):
-                    if tipo_selecionado_str.startswith("---"):
-                        st.warning("Por favor, selecione um tipo de ação válido, não um cabeçalho de categoria.")
-                    elif not confirmacao_registro:
+                    if not confirmacao_registro:
                         st.warning("Por favor, confirme que os dados estão corretos.")
                     else:
                         try:
                             tipo_info = tipos_opcoes_map[tipo_selecionado_str]
+                            
+                            # --- LÓGICA PARA GERAR UM NOVO ID ÚNICO ---
                             ids = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
                             novo_id = int(ids.max()) + 1 if not ids.empty else 1
+                            # -----------------------------------------
+
                             nova_acao = {
-                                'id': str(novo_id), 'aluno_id': str(st.session_state.selected_student_id_gestao), 
-                                'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 
-                                'descricao': descricao, 'data': data.strftime('%Y-%m-%d'),
-                                'usuario': st.session_state.username, 'lancado_faia': lancar_direto
+                                'id': str(novo_id), # ID é gerado e incluído
+                                'aluno_id': str(st.session_state.selected_student_id_gestao), 
+                                'tipo_acao_id': str(tipo_info['id']), 
+                                'tipo': tipo_info['nome'], 
+                                'descricao': descricao, 
+                                'data': data.strftime('%Y-%m-%d'),
+                                'usuario': st.session_state.username, 
+                                'lancado_faia': lancar_direto
                             }
                             supabase.table("Acoes").insert(nova_acao).execute()
                             st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!")
