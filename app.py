@@ -31,7 +31,7 @@ if st.sidebar.button("🔄 Recarregar Dados"):
 menu_options = {
     "Dashboard": show_dashboard,
     "Programação": show_programacao,
-    "Alunos": show_alunos,
+    "Cadastro de Alunos": show_alunos,
     "Lançamento de Ações": show_gestao_acoes, # Nova página unificada
     "Parada Diária": show_parada_diaria,
 }
