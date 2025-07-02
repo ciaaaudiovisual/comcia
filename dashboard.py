@@ -131,89 +131,61 @@ def show_dashboard():
                 st.divider()
                 st.subheader("2. Defina e Registre a Ação")
 
-                # --- INÍCIO DA MODIFICAÇÃO: ORGANIZAÇÃO DOS TIPOS DE AÇÃO ---
-                tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
+                if not acoes_df.empty:
+                    contagem = acoes_df['tipo_acao_id'].value_counts().to_dict()
+                    tipos_acao_df['contagem'] = tipos_acao_df['id'].astype(str).map(contagem).fillna(0)
+                    tipos_acao_df = tipos_acao_df.sort_values('contagem', ascending=False)
                 
-                positivas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome')
-                neutras_df = tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome')
-                negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
-                
-                opcoes_finais = []
-                tipos_opcoes_map = {}
-
-                if not positivas_df.empty:
-                    opcoes_finais.append("--- AÇÕES POSITIVAS ---")
-                    for _, row in positivas_df.iterrows():
-                        label = f"{row['nome']} ({row['pontuacao']:.1f} pts)"
-                        opcoes_finais.append(label)
-                        tipos_opcoes_map[label] = row
-                if not neutras_df.empty:
-                    opcoes_finais.append("--- AÇÕES NEUTRAS ---")
-                    for _, row in neutras_df.iterrows():
-                        label = f"{row['nome']} (0.0 pts)"
-                        opcoes_finais.append(label)
-                        tipos_opcoes_map[label] = row
-                if not negativas_df.empty:
-                    opcoes_finais.append("--- AÇÕES NEGATIVAS ---")
-                    for _, row in negativas_df.iterrows():
-                        label = f"{row['nome']} ({row['pontuacao']:.1f} pts)"
-                        opcoes_finais.append(label)
-                        tipos_opcoes_map[label] = row
-                
-                tipo_selecionado_str = st.selectbox("Tipo de Ação:", opcoes_finais)
-                # --- FIM DA MODIFICAÇÃO ---
-                
+                tipos_opcoes = {f"{row['nome']} ({float(row.get('pontuacao',0)):.1f})": row['id'] for _, row in tipos_acao_df.iterrows()}
+                tipo_selecionado_label = st.selectbox("Tipo de Ação:", options=tipos_opcoes.keys())
                 descricao = st.text_area("Descrição da Ação (Opcional)")
                 
-                if st.form_submit_button("Registrar Ação"):
-                    if tipo_selecionado_str.startswith("---"):
-                        st.warning("Por favor, selecione um tipo de ação válido, não um cabeçalho de categoria.")
+                if st.form_submit_button("Registrar Ação em Massa"):
+                    alunos_para_anotar_ids = []
+                    if alunos_selecionados_labels:
+                        alunos_para_anotar_ids = [label_to_id_map[label] for label in alunos_selecionados_labels]
+                    elif pelotao_selecionado != "Nenhum" or especialidade_selecionada != "Nenhuma":
+                        df_filtrado = alunos_df.copy()
+                        if pelotao_selecionado != "Nenhum":
+                            df_filtrado = df_filtrado[df_filtrado['pelotao'] == pelotao_selecionado]
+                        if especialidade_selecionada != "Nenhuma":
+                            df_filtrado = df_filtrado[df_filtrado['especialidade'] == especialidade_selecionada]
+                        alunos_para_anotar_ids = df_filtrado['id'].tolist()
+                    
+                    if not alunos_para_anotar_ids:
+                        st.warning("Nenhum aluno foi selecionado. Por favor, selecione alunos manualmente ou use um filtro de grupo.")
                     else:
-                        alunos_para_anotar_ids = []
-                        if alunos_selecionados_labels:
-                            alunos_para_anotar_ids = [label_to_id_map[label] for label in alunos_selecionados_labels]
-                        elif pelotao_selecionado != "Nenhum" or especialidade_selecionada != "Nenhuma":
-                            df_filtrado = alunos_df.copy()
-                            if pelotao_selecionado != "Nenhum":
-                                df_filtrado = df_filtrado[df_filtrado['pelotao'] == pelotao_selecionado]
-                            if especialidade_selecionada != "Nenhuma":
-                                df_filtrado = df_filtrado[df_filtrado['especialidade'] == especialidade_selecionada]
-                            alunos_para_anotar_ids = df_filtrado['id'].tolist()
-                        
-                        if not alunos_para_anotar_ids:
-                            st.warning("Nenhum aluno foi selecionado. Por favor, selecione alunos manualmente ou use um filtro de grupo.")
-                        else:
-                            try:
-                                tipo_acao_info = tipos_opcoes_map[tipo_selecionado_str]
-                                tipo_acao_id = tipo_acao_info['id']
+                        try:
+                            response = supabase.table("Acoes").select("id", count='exact').execute()
+                            ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
+                            ultimo_id = max(ids_existentes) if ids_existentes else 0
+                            
+                            tipo_acao_id = tipos_opcoes[tipo_selecionado_label]
+                            tipo_acao_info = tipos_acao_df[tipos_acao_df['id'] == tipo_acao_id].iloc[0]
+                            
+                            novas_acoes = []
+                            for i, aluno_id in enumerate(alunos_para_anotar_ids):
+                                novo_id = ultimo_id + 1 + i
+                                nova_acao = {
+                                    'id': str(novo_id),
+                                    'aluno_id': str(aluno_id), 
+                                    'tipo_acao_id': str(tipo_acao_id),
+                                    'tipo': tipo_acao_info['nome'], 
+                                    'descricao': descricao, 
+                                    'data': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                    'usuario': st.session_state.username, 
+                                    'lancado_faia': False
+                                }
+                                novas_acoes.append(nova_acao)
                                 
-                                response = supabase.table("Acoes").select("id", count='exact').execute()
-                                ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
-                                ultimo_id = max(ids_existentes) if ids_existentes else 0
-                                
-                                novas_acoes = []
-                                for i, aluno_id in enumerate(alunos_para_anotar_ids):
-                                    novo_id = ultimo_id + 1 + i
-                                    nova_acao = {
-                                        'id': str(novo_id),
-                                        'aluno_id': str(aluno_id), 
-                                        'tipo_acao_id': str(tipo_acao_id),
-                                        'tipo': tipo_acao_info['nome'], 
-                                        'descricao': descricao, 
-                                        'data': datetime.now().strftime('%Y-%m-%d'),
-                                        'usuario': st.session_state.username, 
-                                        'lancado_faia': False
-                                    }
-                                    novas_acoes.append(nova_acao)
-                                    
-                                if novas_acoes:
-                                    supabase.table("Acoes").insert(novas_acoes).execute()
-                                    st.success(f"Ação registrada com sucesso para {len(novas_acoes)} aluno(s)!")
-                                    st.session_state.alunos_selecionados_scanner_labels = []
-                                    load_data.clear()
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"Falha ao salvar a(s) ação(ões): {e}")
+                            if novas_acoes:
+                                supabase.table("Acoes").insert(novas_acoes).execute()
+                                st.success(f"Ação registrada com sucesso para {len(novas_acoes)} aluno(s)!")
+                                st.session_state.alunos_selecionados_scanner_labels = []
+                                load_data.clear()
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Falha ao salvar a(s) ação(ões): {e}")
 
     st.divider()
     
