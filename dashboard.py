@@ -159,17 +159,13 @@ def show_dashboard():
                             tipo_acao_id = tipos_opcoes[tipo_selecionado_label]
                             tipo_acao_info = tipos_acao_df[tipos_acao_df['id'] == tipo_acao_id].iloc[0]
                             
-                            # --- LÓGICA DE GERAÇÃO DE ID REFORÇADA ---
+                            # --- LÓGICA CORRIGIDA PARA GERAR ID ---
                             ids_numericos = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
                             ultimo_id = int(ids_numericos.max()) if not ids_numericos.empty else 0
-                            
-                            st.write("--- INÍCIO DA DEPURAÇÃO ---")
-                            st.write(f"Último ID encontrado na tabela 'Acoes': {ultimo_id}")
                             
                             novas_acoes = []
                             for i, aluno_id in enumerate(alunos_para_anotar_ids):
                                 novo_id = ultimo_id + 1 + i
-                                st.write(f"Gerando Ação para Aluno ID {aluno_id} com o novo ID de Ação: {novo_id}")
                                 nova_acao = {
                                     'id': str(novo_id),
                                     'aluno_id': str(aluno_id), 
@@ -181,9 +177,7 @@ def show_dashboard():
                                     'lancado_faia': False
                                 }
                                 novas_acoes.append(nova_acao)
-                            
-                            st.write("--- FIM DA DEPURAÇÃO ---")
-
+                                
                             if novas_acoes:
                                 supabase.table("Acoes").insert(novas_acoes).execute()
                                 st.success(f"Ação registrada com sucesso para {len(novas_acoes)} aluno(s)!")
