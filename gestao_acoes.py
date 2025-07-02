@@ -199,17 +199,21 @@ def show_gestao_acoes():
     st.subheader("Fila de Revisão e Ações Lançadas")
 
     # --- INÍCIO DA MODIFICAÇÃO ---
+  # --- INÍCIO DA MODIFICAÇÃO NO LAYOUT DOS FILTROS ---
     with st.form(key="filter_form"):
-        c1, c2, c3, c4 = st.columns(4) # Adicionada uma coluna extra
-        filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
-        filtro_status_lancamento = c2.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"])
+        # Primeira linha de filtros
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            filtro_pelotao = st.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
+        with c2:
+            filtro_status_lancamento = st.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"])
+        with c3:
+            ordenar_por = st.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
         
-        # Novo filtro por tipo de ação
+        # Segunda linha de filtros
         opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
-        filtro_tipo_acao = c3.selectbox("Filtrar por Ação", opcoes_tipo_acao)
+        filtro_tipo_acao = st.selectbox("Filtrar por Ação", opcoes_tipo_acao)
 
-        ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
-        
         st.form_submit_button("🔎 Aplicar Filtros")
 
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
