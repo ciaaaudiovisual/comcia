@@ -127,7 +127,6 @@ def show_gestao_acoes():
     if 'selected_student_id_gestao' not in st.session_state: st.session_state.selected_student_id_gestao = None
 
     alunos_df = load_data("Alunos")
-    acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
     
@@ -209,11 +208,13 @@ def show_gestao_acoes():
                             nova_acao = {
                                 'id': str(novo_id), 'aluno_id': str(st.session_state.selected_student_id_gestao), 
                                 'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 
-                                'descricao': descricao, 'data': data.strftime('%Y-%m-%d'),
+                                'descricao': descricao, 'data': data.strftime('%Y-%m-%d %H:%M:%S'),
                                 'usuario': st.session_state.username, 'lancado_faia': lancar_direto
                             }
                             supabase.table("Acoes").insert(nova_acao).execute()
                             st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!")
+                            st.session_state.search_results_df_gestao = pd.DataFrame()
+                            st.session_state.selected_student_id_gestao = None
                             load_data.clear(); st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao registrar ação: {e}")
@@ -224,19 +225,16 @@ def show_gestao_acoes():
     st.subheader("Fila de Revisão e Ações Lançadas")
 
     with st.form(key="filter_form"):
-        # --- INÍCIO DA MODIFICAÇÃO NO LAYOUT E DEFAULT DO FILTRO ---
         c1, c2, c3 = st.columns(3)
         with c1:
             filtro_pelotao = st.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
         with c2:
-            opcoes_status = ["Todos", "A Lançar", "Lançados"]
-            filtro_status_lancamento = st.selectbox("Filtrar Status", opcoes_status, index=1) # index=1 define "A Lançar" como padrão
+            filtro_status_lancamento = st.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"], index=1)
         with c3:
             ordenar_por = st.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
         
         opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
         filtro_tipo_acao = st.selectbox("Filtrar por Ação", opcoes_tipo_acao)
-        # --- FIM DA MODIFICAÇÃO ---
         st.form_submit_button("🔎 Aplicar Filtros")
 
     acoes_df = load_data("Acoes")
@@ -299,7 +297,8 @@ def show_gestao_acoes():
 
                 with info_col:
                     cor = "green" if acao['pontuacao_efetiva'] > 0 else "red" if acao['pontuacao_efetiva'] < 0 else "gray"
-                    st.markdown(f"**{acao['nome_guerra']}** ({acao['pelotao']}) em {pd.to_datetime(acao['data']).strftime('%d/%m/%Y')}")
+                    data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y %H:%M')
+                    st.markdown(f"**{acao['nome_guerra']}** ({acao['pelotao']}) em {data_formatada}")
                     st.markdown(f"**Ação:** {acao['nome']} <span style='color:{cor}; font-weight:bold;'>({acao['pontuacao_efetiva']:+.1f} pts)</span>", unsafe_allow_html=True)
                     st.caption(f"Descrição: {acao['descricao']}" if acao['descricao'] else "Sem descrição.")
                 
