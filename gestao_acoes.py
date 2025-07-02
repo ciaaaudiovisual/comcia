@@ -12,12 +12,14 @@ import zipfile
 # ==============================================================================
 @st.dialog("Sucesso!")
 def show_success_dialog(message):
+    """Exibe um popup de sucesso que o utilizador precisa de fechar manualmente."""
     st.success(message)
     if st.button("OK"):
         st.rerun()
 
 @st.dialog("Pré-visualização da FAIA")
 def preview_faia_dialog(aluno_info, acoes_aluno_df):
+    """Exibe o conteúdo da FAIA e o botão para exportar."""
     st.header(f"FAIA de: {aluno_info.get('nome_guerra', 'N/A')}")
     texto_relatorio = formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df)
     st.text_area("Conteúdo do Relatório:", value=texto_relatorio, height=300)
@@ -28,6 +30,7 @@ def preview_faia_dialog(aluno_info, acoes_aluno_df):
 # FUNÇÕES DE CALLBACK
 # ==============================================================================
 def on_launch_click(acao, supabase):
+    """Callback para lançar UMA ÚNICA ação e mostrar o popup de sucesso."""
     try:
         supabase.table("Acoes").update({'lancado_faia': True}).eq('id', acao['id']).execute()
         load_data.clear()
@@ -43,6 +46,7 @@ def on_launch_click(acao, supabase):
         st.error(f"Ocorreu um erro ao lançar a ação: {e}")
 
 def on_delete_action_click(action_id, supabase):
+    """Callback para excluir uma ação específica."""
     try:
         supabase.table("Acoes").delete().eq('id', action_id).execute()
         st.toast("Ação excluída com sucesso!")
@@ -50,14 +54,13 @@ def on_delete_action_click(action_id, supabase):
     except Exception as e:
         st.error(f"Erro ao excluir a ação: {e}")
 
-# --- FUNÇÃO MODIFICADA PARA PROCESSAMENTO EM LOTES ---
 def launch_selected_actions(selected_ids, supabase):
     """Callback para lançar MÚLTIPLAS ações em lotes para evitar timeouts."""
     if not selected_ids:
         st.warning("Nenhuma ação foi selecionada.")
         return
 
-    BATCH_SIZE = 50  # Processa 50 itens de cada vez
+    BATCH_SIZE = 50
     total_items = len(selected_ids)
     progress_bar = st.progress(0, text="Iniciando lançamento em massa...")
     
@@ -69,7 +72,6 @@ def launch_selected_actions(selected_ids, supabase):
             progress_text = f"Processando lote {i//BATCH_SIZE + 1}... ({processed_count}/{total_items})"
             progress_bar.progress(i / total_items, text=progress_text)
 
-            # Envia o lote atual para a base de dados
             supabase.table("Acoes").update({'lancado_faia': True}).in_('id', batch_ids).execute()
             
             processed_count += len(batch_ids)
@@ -87,6 +89,7 @@ def launch_selected_actions(selected_ids, supabase):
 # FUNÇÕES DE APOIO
 # ==============================================================================
 def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
+    """Formata os dados de um único aluno para uma string de texto."""
     texto = [
         "============================================================",
         "      FICHA DE ACOMPANHAMENTO INDIVIDUAL DO ALUNO (FAIA)",
@@ -136,7 +139,7 @@ def show_gestao_acoes():
     config_df = load_data("Config")
     
     with st.expander("➕ Registrar Nova Ação", expanded=True):
-        with st.form("search_form"):
+        with st.form("search_form", clear_on_submit=True):
             st.subheader("Passo 1: Buscar Aluno")
             st.info("Preencha um ou mais campos e clique em 'Buscar'. A busca combinará todos os critérios.")
             
@@ -219,60 +222,60 @@ def show_gestao_acoes():
     st.divider()
     st.subheader("Fila de Revisão e Ações Lançadas")
 
-    # --- INÍCIO DA MODIFICAÇÃO ---
-  # --- INÍCIO DA MODIFICAÇÃO NO LAYOUT DOS FILTROS ---
     with st.form(key="filter_form"):
-        # Primeira linha de filtros
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            filtro_pelotao = st.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
-        with c2:
-            filtro_status_lancamento = st.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"])
-        with c3:
-            ordenar_por = st.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
-        
-        # Segunda linha de filtros
+        c1, c2, c3, c4 = st.columns(4)
+        filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
+        filtro_status_lancamento = c2.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"])
         opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
-        filtro_tipo_acao = st.selectbox("Filtrar por Ação", opcoes_tipo_acao)
-
+        filtro_tipo_acao = c3.selectbox("Filtrar por Ação", opcoes_tipo_acao)
+        ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
         st.form_submit_button("🔎 Aplicar Filtros")
 
+    # --- INÍCIO DA CORREÇÃO PARA O ERRO 'KeyError' ---
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
-    df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'nome_guerra', 'pelotao', 'nome_completo']], left_on='aluno_id', right_on='id', how='inner')
     
-    if filtro_pelotao != "Todos": df_display = df_display[df_display['pelotao'] == filtro_pelotao]
-    if filtro_status_lancamento == "A Lançar": df_display = df_display[df_display['lancado_faia'] == False]
-    elif filtro_status_lancamento == "Lançados": df_display = df_display[df_display['lancado_faia'] == True]
+    if acoes_com_pontos.empty or 'aluno_id' not in acoes_com_pontos.columns:
+        df_display = pd.DataFrame()
+    else:
+        df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'nome_guerra', 'pelotao', 'nome_completo']], left_on='aluno_id', right_on='id', how='inner')
+    # --- FIM DA CORREÇÃO ---
 
-    # Nova lógica de filtro por tipo de ação
-    if filtro_tipo_acao != "Todos":
-        # A coluna com o nome da ação é 'nome' após o merge em calcular_pontuacao_efetiva
-        df_display = df_display[df_display['nome'] == filtro_tipo_acao]
+    if not df_display.empty:
+        if filtro_pelotao != "Todos": df_display = df_display[df_display['pelotao'] == filtro_pelotao]
+        if filtro_status_lancamento == "A Lançar": df_display = df_display[df_display['lancado_faia'] == False]
+        elif filtro_status_lancamento == "Lançados": df_display = df_display[df_display['lancado_faia'] == True]
+        if filtro_tipo_acao != "Todos":
+            df_display = df_display[df_display['nome'] == filtro_tipo_acao]
 
-    if ordenar_por == "Mais Antigos": df_display = df_display.sort_values(by="data", ascending=True)
-    elif ordenar_por == "Aluno (A-Z)": df_display = df_display.sort_values(by="nome_guerra", ascending=True)
-    else: df_display = df_display.sort_values(by="data", ascending=False)
+        if ordenar_por == "Mais Antigos": df_display = df_display.sort_values(by="data", ascending=True)
+        elif ordenar_por == "Aluno (A-Z)": df_display = df_display.sort_values(by="nome_guerra", ascending=True)
+        else: df_display = df_display.sort_values(by="data", ascending=False) 
 
     with st.container():
-        nomes_unicos = df_display['nome_guerra'].unique()
-        nomes_validos = sorted([str(nome) for nome in nomes_unicos if pd.notna(nome)])
-        aluno_para_exportar = st.selectbox("Selecione um Aluno para Gerar Relatório:", ["Nenhum"] + nomes_validos)
-        
-        if aluno_para_exportar != "Nenhum":
-            if st.button("👁️ Visualizar FAIA para Exportar"):
-                aluno_info = df_display[df_display['nome_guerra'] == aluno_para_exportar].iloc[0]
-                acoes_do_aluno = df_display[df_display['nome_guerra'] == aluno_para_exportar]
-                preview_faia_dialog(aluno_info, acoes_do_aluno)
+        if not df_display.empty:
+            nomes_unicos = df_display['nome_guerra'].unique()
+            nomes_validos = sorted([str(nome) for nome in nomes_unicos if pd.notna(nome)])
+            aluno_para_exportar = st.selectbox("Selecione um Aluno para Gerar Relatório:", ["Nenhum"] + nomes_validos)
+            
+            if aluno_para_exportar != "Nenhum":
+                if st.button("👁️ Visualizar FAIA para Exportar"):
+                    aluno_info = df_display[df_display['nome_guerra'] == aluno_para_exportar].iloc[0]
+                    acoes_do_aluno = df_display[df_display['nome_guerra'] == aluno_para_exportar]
+                    preview_faia_dialog(aluno_info, acoes_do_aluno)
 
-    acoes_pendentes_visiveis = df_display[df_display['lancado_faia'] == False]
+    acoes_pendentes_visiveis = df_display[~df_display['lancado_faia']] if 'lancado_faia' in df_display else pd.DataFrame()
     if not acoes_pendentes_visiveis.empty and check_permission('acesso_pagina_lancamentos_faia'):
         st.write("---")
         col_massa1, col_massa2 = st.columns([1, 3])
         
         select_all = col_massa1.toggle("Marcar/Desmarcar Todas as Visíveis")
-        for _, row in acoes_pendentes_visiveis.iterrows():
-            st.session_state.action_selection[row['id']] = select_all
-        
+        if select_all:
+            for _, row in acoes_pendentes_visiveis.iterrows():
+                st.session_state.action_selection[row['id']] = True
+        else:
+            if any(st.session_state.action_selection.values()):
+                 st.session_state.action_selection = {}
+
         selected_ids = [k for k, v in st.session_state.action_selection.items() if v]
         if selected_ids:
             col_massa2.button(f"🚀 Lançar {len(selected_ids)} Ações Selecionadas", type="primary", on_click=launch_selected_actions, args=(selected_ids, supabase))
