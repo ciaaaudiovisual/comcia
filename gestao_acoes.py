@@ -127,7 +127,6 @@ def show_gestao_acoes():
     if 'selected_student_id_gestao' not in st.session_state: st.session_state.selected_student_id_gestao = None
 
     alunos_df = load_data("Alunos")
-    acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
     
@@ -136,25 +135,24 @@ def show_gestao_acoes():
             st.subheader("Passo 1: Buscar Aluno")
             st.info("Preencha um ou mais campos e clique em 'Buscar'. A busca combinará todos os critérios.")
             
-            col1, col2 = st.columns(2)
-            busca_num_interno = col1.text_input("Nº Interno (ex: 101)")
-            busca_nome_guerra = col2.text_input("Nome de Guerra")
+            c1, c2 = st.columns(2)
+            busca_num_interno = c1.text_input("Nº Interno")
+            busca_nome_guerra = c2.text_input("Nome de Guerra")
             
-            col3, col4 = st.columns(2)
-            busca_nip = col3.text_input("NIP (ex: 12345678)")
-            busca_nome_completo = col4.text_input("Nome Completo")
+            c3, c4 = st.columns(2)
+            busca_nip = c3.text_input("NIP")
+            busca_nome_completo = c4.text_input("Nome Completo")
             
             if st.form_submit_button("🔎 Buscar Aluno"):
                 df_busca = alunos_df.copy()
-                # Converte os termos de busca para maiúsculas para busca case-insensitive
                 if busca_num_interno:
-                    df_busca = df_busca[df_busca['numero_interno'].astype(str).str.upper().str.contains(busca_num_interno.upper(), na=False)]
+                    df_busca = df_busca[df_busca['numero_interno'].astype(str).str.contains(busca_num_interno, na=False)]
                 if busca_nome_guerra:
-                    df_busca = df_busca[df_busca['nome_guerra'].str.upper().str.contains(busca_nome_guerra.upper(), case=False, na=False)]
+                    df_busca = df_busca[df_busca['nome_guerra'].str.contains(busca_nome_guerra, case=False, na=False)]
                 if busca_nip and 'nip' in df_busca.columns:
-                    df_busca = df_busca[df_busca['nip'].astype(str).str.upper().str.contains(busca_nip.upper(), na=False)]
+                    df_busca = df_busca[df_busca['nip'].astype(str).str.contains(busca_nip, na=False)]
                 if busca_nome_completo and 'nome_completo' in df_busca.columns:
-                    df_busca = df_busca[df_busca['nome_completo'].str.upper().str.contains(busca_nome_completo.upper(), case=False, na=False)]
+                    df_busca = df_busca[df_busca['nome_completo'].str.contains(busca_nome_completo, case=False, na=False)]
                 
                 st.session_state.search_results_df_gestao = df_busca
                 st.session_state.selected_student_id_gestao = None
@@ -181,7 +179,6 @@ def show_gestao_acoes():
                 positivas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome')
                 neutras_df = tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome')
                 negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
-                
                 opcoes_finais = []
                 tipos_opcoes_map = {}
 
@@ -212,15 +209,15 @@ def show_gestao_acoes():
                 confirmacao_registro = st.checkbox("Confirmo que os dados estão corretos para o registo.")
 
                 if st.form_submit_button("Registrar Ação"):
-                    if tipo_selecionado_str.startswith("---"):
-                        st.warning("Por favor, selecione um tipo de ação válido, não um cabeçalho de categoria.")
-                    elif not confirmacao_registro:
-                        st.warning("Por favor, confirme que os dados estão corretos.")
+                    if tipo_selecionado_str.startswith("---"): st.warning("Por favor, selecione um tipo de ação válido.")
+                    elif not confirmacao_registro: st.warning("Por favor, confirme que os dados estão corretos.")
                     else:
                         try:
+                            response = supabase.table("Acoes").select("id", count='exact').execute()
+                            ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
+                            novo_id = max(ids_existentes) + 1 if ids_existentes else 1
+                            
                             tipo_info = tipos_opcoes_map[tipo_selecionado_str]
-                            ids = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
-                            novo_id = int(ids.max()) + 1 if not ids.empty else 1
                             nova_acao = {
                                 'id': str(novo_id), 'aluno_id': str(st.session_state.selected_student_id_gestao), 
                                 'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 
@@ -229,8 +226,6 @@ def show_gestao_acoes():
                             }
                             supabase.table("Acoes").insert(nova_acao).execute()
                             st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!")
-                            st.session_state.search_results_df_gestao = pd.DataFrame()
-                            st.session_state.selected_student_id_gestao = None
                             load_data.clear(); st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao registrar ação: {e}")
@@ -241,19 +236,15 @@ def show_gestao_acoes():
     st.subheader("Fila de Revisão e Ações Lançadas")
 
     with st.form(key="filter_form"):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            filtro_pelotao = st.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
-        with c2:
-            filtro_status_lancamento = st.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"])
-        with c3:
-            ordenar_por = st.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
-        
+        c1, c2, c3, c4 = st.columns(4)
+        filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
+        filtro_status_lancamento = c2.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"])
         opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
-        filtro_tipo_acao = st.selectbox("Filtrar por Ação", opcoes_tipo_acao)
-
+        filtro_tipo_acao = c3.selectbox("Filtrar por Ação", opcoes_tipo_acao)
+        ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
         st.form_submit_button("🔎 Aplicar Filtros")
 
+    acoes_df = load_data("Acoes")
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
     
     if acoes_com_pontos.empty or 'aluno_id' not in acoes_com_pontos.columns:
@@ -265,9 +256,7 @@ def show_gestao_acoes():
         if filtro_pelotao != "Todos": df_display = df_display[df_display['pelotao'] == filtro_pelotao]
         if filtro_status_lancamento == "A Lançar": df_display = df_display[df_display['lancado_faia'] == False]
         elif filtro_status_lancamento == "Lançados": df_display = df_display[df_display['lancado_faia'] == True]
-        if filtro_tipo_acao != "Todos":
-            df_display = df_display[df_display['nome'] == filtro_tipo_acao]
-
+        if filtro_tipo_acao != "Todos": df_display = df_display[df_display['nome'] == filtro_tipo_acao]
         if ordenar_por == "Mais Antigos": df_display = df_display.sort_values(by="data", ascending=True)
         elif ordenar_por == "Aluno (A-Z)": df_display = df_display.sort_values(by="nome_guerra", ascending=True)
         else: df_display = df_display.sort_values(by="data", ascending=False) 
@@ -277,22 +266,19 @@ def show_gestao_acoes():
             nomes_unicos = df_display['nome_guerra'].unique()
             nomes_validos = sorted([str(nome) for nome in nomes_unicos if pd.notna(nome)])
             aluno_para_exportar = st.selectbox("Selecione um Aluno para Gerar Relatório:", ["Nenhum"] + nomes_validos)
-            
             if aluno_para_exportar != "Nenhum":
                 if st.button("👁️ Visualizar FAIA para Exportar"):
                     aluno_info = df_display[df_display['nome_guerra'] == aluno_para_exportar].iloc[0]
                     acoes_do_aluno = df_display[df_display['nome_guerra'] == aluno_para_exportar]
                     preview_faia_dialog(aluno_info, acoes_do_aluno)
 
-    acoes_pendentes_visiveis = df_display[~df_display['lancado_faia']] if 'lancado_faia' in df_display else pd.DataFrame()
+    acoes_pendentes_visiveis = df_display[~df_display['lancado_faia']] if 'lancado_faia' in df_display.columns else pd.DataFrame()
     if not acoes_pendentes_visiveis.empty and check_permission('acesso_pagina_lancamentos_faia'):
         st.write("---")
         col_massa1, col_massa2 = st.columns([1, 3])
-        
         select_all = col_massa1.toggle("Marcar/Desmarcar Todas as Visíveis")
         for _, row in acoes_pendentes_visiveis.iterrows():
             st.session_state.action_selection[row['id']] = select_all
-        
         selected_ids = [k for k, v in st.session_state.action_selection.items() if v]
         if selected_ids:
             col_massa2.button(f"🚀 Lançar {len(selected_ids)} Ações Selecionadas", type="primary", on_click=launch_selected_actions, args=(selected_ids, supabase))
@@ -310,7 +296,7 @@ def show_gestao_acoes():
                 if not is_launched and can_launch:
                     cols = st.columns([1, 6, 3])
                     with cols[0]:
-                        st.session_state.action_selection[acao['id']] = st.checkbox("Select", key=f"select_{acao['id']}", value=st.session_state.action_selection.get(acao['id'], False), label_visibility="collapsed")
+                        st.checkbox("Select", key=f"select_{acao['id']}", value=st.session_state.action_selection.get(acao['id'], False), label_visibility="collapsed")
                     info_col, actions_col = cols[1], cols[2]
                 else:
                     info_col, actions_col = st.columns([7, 3])
