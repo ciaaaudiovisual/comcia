@@ -159,6 +159,7 @@ def show_dashboard():
                             tipo_acao_id = tipos_opcoes[tipo_selecionado_label]
                             tipo_acao_info = tipos_acao_df[tipos_acao_df['id'] == tipo_acao_id].iloc[0]
                             
+                            # --- LÓGICA CORRIGIDA PARA GERAR ID ---
                             ids_numericos = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
                             ultimo_id = int(ids_numericos.max()) if not ids_numericos.empty else 0
                             
@@ -166,9 +167,14 @@ def show_dashboard():
                             for i, aluno_id in enumerate(alunos_para_anotar_ids):
                                 novo_id = ultimo_id + 1 + i
                                 nova_acao = {
-                                    'id': str(novo_id), 'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_acao_id),
-                                    'tipo': tipo_acao_info['nome'], 'descricao': descricao, 'data': datetime.now().strftime('%Y-%m-%d'),
-                                    'usuario': st.session_state.username, 'lancado_faia': False
+                                    'id': str(novo_id),
+                                    'aluno_id': str(aluno_id), 
+                                    'tipo_acao_id': str(tipo_acao_id),
+                                    'tipo': tipo_acao_info['nome'], 
+                                    'descricao': descricao, 
+                                    'data': datetime.now().strftime('%Y-%m-%d'),
+                                    'usuario': st.session_state.username, 
+                                    'lancado_faia': False
                                 }
                                 novas_acoes.append(nova_acao)
                                 
@@ -194,7 +200,7 @@ def show_dashboard():
         acoes_hoje = acoes_com_pontos_df.dropna(subset=['data'])[acoes_com_pontos_df['data'].dt.date == hoje] if 'data' in acoes_com_pontos_df else pd.DataFrame()
 
         col1, col2 = st.columns(2)
-      
+        
         with col1:
             st.subheader("Destaques do Dia")
             if not acoes_hoje.empty:
@@ -204,22 +210,17 @@ def show_dashboard():
                     aluno_positivo_id = str(soma_pontos_hoje.idxmax())
                     aluno_info = alunos_df[alunos_df['id'] == aluno_positivo_id]
                     if not aluno_info.empty:
-                        # --- INÍCIO DA CORREÇÃO ---
                         aluno = aluno_info.iloc[0]
                         st.success(f"🌟 **Positivo**: {aluno.get('numero_interno', '')} - {aluno.get('nome_guerra', '')}")
-                        # --- FIM DA CORREÇÃO ---
 
                 if not soma_pontos_hoje[soma_pontos_hoje < 0].empty:
                     aluno_negativo_id = str(soma_pontos_hoje.idxmin())
                     aluno_info = alunos_df[alunos_df['id'] == aluno_negativo_id]
                     if not aluno_info.empty:
-                        # --- INÍCIO DA CORREÇÃO ---
                         aluno = aluno_info.iloc[0]
                         st.warning(f"⚠️ **Negativo**: {aluno.get('numero_interno', '')} - {aluno.get('nome_guerra', '')}")
-                        # --- FIM DA CORREÇÃO ---
             else:
                 st.info("Nenhuma ação registrada hoje.")
-
 
         with col2:
             st.subheader("Conceito Médio por Pelotão")
@@ -238,7 +239,7 @@ def show_dashboard():
             
             fig.update_layout(template="plotly_white")
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, theme=None)
 
         st.divider()
 
