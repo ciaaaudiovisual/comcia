@@ -30,27 +30,21 @@ def preview_faia_dialog(aluno_info, acoes_aluno_df):
 # FUNÇÕES DE CALLBACK
 # ==============================================================================
 def on_launch_click(acao, supabase):
-    """Callback para lançar UMA ÚNICA ação e mostrar o popup de sucesso."""
+    """Callback para lançar UMA ÚNICA ação e recarregar a página."""
     try:
         supabase.table("Acoes").update({'lancado_faia': True}).eq('id', acao['id']).execute()
         load_data.clear()
-        alunos_df = load_data("Alunos")
-        aluno_info_query = alunos_df[alunos_df['id'] == str(acao['aluno_id'])]
-        if not aluno_info_query.empty:
-            aluno_info = aluno_info_query.iloc[0]
-            msg = f"A ação '{acao['nome']}' para o aluno {aluno_info.get('nome_guerra', 'N/A')} foi lançada na FAIA com sucesso!"
-            show_success_dialog(msg)
-        else:
-            show_success_dialog("Ação lançada na FAIA com sucesso!")
+        st.toast(f"Ação para {acao.get('nome_guerra', 'N/A')} foi lançada com sucesso!")
+        st.rerun()
     except Exception as e:
         st.error(f"Ocorreu um erro ao lançar a ação: {e}")
 
 def on_delete_action_click(action_id, supabase):
-    """Callback para excluir uma ação específica."""
+    """Callback para excluir uma ação específica e recarregar a página."""
     try:
         supabase.table("Acoes").delete().eq('id', action_id).execute()
-        st.toast("Ação excluída com sucesso!")
         load_data.clear()
+        st.toast("Ação excluída com sucesso!")
         st.rerun()
     except Exception as e:
         st.error(f"Erro ao excluir a ação: {e}")
@@ -233,7 +227,8 @@ def show_gestao_acoes():
         ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
         st.form_submit_button("🔎 Aplicar Filtros")
 
-    acoes_com_pontos = calcular_pontuacao_efetiva(load_data("Acoes"), tipos_acao_df, config_df)
+    acoes_df = load_data("Acoes")
+    acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
     
     if acoes_com_pontos.empty or 'aluno_id' not in acoes_com_pontos.columns:
         df_display = pd.DataFrame()
@@ -291,13 +286,11 @@ def show_gestao_acoes():
                     info_col, actions_col = st.columns([7, 3])
 
                 with info_col:
-                    # --- INÍCIO DA CORREÇÃO DO NameError ---
                     cor = "green" if acao['pontuacao_efetiva'] > 0 else "red" if acao['pontuacao_efetiva'] < 0 else "gray"
-                    # --- FIM DA CORREÇÃO DO NameError ---
                     data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y %H:%M')
                     st.markdown(f"**{acao.get('numero_interno', 'S/N')} - {acao.get('nome_guerra', 'N/A')}** em {data_formatada}")
                     st.markdown(f"**Ação:** {acao['nome']} <span style='color:{cor}; font-weight:bold;'>({acao['pontuacao_efetiva']:+.1f} pts)</span>", unsafe_allow_html=True)
-                    st.caption(f"Descrição: {acao['descricao']}" if acao['descricao'] else "Sem descrição.")
+                    st.caption(f"Descrição: {acao['descricao']}" if acao.get('descricao') else "Sem descrição.")
                 
                 with actions_col:
                     if is_launched:
