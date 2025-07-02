@@ -127,6 +127,7 @@ def show_gestao_acoes():
     if 'selected_student_id_gestao' not in st.session_state: st.session_state.selected_student_id_gestao = None
 
     alunos_df = load_data("Alunos")
+    acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
     
@@ -181,25 +182,12 @@ def show_gestao_acoes():
                 negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
                 opcoes_finais = []
                 tipos_opcoes_map = {}
-
                 if not positivas_df.empty:
-                    opcoes_finais.append("--- AÇÕES POSITIVAS ---")
-                    for _, row in positivas_df.iterrows():
-                        label = f"{row['nome']} ({row['pontuacao']:.1f} pts)"
-                        opcoes_finais.append(label)
-                        tipos_opcoes_map[label] = row
+                    opcoes_finais.append("--- AÇÕES POSITIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in positivas_df.iterrows()]
                 if not neutras_df.empty:
-                    opcoes_finais.append("--- AÇÕES NEUTRAS ---")
-                    for _, row in neutras_df.iterrows():
-                        label = f"{row['nome']} (0.0 pts)"
-                        opcoes_finais.append(label)
-                        tipos_opcoes_map[label] = row
+                    opcoes_finais.append("--- AÇÕES NEUTRAS ---"); [opcoes_finais.append(f"{r['nome']} (0.0 pts)") or tipos_opcoes_map.update({f"{r['nome']} (0.0 pts)": r}) for _, r in neutras_df.iterrows()]
                 if not negativas_df.empty:
-                    opcoes_finais.append("--- AÇÕES NEGATIVAS ---")
-                    for _, row in negativas_df.iterrows():
-                        label = f"{row['nome']} ({row['pontuacao']:.1f} pts)"
-                        opcoes_finais.append(label)
-                        tipos_opcoes_map[label] = row
+                    opcoes_finais.append("--- AÇÕES NEGATIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in negativas_df.iterrows()]
                 
                 tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_finais)
                 data = c2.date_input("Data", datetime.now())
@@ -236,12 +224,19 @@ def show_gestao_acoes():
     st.subheader("Fila de Revisão e Ações Lançadas")
 
     with st.form(key="filter_form"):
-        c1, c2, c3, c4 = st.columns(4)
-        filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
-        filtro_status_lancamento = c2.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"])
+        # --- INÍCIO DA MODIFICAÇÃO NO LAYOUT E DEFAULT DO FILTRO ---
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            filtro_pelotao = st.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
+        with c2:
+            opcoes_status = ["Todos", "A Lançar", "Lançados"]
+            filtro_status_lancamento = st.selectbox("Filtrar Status", opcoes_status, index=1) # index=1 define "A Lançar" como padrão
+        with c3:
+            ordenar_por = st.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
+        
         opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
-        filtro_tipo_acao = c3.selectbox("Filtrar por Ação", opcoes_tipo_acao)
-        ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
+        filtro_tipo_acao = st.selectbox("Filtrar por Ação", opcoes_tipo_acao)
+        # --- FIM DA MODIFICAÇÃO ---
         st.form_submit_button("🔎 Aplicar Filtros")
 
     acoes_df = load_data("Acoes")
@@ -256,7 +251,8 @@ def show_gestao_acoes():
         if filtro_pelotao != "Todos": df_display = df_display[df_display['pelotao'] == filtro_pelotao]
         if filtro_status_lancamento == "A Lançar": df_display = df_display[df_display['lancado_faia'] == False]
         elif filtro_status_lancamento == "Lançados": df_display = df_display[df_display['lancado_faia'] == True]
-        if filtro_tipo_acao != "Todos": df_display = df_display[df_display['nome'] == filtro_tipo_acao]
+        if filtro_tipo_acao != "Todos":
+            df_display = df_display[df_display['nome'] == filtro_tipo_acao]
         if ordenar_por == "Mais Antigos": df_display = df_display.sort_values(by="data", ascending=True)
         elif ordenar_por == "Aluno (A-Z)": df_display = df_display.sort_values(by="nome_guerra", ascending=True)
         else: df_display = df_display.sort_values(by="data", ascending=False) 
