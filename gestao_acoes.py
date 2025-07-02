@@ -27,26 +27,8 @@ def preview_faia_dialog(aluno_info, acoes_aluno_df):
     st.download_button(label="✅ Exportar Relatório", data=texto_relatorio.encode('utf-8'), file_name=nome_arquivo, mime="text/plain")
 
 # ==============================================================================
-# FUNÇÕES DE CALLBACK
+# FUNÇÕES DE CALLBACK (APENAS PARA AÇÕES EM MASSA)
 # ==============================================================================
-def on_launch_click(acao, supabase):
-    """Callback para lançar UMA ÚNICA ação. O rerun é desnecessário aqui."""
-    try:
-        supabase.table("Acoes").update({'lancado_faia': True}).eq('id', acao['id']).execute()
-        load_data.clear()
-        st.toast(f"Ação para {acao.get('nome_guerra', 'N/A')} foi lançada com sucesso!")
-    except Exception as e:
-        st.error(f"Ocorreu um erro ao lançar a ação: {e}")
-
-def on_delete_action_click(action_id, supabase):
-    """Callback para excluir uma ação específica. O rerun é desnecessário aqui."""
-    try:
-        supabase.table("Acoes").delete().eq('id', action_id).execute()
-        load_data.clear()
-        st.toast("Ação excluída com sucesso!")
-    except Exception as e:
-        st.error(f"Erro ao excluir a ação: {e}")
-
 def launch_selected_actions(selected_ids, supabase):
     """Callback para lançar MÚLTIPLAS ações em lotes para evitar timeouts."""
     if not selected_ids:
@@ -216,12 +198,14 @@ def show_gestao_acoes():
     st.divider()
     st.subheader("Fila de Revisão e Ações Lançadas")
 
+    # --- INÍCIO DA NOVA LÓGICA DE FILTROS ---
     c1, c2, c3, c4 = st.columns(4)
-    filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
-    filtro_status_lancamento = c2.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"], index=1)
+    filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]), key="filtro_pelotao_gestao")
+    filtro_status_lancamento = c2.selectbox("Filtrar Status", ["Todos", "A Lançar", "Lançados"], index=1, key="filtro_status_gestao")
     opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
-    filtro_tipo_acao = c3.selectbox("Filtrar por Ação", opcoes_tipo_acao)
-    ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
+    filtro_tipo_acao = c3.selectbox("Filtrar por Ação", opcoes_tipo_acao, key="filtro_tipo_acao_gestao")
+    ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"], key="ordenar_por_gestao")
+    # --- FIM DA NOVA LÓGICA DE FILTROS ---
 
     acoes_com_pontos = calcular_pontuacao_efetiva(load_data("Acoes"), tipos_acao_df, config_df)
     
@@ -268,17 +252,7 @@ def show_gestao_acoes():
         df_display.drop_duplicates(subset=['id'], keep='first', inplace=True)
         for _, acao in df_display.iterrows():
             with st.container(border=True):
-                is_launched = acao.get('lancado_faia', False)
-                can_launch = check_permission('acesso_pagina_lancamentos_faia')
-                can_delete = check_permission('pode_excluir_lancamento_faia')
-                
-                if not is_launched and can_launch:
-                    cols = st.columns([1, 6, 3])
-                    with cols[0]:
-                        st.checkbox("Select", key=f"select_{acao['id']}", value=st.session_state.action_selection.get(acao['id'], False), label_visibility="collapsed")
-                    info_col, actions_col = cols[1], cols[2]
-                else:
-                    info_col, actions_col = st.columns([7, 3])
+                info_col, actions_col = st.columns([7, 3])
 
                 with info_col:
                     cor = "green" if acao['pontuacao_efetiva'] > 0 else "red" if acao['pontuacao_efetiva'] < 0 else "gray"
@@ -288,16 +262,40 @@ def show_gestao_acoes():
                     st.caption(f"Descrição: {acao['descricao']}" if acao['descricao'] else "Sem descrição.")
                 
                 with actions_col:
+                    is_launched = acao.get('lancado_faia', False)
+                    can_launch = check_permission('acesso_pagina_lancamentos_faia')
+                    can_delete = check_permission('pode_excluir_lancamento_faia')
+
                     if is_launched:
                         st.success("✅ Lançado")
                         if can_delete:
-                            st.button("🗑️", key=f"delete_launched_{acao['id']}", on_click=on_delete_action_click, args=(acao['id'], supabase), use_container_width=True, help="Excluir lançamento")
+                            with st.form(f"delete_launched_form_{acao['id']}"):
+                                if st.form_submit_button("🗑️ Excluir", use_container_width=True, help="Excluir permanentemente"):
+                                    try:
+                                        supabase.table("Acoes").delete().eq('id', acao['id']).execute()
+                                        st.toast("Ação excluída com sucesso!")
+                                        load_data.clear(); st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Erro ao excluir: {e}")
                     else:
-                        if can_launch and can_delete:
-                            btn1, btn2 = st.columns(2)
-                            btn1.button("Lançar", key=f"launch_{acao['id']}", on_click=on_launch_click, args=(acao, supabase), use_container_width=True)
-                            btn2.button("🗑️", key=f"delete_pending_{acao['id']}", on_click=on_delete_action_click, args=(acao['id'], supabase), use_container_width=True, help="Excluir lançamento")
-                        elif can_launch:
-                            st.button("Lançar", key=f"launch_{acao['id']}", on_click=on_launch_click, args=(acao, supabase), use_container_width=True)
-                        elif can_delete:
-                            st.button("🗑️", key=f"delete_pending_{acao['id']}", on_click=on_delete_action_click, args=(acao['id'], supabase), use_container_width=True, help="Excluir lançamento")
+                        action_buttons_cols = st.columns(2) if can_launch and can_delete else st.columns(1)
+                        if can_launch:
+                            with action_buttons_cols[0]:
+                                with st.form(f"launch_form_{acao['id']}"):
+                                    if st.form_submit_button("Lançar", use_container_width=True):
+                                        try:
+                                            supabase.table("Acoes").update({'lancado_faia': True}).eq('id', acao['id']).execute()
+                                            st.toast("Ação lançada com sucesso!")
+                                            load_data.clear(); st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Erro ao lançar: {e}")
+                        if can_delete:
+                             with action_buttons_cols[-1]:
+                                with st.form(f"delete_pending_form_{acao['id']}"):
+                                    if st.form_submit_button("🗑️", help="Excluir", use_container_width=True):
+                                        try:
+                                            supabase.table("Acoes").delete().eq('id', acao['id']).execute()
+                                            st.toast("Ação excluída com sucesso!")
+                                            load_data.clear(); st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Erro ao excluir: {e}")
