@@ -209,8 +209,6 @@ def show_gestao_acoes():
                             }
                             supabase.table("Acoes").insert(nova_acao).execute()
                             st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!")
-                            st.session_state.search_results_df_gestao = pd.DataFrame()
-                            st.session_state.selected_student_id_gestao = None
                             load_data.clear(); st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao registrar ação: {e}")
@@ -229,7 +227,8 @@ def show_gestao_acoes():
         ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
         st.form_submit_button("🔎 Aplicar Filtros")
 
-    acoes_com_pontos = calcular_pontuacao_efetiva(load_data("Acoes"), tipos_acao_df, config_df)
+    acoes_df = load_data("Acoes")
+    acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
     
     if acoes_com_pontos.empty or 'aluno_id' not in acoes_com_pontos.columns:
         df_display = pd.DataFrame()
@@ -287,7 +286,7 @@ def show_gestao_acoes():
                     info_col, actions_col = st.columns([7, 3])
 
                 with info_col:
-                    cor = "green" if acao['pontuacao_efetiva'] > 0 else "red" if acao['pontuacao_efetiva'] < 0 else "gray"
+                    cor = "green" if acao['pontuacao_efetiva'] > 0 else "red" if aco['pontuacao_efetiva'] < 0 else "gray"
                     data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y %H:%M')
                     st.markdown(f"**{acao.get('numero_interno', 'S/N')} - {acao.get('nome_guerra', 'N/A')}** em {data_formatada}")
                     st.markdown(f"**Ação:** {acao['nome']} <span style='color:{cor}; font-weight:bold;'>({acao['pontuacao_efetiva']:+.1f} pts)</span>", unsafe_allow_html=True)
