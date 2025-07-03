@@ -120,13 +120,20 @@ def show_gestao_acoes():
     config_df = load_data("Config")
     
     with st.expander("➕ Registrar Nova Ação", expanded=False):
-        # Esta secção foi restaurada com base no seu código original e com a lógica de ID corrigida.
         with st.form("novo_lancamento_restaurado"):
             st.subheader("Registrar Nova Ação")
-            alunos_opcoes_dict = {f"Nº: {aluno.get('numero_interno', 'S/N')} | {aluno['nome_guerra']}": aluno['id'] for _, aluno in alunos_df.sort_values('numero_interno').iterrows()}
+            
+            # Garante que os DataFrames não estão vazios antes de criar as opções
+            if not alunos_df.empty:
+                alunos_opcoes_dict = {f"Nº: {aluno.get('numero_interno', 'S/N')} | {aluno['nome_guerra']}": aluno['id'] for _, aluno in alunos_df.sort_values('numero_interno').iterrows()}
+            else:
+                alunos_opcoes_dict = {}
             aluno_selecionado_label = st.selectbox("Selecione o Aluno", options=list(alunos_opcoes_dict.keys()))
 
-            tipos_opcoes = {f"{tipo['nome']} ({float(tipo.get('pontuacao', 0)):.1f} pts)": tipo for _, tipo in tipos_acao_df.iterrows()}
+            if not tipos_acao_df.empty:
+                tipos_opcoes = {f"{tipo['nome']} ({float(tipo.get('pontuacao', 0)):.1f} pts)": tipo for _, tipo in tipos_acao_df.iterrows()}
+            else:
+                tipos_opcoes = {}
             tipo_selecionado_str = st.selectbox("Tipo de Ação", tipos_opcoes.keys())
             
             data = st.date_input("Data da Ação", datetime.now())
@@ -153,7 +160,7 @@ def show_gestao_acoes():
                             'descricao': descricao,
                             'data': data.strftime('%Y-%m-%d'),
                             'usuario': st.session_state.username,
-                            'status': 'Pendente' # O status padrão é pendente
+                            'status': 'Pendente'
                         }
                         supabase.table("Acoes").insert(nova_acao).execute()
                         st.success(f"Ação '{tipo_info['nome']}' registrada com sucesso!")
@@ -221,7 +228,7 @@ def show_gestao_acoes():
 
             def toggle_all_visible():
                 new_state = st.session_state.get('select_all_toggle', False)
-                for acao_id in df_filtrado_final['id'].unique(): # Correção para usar 'id'
+                for acao_id in df_filtrado_final['id'].unique():
                     st.session_state.action_selection[acao_id] = new_state
             
             with col_check:
@@ -229,7 +236,7 @@ def show_gestao_acoes():
         
         st.write("")
         
-        df_filtrado_final.drop_duplicates(subset=['id'], keep='first', inplace=True) # Correção para usar 'id'
+        df_filtrado_final.drop_duplicates(subset=['id'], keep='first', inplace=True)
         for _, acao in df_filtrado_final.iterrows():
             acao_id = acao['id']
             with st.container(border=True):
