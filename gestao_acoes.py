@@ -111,7 +111,6 @@ def show_gestao_acoes():
     st.title("Lançamentos de Ações dos Alunos")
     supabase = init_supabase_client()
 
-    # Inicializa o estado da sessão para seleção de ações
     if 'action_selection' not in st.session_state:
         st.session_state.action_selection = {}
 
@@ -121,8 +120,52 @@ def show_gestao_acoes():
     config_df = load_data("Config")
     
     with st.expander("➕ Registrar Nova Ação", expanded=False):
-        # A lógica para registrar nova ação permanece a mesma
-        pass
+        with st.form("novo_lancamento_restaurado"):
+            st.subheader("Registrar Nova Ação")
+            
+            if not alunos_df.empty:
+                alunos_opcoes_dict = {f"Nº: {aluno.get('numero_interno', 'S/N')} | {aluno['nome_guerra']}": aluno['id'] for _, aluno in alunos_df.sort_values('numero_interno').iterrows()}
+            else:
+                alunos_opcoes_dict = {}
+            aluno_selecionado_label = st.selectbox("Selecione o Aluno", options=list(alunos_opcoes_dict.keys()))
+
+            if not tipos_acao_df.empty:
+                tipos_opcoes = {f"{tipo['nome']} ({float(tipo.get('pontuacao', 0)):.1f} pts)": tipo for _, tipo in tipos_acao_df.iterrows()}
+            else:
+                tipos_opcoes = {}
+            tipo_selecionado_str = st.selectbox("Tipo de Ação", tipos_opcoes.keys())
+            
+            data = st.date_input("Data da Ação", datetime.now())
+            descricao = st.text_area("Descrição/Justificativa")
+
+            if st.form_submit_button("Registrar Ação"):
+                if not all([aluno_selecionado_label, tipo_selecionado_str, descricao]):
+                    st.warning("Todos os campos são obrigatórios.")
+                else:
+                    try:
+                        response = supabase.table("Acoes").select("id", count='exact').execute()
+                        ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
+                        novo_id = max(ids_existentes) + 1 if ids_existentes else 1
+
+                        aluno_id = alunos_opcoes_dict[aluno_selecionado_label]
+                        tipo_info = tipos_opcoes[tipo_selecionado_str]
+                        
+                        nova_acao = {
+                            'id': str(novo_id),
+                            'aluno_id': aluno_id,
+                            'tipo_acao_id': tipo_info['id'],
+                            'tipo': tipo_info['nome'],
+                            'descricao': descricao,
+                            'data': data.strftime('%Y-%m-%d'),
+                            'usuario': st.session_state.username,
+                            'status': 'Pendente'
+                        }
+                        supabase.table("Acoes").insert(nova_acao).execute()
+                        st.success(f"Ação '{tipo_info['nome']}' registrada com sucesso!")
+                        load_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar a ação: {e}")
     
     st.divider()
     
