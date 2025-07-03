@@ -110,7 +110,15 @@ def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
                 tipo_info = tipos_opcoes[tipo_selecionado_str]
                 ids = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
                 novo_id = int(ids.max()) + 1 if not ids.empty else 1
-                nova_acao = {'id': str(novo_id), 'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 'descricao': descricao, 'data': data.strftime('%Y-%m-%d'), 'usuario': st.session_state.username}
+                nova_acao = {
+    'id': str(novo_id), 
+    'aluno_id': str(aluno_id), 
+    'tipo_acao_id': str(tipo_info['id']), 
+    'tipo': tipo_info['nome'], 
+    'descricao': descricao, 
+    'data': data.strftime('%Y-%m-%d'), 
+    'usuario': st.session_state.username,
+    'status': 'Pendente'}
                 supabase.table("Acoes").insert(nova_acao).execute()
                 st.success("Ação registrada com sucesso!"); load_data.clear(); st.rerun()
             except Exception as e:
