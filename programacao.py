@@ -10,6 +10,24 @@ import xlsxwriter
 # DIÁLOGOS E FUNÇÕES DE CALLBACK
 # ==============================================================================
 
+# --- NOVA FUNÇÃO DE DIÁLOGO PARA NOTIFICAÇÕES ---
+@st.dialog("Notificação", width="small")
+def show_notification_dialog(message, status_type="success"):
+    """Exibe um popup de notificação (success, error, warning) com botão OK."""
+    if status_type == "success":
+        st.success(message)
+    elif status_type == "error":
+        st.error(message)
+    elif status_type == "warning":
+        st.warning(message)
+    else:
+        st.info(message)
+
+    if st.button("OK", use_container_width=True):
+        st.rerun()
+
+
+# --- DIÁLOGO DE REGISTRO NA FAIA MODIFICADO ---
 @st.dialog("Registrar Participação na FAIA")
 def registrar_faia_dialog(evento, turmas_concluidas, supabase):
     """Painel para confirmar e selecionar o lançamento em massa na FAIA."""
@@ -45,7 +63,8 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
     with col2:
         if st.button("FINALIZAR E LANÇAR NA FAIA", type="primary"):
             if not tipo_selecionado_str:
-                st.warning("Por favor, selecione um tipo de ação."); return
+                show_notification_dialog("Por favor, selecione um tipo de ação.", status_type="warning")
+                return
 
             with st.spinner("Registrando participações..."):
                 alunos_df = load_data("Alunos")
@@ -61,6 +80,7 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
                     tipo_acao_nome = tipo_info['nome']
                     
                     descricao_acao = f"{tipo_acao_nome}: {evento['descricao']}"
+                    # Corrigido para usar a data do evento, não a data atual
                     data_acao = pd.to_datetime(evento['data']).strftime('%Y-%m-%d')
 
                     novas_acoes = []
@@ -74,20 +94,23 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
                             'descricao': descricao_acao, 
                             'data': data_acao, 
                             'usuario': st.session_state.username, 
-                            'lancado_faia': False
+                            'status': 'Pendente' # Ações em massa entram como pendentes
                         }
                         novas_acoes.append(nova_acao)
                     
                     if novas_acoes:
                         try:
                             supabase.table("Acoes").insert(novas_acoes).execute()
-                            st.success(f"Ação '{tipo_acao_nome}' registrada com sucesso para {len(novas_acoes)} alunos!")
                             load_data.clear()
+                            # Exibe o pop-up de sucesso
+                            show_notification_dialog(f"Ação '{tipo_acao_nome}' registrada com sucesso para {len(novas_acoes)} alunos!", status_type="success")
                         except Exception as e:
-                            st.error(f"Falha ao salvar os registros na FAIA: {e}")
+                            # Exibe o pop-up de erro
+                            show_notification_dialog(f"Falha ao salvar os registros na FAIA: {e}", status_type="error")
                 else:
-                    st.warning("Nenhum aluno encontrado nas turmas selecionadas.")
-            st.rerun()
+                    # Exibe o pop-up de aviso
+                    show_notification_dialog("Nenhum aluno encontrado nas turmas selecionadas.", status_type="warning")
+            # O st.rerun() foi removido daqui para permitir que o diálogo de notificação apareça.
 
 @st.dialog("Gerenciar Status Parcial do Evento")
 def gerenciar_status_dialog(evento, supabase):
@@ -148,7 +171,6 @@ def on_finalize_click(evento, supabase):
             
         st.toast("Evento finalizado!", icon="🎉")
         load_data.clear()
-        # st.rerun() foi removido daqui para corrigir o aviso "no-op"
     except Exception as e:
         st.error(f"Falha ao finalizar o evento: {e}")
 
