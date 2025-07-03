@@ -211,7 +211,6 @@ def show_alunos():
                 
                 c3, c4 = st.columns(2)
                 pelotao = c3.text_input("Pelotão*")
-                # --- MODIFICAÇÃO: Campo NIP adicionado ao formulário de criação ---
                 nip = c4.text_input("NIP")
                 
                 especialidade = st.text_input("Especialidade")
@@ -297,7 +296,6 @@ def show_alunos():
                     st.image(image_source, width=100)
                 
                 with col_info:
-                    # --- MODIFICAÇÃO: Exibição do NIP no card ---
                     st.markdown(f"**{aluno.get('nome_guerra', 'N/A')}** (`{aluno.get('numero_interno', 'N/A')}`) | **NIP:** `{aluno.get('nip', 'N/A')}`")
                     st.caption(f"Nome: {aluno.get('nome_completo', 'Não informado')}")
                     st.write(f"Pelotão: {aluno.get('pelotao', 'N/A')} | Especialidade: {aluno.get('especialidade', 'N/A')}")
@@ -320,13 +318,25 @@ def show_alunos():
                         tab_ver, tab_editar = st.tabs(["Ver Histórico", "Editar Dados"])
                         with tab_ver:
                             st.subheader("Histórico de Ações")
-                            acoes_do_aluno = acoes_df[acoes_df['aluno_id'].astype(str) == str(aluno_id)] if not acoes_df.empty and 'aluno_id' in acoes_df.columns else pd.DataFrame()
-                            if acoes_do_aluno.empty: st.info("Nenhuma ação registrada.")
+                            
+                            # --- INÍCIO DA MODIFICAÇÃO ---
+                            if not acoes_df.empty and 'aluno_id' in acoes_df.columns:
+                                # Primeiro, filtra todas as ações para o aluno específico
+                                acoes_do_aluno_todas = acoes_df[acoes_df['aluno_id'].astype(str) == str(aluno_id)]
+                                
+                                # Em seguida, filtra a lista para exibir apenas as com status 'Lançado'
+                                acoes_do_aluno = acoes_do_aluno_todas[acoes_do_aluno_todas['status'] == 'Lançado']
+                            else:
+                                acoes_do_aluno = pd.DataFrame()
+                            # --- FIM DA MODIFICAÇÃO ---
+                            
+                            if acoes_do_aluno.empty: 
+                                st.info("Nenhuma ação com status 'Lançado' encontrada no histórico.")
                             else:
                                 historico_com_pontos = calcular_pontuacao_efetiva(acoes_do_aluno.copy(), tipos_acao_df, config_df)
                                 if not historico_com_pontos.empty:
                                     for _, acao in historico_com_pontos.sort_values("data", ascending=False).iterrows():
-                                        pontos = acao.get('pontuacao_efetiva', 0.0)
+                                        pontos = acoao.get('pontuacao_efetiva', 0.0)
                                         cor = "green" if pontos > 0 else "red" if pontos < 0 else "gray"
                                         st.markdown(f"**{pd.to_datetime(acao['data']).strftime('%d/%m/%Y')} - {acao.get('nome', 'N/A')}** (`{pontos:+.1f} pts`): {acao.get('descricao','')}")
                         
@@ -342,7 +352,6 @@ def show_alunos():
                                     new_nome_completo = st.text_input("Nome Completo", value=aluno.get('nome_completo', ''))
                                     new_nome_guerra = st.text_input("Nome de Guerra", value=aluno.get('nome_guerra', ''))
                                     new_numero_interno = st.text_input("Número Interno", value=aluno.get('numero_interno', ''))
-                                    # --- MODIFICAÇÃO: Campo de edição para o NIP ---
                                     new_nip = st.text_input("NIP", value=aluno.get('nip', ''))
                                     new_pelotao = st.text_input("Pelotão", value=aluno.get('pelotao', ''))
                                     new_especialidade = st.text_input("Especialidade", value=aluno.get('especialidade', ''))
