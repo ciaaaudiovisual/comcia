@@ -120,7 +120,7 @@ def show_gestao_acoes():
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
     
-    with st.expander("➕ Registrar Nova Ação", expanded=False):
+    with st.expander("➕ Registrar Nova Ação", expanded=True):
         # O código do formulário de registro permanece o mesmo
         with st.form("search_form_gestao"):
             st.subheader("Passo 1: Buscar Aluno")
