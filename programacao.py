@@ -123,10 +123,10 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
                             'descricao': descricao_acao, 
                             'data': data_acao, 
                             'usuario': st.session_state.username, 
-                            'lancado_faia': False
+                            'status': 'Lançado' # Define o status como Lançado diretamente
                         }
                         novas_acoes.append(nova_acao)
-                    
+                                        
                     if novas_acoes:
                         try:
                             supabase.table("Acoes").insert(novas_acoes).execute()
