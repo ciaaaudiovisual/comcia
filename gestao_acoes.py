@@ -88,7 +88,39 @@ def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
         "============================================================"
     ])
     return "\n".join(texto)
+# --- INÍCIO DA SEÇÃO DE CÓDIGO REINTRODUZIDA ---
+def render_export_section(df_acoes_filtrado, alunos_df, pelotao_selecionado):
+    """Renderiza a seção de exportação de relatórios com base no pelotão selecionado."""
+    if not check_permission('pode_exportar_relatorio_faia'):
+        return
 
+    with st.container(border=True):
+        st.subheader("📥 Exportar Relatórios FAIA")
+        
+        if pelotao_selecionado != "Todos":
+            st.info(f"A exportação gerará um arquivo .ZIP contendo os relatórios de todos os alunos do pelotão '{pelotao_selecionado}'. Serão incluídas apenas as ações com status 'Lançado'.")
+            if st.button(f"Gerar e Baixar .ZIP para {pelotao_selecionado}"):
+                with st.spinner("Gerando relatórios..."):
+                    alunos_do_pelotao = alunos_df[alunos_df['pelotao'] == pelotao_selecionado]
+                    zip_buffer = BytesIO()
+                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                        for _, aluno_info in alunos_do_pelotao.iterrows():
+                            # Filtra as ações para o aluno atual
+                            acoes_do_aluno = df_acoes_filtrado[df_acoes_filtrado['aluno_id'] == aluno_info['id']]
+                            conteudo_txt = formatar_relatorio_individual_txt(aluno_info, acoes_do_aluno)
+                            nome_arquivo = f"FAIA_{aluno_info.get('numero_interno','SN')}_{aluno_info.get('nome_guerra','S-N')}.txt"
+                            zip_file.writestr(nome_arquivo, conteudo_txt)
+                    
+                    st.download_button(
+                        label="Clique para baixar o .ZIP", 
+                        data=zip_buffer.getvalue(), 
+                        file_name=f"relatorios_FAIA_{pelotao_selecionado}.zip", 
+                        mime="application/zip", 
+                        use_container_width=True
+                    )
+        else:
+            st.warning("Selecione um pelotão específico no filtro acima para habilitar a exportação em massa.")
+# --- FIM DA SEÇÃO DE CÓDIGO REINTRODUZIDA ---
 # ==============================================================================
 # PÁGINA PRINCIPAL
 # ==============================================================================
@@ -100,12 +132,12 @@ def show_gestao_acoes():
     if 'search_results_df_gestao' not in st.session_state: st.session_state.search_results_df_gestao = pd.DataFrame()
     if 'selected_student_id_gestao' not in st.session_state: st.session_state.selected_student_id_gestao = None
 
-    alunos_df = load_data("Alunos") #
-    acoes_df = load_data("Acoes") #
-    tipos_acao_df = load_data("Tipos_Acao") #
-    config_df = load_data("Config") #
+    alunos_df = load_data("Alunos")
+    acoes_df = load_data("Acoes")
+    tipos_acao_df = load_data("Tipos_Acao")
+    config_df = load_data("Config")
     
-    with st.expander("➕ Registrar Nova Ação", expanded=True):
+    with st.expander("➕ Registrar Nova Ação", expanded=False):
         with st.form("search_form_gestao"):
             st.subheader("Passo 1: Buscar Aluno")
             c1, c2 = st.columns(2)
@@ -169,8 +201,9 @@ def show_gestao_acoes():
             st.info("⬅️ Busque e selecione um aluno acima para registrar uma nova ação.")
     
     st.divider()
-    st.subheader("Fila de Revisão e Ações")
-
+    
+    # --- FILTROS PRINCIPAIS ---
+    st.subheader("Filtros e Exportação")
     c1, c2, c3, c4 = st.columns(4)
     filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
     filtro_status = c2.selectbox("Filtrar Status", ["Pendente", "Lançado", "Arquivado", "Todos"], index=0)
@@ -178,24 +211,33 @@ def show_gestao_acoes():
     filtro_tipo_acao = c3.selectbox("Filtrar por Ação", opcoes_tipo_acao)
     ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
 
-    acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df) #
+    # --- LÓGICA DE FILTRAGEM ---
+    acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
     df_display = pd.DataFrame()
     if not acoes_com_pontos.empty:
         df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'numero_interno', 'nome_guerra', 'pelotao', 'nome_completo']], left_on='aluno_id', right_on='id', how='inner')
     
-    if not df_display.empty:
-        if filtro_pelotao != "Todos": df_display = df_display[df_display['pelotao'] == filtro_pelotao]
-        if filtro_status != "Todos": df_display = df_display[df_display['status'] == filtro_status]
-        if filtro_tipo_acao != "Todos": df_display = df_display[df_display['nome'] == filtro_tipo_acao]
-        if ordenar_por == "Mais Antigos": df_display = df_display.sort_values(by="data", ascending=True)
-        elif ordenar_por == "Aluno (A-Z)": df_display = df_display.sort_values(by="nome_guerra", ascending=True)
-        else: df_display = df_display.sort_values(by="data", ascending=False) 
+    df_filtrado_final = df_display.copy()
+    if not df_filtrado_final.empty:
+        if filtro_pelotao != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['pelotao'] == filtro_pelotao]
+        if filtro_status != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['status'] == filtro_status]
+        if filtro_tipo_acao != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['nome'] == filtro_tipo_acao]
+        if ordenar_por == "Mais Antigos": df_filtrado_final = df_filtrado_final.sort_values(by="data", ascending=True)
+        elif ordenar_por == "Aluno (A-Z)": df_filtrado_final = df_filtrado_final.sort_values(by="nome_guerra", ascending=True)
+        else: df_filtrado_final = df_filtrado_final.sort_values(by="data", ascending=False) 
 
-    if df_display.empty:
+    # --- CHAMADA DA SEÇÃO DE EXPORTAÇÃO ---
+    st.divider()
+    render_export_section(acoes_com_pontos, alunos_df, filtro_pelotao)
+    st.divider()
+
+    st.subheader("Fila de Revisão e Ações")
+    if df_filtrado_final.empty:
         st.info("Nenhuma ação encontrada para os filtros selecionados.")
     else:
-        df_display.drop_duplicates(subset=['id_x'], keep='first', inplace=True)
-        for _, acao in df_display.iterrows():
+        # Usa o id_x que é o ID original da tabela Acoes após o merge
+        df_filtrado_final.drop_duplicates(subset=['id_x'], keep='first', inplace=True)
+        for _, acao in df_filtrado_final.iterrows():
             with st.container(border=True):
                 info_col, actions_col = st.columns([7, 3])
                 with info_col:
@@ -207,8 +249,8 @@ def show_gestao_acoes():
                 
                 with actions_col:
                     status_atual = acao.get('status', 'Pendente')
-                    can_launch = check_permission('acesso_pagina_lancamentos_faia') #
-                    can_delete = check_permission('pode_excluir_lancamento_faia') #
+                    can_launch = check_permission('acesso_pagina_lancamentos_faia')
+                    can_delete = check_permission('pode_excluir_lancamento_faia')
 
                     if status_atual == 'Lançado':
                         st.success("✅ Lançado")
