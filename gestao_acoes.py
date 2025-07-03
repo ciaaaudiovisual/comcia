@@ -10,6 +10,13 @@ import zipfile
 # ==============================================================================
 # DIÁLOGOS E FUNÇÕES DE APOIO
 # ==============================================================================
+@st.dialog("Sucesso!")
+def show_success_dialog(message):
+    """Exibe um popup de sucesso que o utilizador precisa de fechar manualmente."""
+    st.success(message)
+    if st.button("OK"):
+        st.rerun()
+
 @st.dialog("Pré-visualização da FAIA")
 def preview_faia_dialog(aluno_info, acoes_aluno_df):
     st.header(f"FAIA de: {aluno_info.get('nome_guerra', 'N/A')}")
@@ -74,7 +81,6 @@ def show_gestao_acoes():
             c3, c4 = st.columns(2)
             busca_nip = c3.text_input("NIP")
             busca_nome_completo = c4.text_input("Nome Completo")
-            
             if st.form_submit_button("🔎 Buscar Aluno"):
                 df_busca = alunos_df.copy()
                 if busca_num_interno: df_busca = df_busca[df_busca['numero_interno'].astype(str).str.contains(busca_num_interno, na=False)]
@@ -122,12 +128,7 @@ def show_gestao_acoes():
                             ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
                             novo_id = max(ids_existentes) + 1 if ids_existentes else 1
                             tipo_info = tipos_opcoes_map[tipo_selecionado_str]
-                            nova_acao = {
-                                'id': str(novo_id), 'aluno_id': str(st.session_state.selected_student_id_gestao), 
-                                'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 
-                                'descricao': descricao, 'data': data.isoformat(),
-                                'usuario': st.session_state.username, 'status': 'Pendente'
-                            }
+                            nova_acao = {'id': str(novo_id), 'aluno_id': str(st.session_state.selected_student_id_gestao), 'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 'descricao': descricao, 'data': data.isoformat(), 'usuario': st.session_state.username, 'status': 'Pendente'}
                             supabase.table("Acoes").insert(nova_acao).execute()
                             st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!"); load_data.clear(); st.rerun()
                         except Exception as e: st.error(f"Erro ao registrar ação: {e}")
@@ -137,7 +138,6 @@ def show_gestao_acoes():
     st.divider()
     st.subheader("Fila de Revisão e Ações")
 
-    # --- FILTROS INDEPENDENTES (sem st.form) ---
     c1, c2, c3, c4 = st.columns(4)
     filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
     filtro_status = c2.selectbox("Filtrar Status", ["Pendente", "Lançado", "Arquivado", "Todos"], index=0)
