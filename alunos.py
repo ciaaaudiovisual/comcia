@@ -97,28 +97,59 @@ def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
     tipos_acao_df = load_data("Tipos_Acao")
     if tipos_acao_df.empty:
         st.error("Não há tipos de ação cadastrados."); return
+    
     with st.form("nova_acao_dialog_form"):
-        tipos_opcoes = {f"{tipo['nome']} ({float(tipo.get('pontuacao', 0.0)):.1f} pts)": tipo for _, tipo in tipos_acao_df.iterrows()}
-        tipo_selecionado_str = st.selectbox("Tipo de Ação", options=list(tipos_opcoes.keys()))
-        descricao = st.text_area("Descrição/Justificativa")
+        # --- LÓGICA DE AGRUPAMENTO E ORDENAÇÃO APLICADA AQUI ---
+        tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
+        sorted_tipos_df = tipos_acao_df.sort_values('nome')
+
+        positivas_df = sorted_tipos_df[sorted_tipos_df['pontuacao'] > 0]
+        neutras_df = sorted_tipos_df[sorted_tipos_df['pontuacao'] == 0]
+        negativas_df = sorted_tipos_df[sorted_tipos_df['pontuacao'] < 0]
+
+        opcoes_finais, tipos_opcoes_map = [], {}
+        if not positivas_df.empty:
+            opcoes_finais.append("--- AÇÕES POSITIVAS ---")
+            for _, r in positivas_df.iterrows():
+                label = f"{r['nome']} ({r['pontuacao']:.1f} pts)"
+                opcoes_finais.append(label)
+                tipos_opcoes_map[label] = r
+        if not neutras_df.empty:
+            opcoes_finais.append("--- AÇÕES NEUTRAS ---")
+            for _, r in neutras_df.iterrows():
+                label = f"{r['nome']} (0.0 pts)"
+                opcoes_finais.append(label)
+                tipos_opcoes_map[label] = r
+        if not negativas_df.empty:
+            opcoes_finais.append("--- AÇÕES NEGATIVAS ---")
+            for _, r in negativas_df.iterrows():
+                label = f"{r['nome']} ({r['pontuacao']:.1f} pts)"
+                opcoes_finais.append(label)
+                tipos_opcoes_map[label] = r
+        
+        tipo_selecionado_str = st.selectbox("Tipo de Ação", options=opcoes_finais)
+        descricao = st.text_area("Descrição/Justificativa (Opcional)")
         data = st.date_input("Data da Ação", value=datetime.now())
+        
         if st.form_submit_button("Registrar"):
-            if not descricao or not tipo_selecionado_str:
-                st.warning("Descrição e Tipo de Ação são obrigatórios."); return
+            # --- VALIDAÇÃO CORRIGIDA: DESCRIÇÃO AGORA É OPCIONAL ---
+            if not tipo_selecionado_str or tipo_selecionado_str.startswith("---"):
+                st.warning("Por favor, selecione um tipo de ação válido."); return
             try:
                 acoes_df = load_data("Acoes")
-                tipo_info = tipos_opcoes[tipo_selecionado_str]
+                tipo_info = tipos_opcoes_map[tipo_selecionado_str]
                 ids = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
                 novo_id = int(ids.max()) + 1 if not ids.empty else 1
                 nova_acao = {
-    'id': str(novo_id), 
-    'aluno_id': str(aluno_id), 
-    'tipo_acao_id': str(tipo_info['id']), 
-    'tipo': tipo_info['nome'], 
-    'descricao': descricao, 
-    'data': data.strftime('%Y-%m-%d'), 
-    'usuario': st.session_state.username,
-    'status': 'Pendente'}
+                    'id': str(novo_id), 
+                    'aluno_id': str(aluno_id), 
+                    'tipo_acao_id': str(tipo_info['id']), 
+                    'tipo': tipo_info['nome'], 
+                    'descricao': descricao, 
+                    'data': data.strftime('%Y-%m-%d'), 
+                    'usuario': st.session_state.username,
+                    'status': 'Pendente'
+                }
                 supabase.table("Acoes").insert(nova_acao).execute()
                 st.success("Ação registrada com sucesso!"); load_data.clear(); st.rerun()
             except Exception as e:
@@ -187,11 +218,10 @@ def show_alunos():
     filtered_df = alunos_df.copy()
     if pelotao_selecionado != "Todos": filtered_df = filtered_df[filtered_df['pelotao'] == pelotao_selecionado]
     if especialidade_selecionada != "Todas": filtered_df = filtered_df[filtered_df['especialidade'] == especialidade_selecionada]
+    
     if search:
-        # Converte o termo de busca para minúsculas uma única vez
         search_lower = search.lower()
         
-        # Compara todas as colunas em minúsculas
         mask_nome_guerra = filtered_df['nome_guerra'].str.lower().str.contains(search_lower, na=False)
         mask_num_interno = filtered_df['numero_interno'].astype(str).str.lower().str.contains(search_lower, na=False)
         mask_nome_completo = filtered_df['nome_completo'].str.lower().str.contains(search_lower, na=False)
@@ -329,16 +359,11 @@ def show_alunos():
                         with tab_ver:
                             st.subheader("Histórico de Ações")
                             
-                            # --- INÍCIO DA MODIFICAÇÃO ---
                             if not acoes_df.empty and 'aluno_id' in acoes_df.columns:
-                                # Primeiro, filtra todas as ações para o aluno específico
                                 acoes_do_aluno_todas = acoes_df[acoes_df['aluno_id'].astype(str) == str(aluno_id)]
-                                
-                                # Em seguida, filtra a lista para exibir apenas as com status 'Lançado'
                                 acoes_do_aluno = acoes_do_aluno_todas[acoes_do_aluno_todas['status'] == 'Lançado']
                             else:
                                 acoes_do_aluno = pd.DataFrame()
-                            # --- FIM DA MODIFICAÇÃO ---
                             
                             if acoes_do_aluno.empty: 
                                 st.info("Nenhuma ação com status 'Lançado' encontrada no histórico.")
