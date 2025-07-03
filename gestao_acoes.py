@@ -100,10 +100,10 @@ def show_gestao_acoes():
     if 'search_results_df_gestao' not in st.session_state: st.session_state.search_results_df_gestao = pd.DataFrame()
     if 'selected_student_id_gestao' not in st.session_state: st.session_state.selected_student_id_gestao = None
 
-    alunos_df = load_data("Alunos")
-    acoes_df = load_data("Acoes")
-    tipos_acao_df = load_data("Tipos_Acao")
-    config_df = load_data("Config")
+    alunos_df = load_data("Alunos") #
+    acoes_df = load_data("Acoes") #
+    tipos_acao_df = load_data("Tipos_Acao") #
+    config_df = load_data("Config") #
     
     with st.expander("➕ Registrar Nova Ação", expanded=True):
         with st.form("search_form_gestao"):
@@ -178,7 +178,7 @@ def show_gestao_acoes():
     filtro_tipo_acao = c3.selectbox("Filtrar por Ação", opcoes_tipo_acao)
     ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
 
-    acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
+    acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df) #
     df_display = pd.DataFrame()
     if not acoes_com_pontos.empty:
         df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'numero_interno', 'nome_guerra', 'pelotao', 'nome_completo']], left_on='aluno_id', right_on='id', how='inner')
@@ -194,7 +194,7 @@ def show_gestao_acoes():
     if df_display.empty:
         st.info("Nenhuma ação encontrada para os filtros selecionados.")
     else:
-        df_display.drop_duplicates(subset=['id'], keep='first', inplace=True)
+        df_display.drop_duplicates(subset=['id_x'], keep='first', inplace=True)
         for _, acao in df_display.iterrows():
             with st.container(border=True):
                 info_col, actions_col = st.columns([7, 3])
@@ -207,22 +207,21 @@ def show_gestao_acoes():
                 
                 with actions_col:
                     status_atual = acao.get('status', 'Pendente')
-                    can_launch = check_permission('acesso_pagina_lancamentos_faia')
-                    can_delete = check_permission('pode_excluir_lancamento_faia')
+                    can_launch = check_permission('acesso_pagina_lancamentos_faia') #
+                    can_delete = check_permission('pode_excluir_lancamento_faia') #
 
                     if status_atual == 'Lançado':
                         st.success("✅ Lançado")
                     elif status_atual == 'Arquivado':
                         st.warning("🗄️ Arquivado")
                     elif status_atual == 'Pendente' and can_launch:
-                        with st.form(f"launch_form_{acao['id']}"):
-                    with st.form(f"launch_form_{acao['id_x']}"):
-                        if st.form_submit_button("🚀 Lançar", use_container_width=True):
-                            supabase.table("Acoes").update({'status': 'Lançado'}).eq('id', acao['id_x']).execute()
-                            load_data.clear(); st.rerun()
+                        with st.form(f"launch_form_{acao['id_x']}"):
+                            if st.form_submit_button("🚀 Lançar", use_container_width=True):
+                                supabase.table("Acoes").update({'status': 'Lançado'}).eq('id', acao['id_x']).execute()
+                                load_data.clear(); st.rerun()
                     
                     if status_atual != 'Arquivado' and can_delete:
-                        with st.form(f"archive_form_{acao['id']}"):
+                        with st.form(f"archive_form_{acao['id_x']}"):
                             if st.form_submit_button("🗑️ Arquivar", use_container_width=True):
-                                supabase.table("Acoes").update({'status': 'Arquivado'}).eq('id', acao['id']).execute()
+                                supabase.table("Acoes").update({'status': 'Arquivado'}).eq('id', acao['id_x']).execute()
                                 load_data.clear(); st.rerun()
