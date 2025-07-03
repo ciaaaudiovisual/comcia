@@ -208,6 +208,10 @@ def show_programacao():
         programacao_df['data'] = pd.to_datetime(programacao_df['data'], errors='coerce')
         programacao_df.dropna(subset=['data'], inplace=True)
 
+ # --- LINHA ADICIONADA ---
+    st.info("Presença Diária 6:30 | 7:00 Café | 12:00 Almoço | 17:40 Jantar | 21:00 Ceia")
+    # -------------------------
+    
     st.subheader("Filtros")
     filtro_status = st.radio("Ver eventos:", ["A Realizar", "Em Andamento", "Concluído", "Todos"], horizontal=True, index=0)
     df_filtrado = programacao_df.copy()
