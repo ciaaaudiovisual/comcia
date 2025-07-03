@@ -336,7 +336,7 @@ def show_alunos():
                                 historico_com_pontos = calcular_pontuacao_efetiva(acoes_do_aluno.copy(), tipos_acao_df, config_df)
                                 if not historico_com_pontos.empty:
                                     for _, acao in historico_com_pontos.sort_values("data", ascending=False).iterrows():
-                                        pontos = acoao.get('pontuacao_efetiva', 0.0)
+                                        pontos = acao.get('pontuacao_efetiva', 0.0)
                                         cor = "green" if pontos > 0 else "red" if pontos < 0 else "gray"
                                         st.markdown(f"**{pd.to_datetime(acao['data']).strftime('%d/%m/%Y')} - {acao.get('nome', 'N/A')}** (`{pontos:+.1f} pts`): {acao.get('descricao','')}")
                         
