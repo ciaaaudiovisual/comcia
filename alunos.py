@@ -188,12 +188,14 @@ def show_alunos():
     if pelotao_selecionado != "Todos": filtered_df = filtered_df[filtered_df['pelotao'] == pelotao_selecionado]
     if especialidade_selecionada != "Todas": filtered_df = filtered_df[filtered_df['especialidade'] == especialidade_selecionada]
     if search:
+        # Converte o termo de busca para minúsculas uma única vez
         search_lower = search.lower()
         
-        mask_nome_guerra = filtered_df['nome_guerra'].str.lower().str.contains(search_lower, na=False) if 'nome_guerra' in filtered_df else False
-        mask_num_interno = filtered_df['numero_interno'].astype(str).str.contains(search_lower, na=False) if 'numero_interno' in filtered_df else False
-        mask_nome_completo = filtered_df['nome_completo'].str.lower().str.contains(search_lower, na=False) if 'nome_completo' in filtered_df else False
-        mask_nip = filtered_df['nip'].astype(str).str.contains(search_lower, na=False) if 'nip' in filtered_df else False
+        # Compara todas as colunas em minúsculas
+        mask_nome_guerra = filtered_df['nome_guerra'].str.lower().str.contains(search_lower, na=False)
+        mask_num_interno = filtered_df['numero_interno'].astype(str).str.lower().str.contains(search_lower, na=False)
+        mask_nome_completo = filtered_df['nome_completo'].str.lower().str.contains(search_lower, na=False)
+        mask_nip = filtered_df['nip'].astype(str).str.lower().str.contains(search_lower, na=False)
         
         filtered_df = filtered_df[mask_nome_guerra | mask_num_interno | mask_nome_completo | mask_nip]
 
