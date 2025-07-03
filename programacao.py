@@ -39,23 +39,34 @@ def edit_event_dialog(evento, supabase):
             except Exception as e:
                 st.error(f"Falha ao atualizar o evento: {e}")
 
-@st.dialog("Registrar Participação na FAIA")
+
+@st.dialog("Finalizar Evento e Lançar na FAIA")
 def registrar_faia_dialog(evento, turmas_concluidas, supabase):
-    """Painel para confirmar e selecionar o lançamento em massa na FAIA."""
-    st.write(f"Deseja lançar uma ação para o evento **'{evento['descricao']}'** para os alunos das seguintes turmas?")
+    """Popup para finalizar o evento e, opcionalmente, lançar uma ação na FAIA."""
+    st.write(f"Finalizando o evento **'{evento['descricao']}'** para os alunos das seguintes turmas:")
     for turma in turmas_concluidas:
         st.write(f"- **{turma}**")
+    st.divider()
+    st.write("Se desejar, pode lançar uma ação para estes alunos.")
 
     tipos_acao_df = load_data("Tipos_Acao")
     if tipos_acao_df.empty:
-        st.error("Nenhum tipo de ação cadastrado nas Configurações."); return
+        st.error("Nenhum tipo de ação cadastrado."); return
 
-    tipos_opcoes = {f"{tipo['nome']} ({float(tipo.get('pontuacao', 0.0)):.1f} pts)": tipo for _, tipo in tipos_acao_df.iterrows()}
+    # Filtra apenas ações neutras (pontuação 0)
+    tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
+    acoes_neutras_df = tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome')
+    
+    if acoes_neutras_df.empty:
+        st.warning("Nenhuma ação do tipo 'Neutra' (pontuação 0) encontrada nas configurações.")
+    
+    tipos_opcoes = {f"{tipo['nome']}": tipo for _, tipo in acoes_neutras_df.iterrows()}
     opcoes_labels = list(tipos_opcoes.keys())
 
+    # Procura por uma opção que contenha "presença em instrução" para ser o padrão
     default_index = 0
     try:
-        default_option = next(s for s in opcoes_labels if "realizado" in s.lower() and "presença" in s.lower())
+        default_option = next(s for s in opcoes_labels if "presença em instrução" in s.lower())
         default_index = opcoes_labels.index(default_option)
     except StopIteration:
         default_index = 0
@@ -65,10 +76,16 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
         options=opcoes_labels,
         index=default_index
     )
-
+    
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Apenas FINALIZAR", type="secondary"):
+            try:
+                update_data = {"status": 'Concluído', "concluido_por": st.session_state.username, "data_conclusao": datetime.now().strftime('%d/%m/%Y %H:%M')}
+                supabase.table("Programacao").update(update_data).eq("id", evento['id']).execute()
+                st.toast("Evento finalizado com sucesso!"); load_data.clear()
+            except Exception as e:
+                st.error(f"Falha ao finalizar o evento: {e}")
             st.rerun()
             
     with col2:
@@ -76,7 +93,12 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
             if not tipo_selecionado_str:
                 st.warning("Por favor, selecione um tipo de ação."); return
 
-            with st.spinner("Registrando participações..."):
+            with st.spinner("Finalizando evento e registrando participações..."):
+                # Primeiro, finaliza o evento
+                update_data = {"status": 'Concluído', "concluido_por": st.session_state.username, "data_conclusao": datetime.now().strftime('%d/%m/%Y %H:%M')}
+                supabase.table("Programacao").update(update_data).eq("id", evento['id']).execute()
+
+                # Depois, lança as ações na FAIA
                 alunos_df = load_data("Alunos")
                 acoes_df = load_data("Acoes")
                 alunos_para_registrar = alunos_df[alunos_df['pelotao'].isin(turmas_concluidas)]
@@ -109,14 +131,11 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
                         novas_acoes.append(nova_acao)
                     
                     if novas_acoes:
-                        try:
-                            supabase.table("Acoes").insert(novas_acoes).execute()
-                            st.success(f"Ação '{tipo_acao_nome}' registrada com sucesso para {len(novas_acoes)} alunos!")
-                            load_data.clear()
-                        except Exception as e:
-                            st.error(f"Falha ao salvar os registros na FAIA: {e}")
+                        supabase.table("Acoes").insert(novas_acoes).execute()
+                        st.success(f"Ação '{tipo_acao_nome}' registrada para {len(novas_acoes)} alunos!")
                 else:
-                    st.warning("Nenhum aluno encontrado nas turmas selecionadas.")
+                    st.warning("Nenhum aluno encontrado nas turmas selecionadas para lançar na FAIA.")
+            load_data.clear()
             st.rerun()
 
 @st.dialog("Gerenciar Status Parcial do Evento")
@@ -154,32 +173,6 @@ def gerenciar_status_dialog(evento, supabase):
                 st.rerun()
             except Exception as e:
                 st.error(f"Falha ao salvar o status: {e}")
-
-def on_finalize_click(evento, supabase):
-    alunos_df = load_data("Alunos")
-    destinatarios_str = evento.get('destinatarios', 'Todos')
-    lista_destinatarios = sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]) if destinatarios_str == 'Todos' else [p.strip() for p in destinatarios_str.split(',')]
-    concluidos_str = evento.get('pelotoes_concluidos') or ''
-    lista_concluidos_antes = [p.strip() for p in concluidos_str.split(',') if p]
-    
-    try:
-        update_data = {
-            "pelotoes_concluidos": ", ".join(lista_destinatarios), 
-            "status": 'Concluído', 
-            "data_conclusao": datetime.now().strftime('%d/%m/%Y %H:%M'), 
-            "concluido_por": st.session_state.username
-        }
-        supabase.table("Programacao").update(update_data).eq("id", evento['id']).execute()
-        
-        turmas_recem_concluidas = list(set(lista_destinatarios) - set(lista_concluidos_antes))
-        if turmas_recem_concluidas:
-            st.session_state['evento_para_logar'] = supabase.table("Programacao").select("*").eq("id", evento['id']).execute().data[0]
-            st.session_state['turmas_para_logar'] = turmas_recem_concluidas
-            
-        st.toast("Evento finalizado!", icon="🎉")
-        load_data.clear()
-    except Exception as e:
-        st.error(f"Falha ao finalizar o evento: {e}")
 
 def on_delete_click(evento_id, supabase):
     try:
@@ -246,10 +239,8 @@ def show_programacao():
                     else:
                         destinatarios_str = ", ".join(destinatarios_selecionados) 
                         if "Todos" in destinatarios_str: destinatarios_str = "Todos"
-                        
                         ids_numericos = pd.to_numeric(programacao_df['id'], errors='coerce').dropna()
                         novo_id = int(ids_numericos.max()) + 1 if not ids_numericos.empty else 1
-                        
                         novo_evento = {
                             'id': str(novo_id), 'data': nova_data.strftime('%Y-%m-%d'), 
                             'horario': novo_horario_str, 'descricao': nova_descricao, 
@@ -259,8 +250,7 @@ def show_programacao():
                         }
                         try:
                             supabase.table("Programacao").insert(novo_evento).execute()
-                            st.success("Evento adicionado com sucesso!")
-                            load_data.clear(); st.rerun()
+                            st.success("Evento adicionado com sucesso!"); load_data.clear(); st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao adicionar evento: {e}")
 
@@ -318,47 +308,60 @@ def show_programacao():
                     st.error(f"Erro ao processar o ficheiro: {e}")
             
     st.header("Agenda")
+    
+    if filtro_status not in ["Concluído", "Todos"]:
+        conclusao_por_data = df_filtrado.groupby(df_filtrado['data'].dt.date)['status'].apply(lambda x: (x == 'Concluído').all())
+        if not conclusao_por_data.empty:
+            datas_para_mostrar = conclusao_por_data[~conclusao_por_data].index
+            df_filtrado = df_filtrado[df_filtrado['data'].dt.date.isin(datas_para_mostrar)]
+
     if df_filtrado.empty:
         st.info(f"Nenhum evento na categoria '{filtro_status}' encontrado.")
     else:
         df_filtrado = df_filtrado.sort_values(by=['data', 'horario'], ascending=True)
         for data_evento, eventos_do_dia in df_filtrado.groupby(df_filtrado['data'].dt.date):
-            st.subheader(f"🗓️ {data_evento.strftime('%d/%m/%Y')}") 
-            for _, evento in eventos_do_dia.iterrows():
-                status = evento.get('status', 'A Realizar')
-                cor_status = {"A Realizar": "blue", "Em Andamento": "orange", "Concluído": "green"}.get(status, "gray")
-                info_conclusao = ""
-                if status == 'Concluído': 
-                    info_conclusao = f"<br><small><b>Concluído por:</b> {evento.get('concluido_por', '')} em {evento.get('data_conclusao', '')}</small>"
-                elif status == 'Em Andamento': 
-                    info_conclusao = f"<br><small><b>Turmas Concluídas:</b> {evento.get('pelotoes_concluidos', 'Nenhuma')}</small>"
+            
+            with st.expander(f"🗓️ {data_evento.strftime('%d/%m/%Y')} - ({len(eventos_do_dia)} evento(s))"):
+                for _, evento in eventos_do_dia.iterrows():
+                    status = evento.get('status', 'A Realizar')
+                    cor_status = {"A Realizar": "blue", "Em Andamento": "orange", "Concluído": "green"}.get(status, "gray")
+                    info_conclusao = ""
+                    if status == 'Concluído': 
+                        info_conclusao = f"<br><small><b>Concluído por:</b> {evento.get('concluido_por', '')} em {evento.get('data_conclusao', '')}</small>"
+                    elif status == 'Em Andamento': 
+                        info_conclusao = f"<br><small><b>Turmas Concluídas:</b> {evento.get('pelotoes_concluidos', 'Nenhuma')}</small>"
 
-                with st.container(border=True):
-                    st.markdown(f"""
-                        <p style="margin-bottom: 0.2rem;"><span style="color:{cor_status};"><b>{evento.get('horario', '')}</b></span> - <b>{evento.get('descricao', '')}</b></p>
-                        <small><b>Local:</b> {evento.get('local', 'N/A')}</small>
-                        <br><small><b>Responsável:</b> {evento.get('responsavel', 'N/A')}</small>
-                        <br><small><b>Para:</b> {evento.get('destinatarios', 'Todos')}</small>
-                        {info_conclusao}
-                    """, unsafe_allow_html=True)
+                    with st.container(border=True):
+                        st.markdown(f"""
+                            <p style="margin-bottom: 0.2rem;"><span style="color:{cor_status};"><b>{evento.get('horario', '')}</b></span> - <b>{evento.get('descricao', '')}</b></p>
+                            <small><b>Local:</b> {evento.get('local', 'N/A')}</small>
+                            <br><small><b>Responsável:</b> {evento.get('responsavel', 'N/A')}</small>
+                            <br><small><b>Para:</b> {evento.get('destinatarios', 'Todos')}</small>
+                            {info_conclusao}
+                        """, unsafe_allow_html=True)
 
-                    if check_permission('pode_finalizar_evento_programacao') or check_permission('pode_excluir_evento_programacao'):
-                        st.write("")
-                        cols_botoes = st.columns(4)
-                        
-                        with cols_botoes[0]:
-                            if check_permission('pode_finalizar_evento_programacao'):
-                                if st.button("✏️ Alterar", key=f"edit_{evento['id']}", help="Alterar data e horário"):
-                                    edit_event_dialog(evento, supabase)
-                        
-                        with cols_botoes[1]:
-                            if check_permission('pode_finalizar_evento_programacao'):
-                                st.button("Finalizar", key=f"finish_{evento['id']}", help="Marcar como concluído para todas as turmas.", type="primary", disabled=(status == 'Concluído'), on_click=on_finalize_click, args=(evento, supabase))
-                        with cols_botoes[2]:
-                            if check_permission('pode_finalizar_evento_programacao'):
-                                if st.button("Status Parcial", key=f"status_{evento['id']}", help="Gerenciar status por turma."):
-                                    gerenciar_status_dialog(evento, supabase)
-                        with cols_botoes[3]:
-                            if check_permission('pode_excluir_evento_programacao'):
-                                st.button("🗑️ Excluir", key=f"delete_{evento['id']}", help="Excluir permanentemente.", on_click=on_delete_click, args=(evento['id'], supabase))
-            st.divider()
+                        if check_permission('pode_finalizar_evento_programacao') or check_permission('pode_excluir_evento_programacao'):
+                            st.write("")
+                            cols_botoes = st.columns(4)
+                            
+                            with cols_botoes[0]:
+                                if check_permission('pode_finalizar_evento_programacao'):
+                                    if st.button("Finalizar", key=f"finish_{evento['id']}", help="Finalizar este evento para todas as turmas.", type="primary", disabled=(status == 'Concluído')):
+                                        destinatarios_str = evento.get('destinatarios', 'Todos')
+                                        turmas_evento = sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]) if destinatarios_str == 'Todos' else [p.strip() for p in destinatarios_str.split(',')]
+                                        registrar_faia_dialog(evento, turmas_evento, supabase)
+                            
+                            with cols_botoes[1]:
+                                if check_permission('pode_finalizar_evento_programacao'):
+                                    if st.button("Feito Parcialmente", key=f"status_{evento['id']}", help="Gerenciar status por turma."):
+                                        gerenciar_status_dialog(evento, supabase)
+                            
+                            with cols_botoes[2]:
+                                if check_permission('pode_finalizar_evento_programacao'): 
+                                    if st.button("✏️ Alterar", key=f"edit_{evento['id']}", help="Alterar data e horário"):
+                                        edit_event_dialog(evento, supabase)
+
+                            with cols_botoes[3]:
+                                if check_permission('pode_excluir_evento_programacao'):
+                                    st.button("🗑️ Excluir", key=f"delete_{evento['id']}", help="Excluir permanentemente.", on_click=on_delete_click, args=(evento['id'], supabase))
+                    st.divider()
