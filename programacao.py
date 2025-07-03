@@ -39,7 +39,6 @@ def edit_event_dialog(evento, supabase):
             except Exception as e:
                 st.error(f"Falha ao atualizar o evento: {e}")
 
-
 @st.dialog("Finalizar Evento e Lançar na FAIA")
 def registrar_faia_dialog(evento, turmas_concluidas, supabase):
     """Popup para finalizar o evento e, opcionalmente, lançar uma ação na FAIA."""
@@ -94,11 +93,9 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
                 st.warning("Por favor, selecione um tipo de ação."); return
 
             with st.spinner("Finalizando evento e registrando participações..."):
-                # Primeiro, finaliza o evento
                 update_data = {"status": 'Concluído', "concluido_por": st.session_state.username, "data_conclusao": datetime.now().strftime('%d/%m/%Y %H:%M')}
                 supabase.table("Programacao").update(update_data).eq("id", evento['id']).execute()
 
-                # Depois, lança as ações na FAIA
                 alunos_df = load_data("Alunos")
                 acoes_df = load_data("Acoes")
                 alunos_para_registrar = alunos_df[alunos_df['pelotao'].isin(turmas_concluidas)]
@@ -131,11 +128,14 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
                         novas_acoes.append(nova_acao)
                     
                     if novas_acoes:
-                        supabase.table("Acoes").insert(novas_acoes).execute()
-                        st.success(f"Ação '{tipo_acao_nome}' registrada para {len(novas_acoes)} alunos!")
+                        try:
+                            supabase.table("Acoes").insert(novas_acoes).execute()
+                            st.success(f"Ação '{tipo_acao_nome}' registrada para {len(novas_acoes)} alunos!")
+                            load_data.clear()
+                        except Exception as e:
+                            st.error(f"Falha ao salvar os registros na FAIA: {e}")
                 else:
                     st.warning("Nenhum aluno encontrado nas turmas selecionadas para lançar na FAIA.")
-            load_data.clear()
             st.rerun()
 
 @st.dialog("Gerenciar Status Parcial do Evento")
@@ -170,7 +170,6 @@ def gerenciar_status_dialog(evento, supabase):
                     st.session_state['turmas_para_logar'] = turmas_recem_concluidas
                 st.toast("Status do evento atualizado!")
                 load_data.clear()
-                st.rerun()
             except Exception as e:
                 st.error(f"Falha ao salvar o status: {e}")
 
@@ -239,8 +238,10 @@ def show_programacao():
                     else:
                         destinatarios_str = ", ".join(destinatarios_selecionados) 
                         if "Todos" in destinatarios_str: destinatarios_str = "Todos"
+                        
                         ids_numericos = pd.to_numeric(programacao_df['id'], errors='coerce').dropna()
                         novo_id = int(ids_numericos.max()) + 1 if not ids_numericos.empty else 1
+                        
                         novo_evento = {
                             'id': str(novo_id), 'data': nova_data.strftime('%Y-%m-%d'), 
                             'horario': novo_horario_str, 'descricao': nova_descricao, 
@@ -308,10 +309,12 @@ def show_programacao():
                     st.error(f"Erro ao processar o ficheiro: {e}")
             
     st.header("Agenda")
-       if filtro_status not in ["Concluído", "Todos"]:
+    
+    if filtro_status not in ["Concluído", "Todos"]:
         conclusao_por_data = df_filtrado.groupby(df_filtrado['data'].dt.date)['status'].apply(lambda x: (x == 'Concluído').all())
-        datas_para_mostrar = conclusao_por_data[~conclusao_por_data].index
-        df_filtrado = df_filtrado[df_filtrado['data'].dt.date.isin(datas_para_mostrar)]
+        if not conclusao_por_data.empty:
+            datas_para_mostrar = conclusao_por_data[~conclusao_por_data].index
+            df_filtrado = df_filtrado[df_filtrado['data'].dt.date.isin(datas_para_mostrar)]
 
     if df_filtrado.empty:
         st.info(f"Nenhum evento na categoria '{filtro_status}' encontrado.")
@@ -319,7 +322,6 @@ def show_programacao():
         df_filtrado = df_filtrado.sort_values(by=['data', 'horario'], ascending=True)
         for data_evento, eventos_do_dia in df_filtrado.groupby(df_filtrado['data'].dt.date):
             
-            # --- LÓGICA MODIFICADA: Eventos do dia dentro de um expander ---
             with st.expander(f"🗓️ {data_evento.strftime('%d/%m/%Y')} - ({len(eventos_do_dia)} evento(s))"):
                 for _, evento in eventos_do_dia.iterrows():
                     status = evento.get('status', 'A Realizar')
@@ -331,11 +333,16 @@ def show_programacao():
                         info_conclusao = f"<br><small><b>Turmas Concluídas:</b> {evento.get('pelotoes_concluidos', 'Nenhuma')}</small>"
 
                     with st.container(border=True):
-                        st.markdown(f"""...""", unsafe_allow_html=True) # Conteúdo do card inalterado
+                        st.markdown(f"""
+                            <p style="margin-bottom: 0.2rem;"><span style="color:{cor_status};"><b>{evento.get('horario', '')}</b></span> - <b>{evento.get('descricao', '')}</b></p>
+                            <small><b>Local:</b> {evento.get('local', 'N/A')}</small>
+                            <br><small><b>Responsável:</b> {evento.get('responsavel', 'N/A')}</small>
+                            <br><small><b>Para:</b> {evento.get('destinatarios', 'Todos')}</small>
+                            {info_conclusao}
+                        """, unsafe_allow_html=True)
 
                         if check_permission('pode_finalizar_evento_programacao') or check_permission('pode_excluir_evento_programacao'):
                             st.write("")
-                            # --- LÓGICA MODIFICADA: Nova ordem e nomes dos botões ---
                             cols_botoes = st.columns(4)
                             
                             with cols_botoes[0]:
@@ -351,7 +358,7 @@ def show_programacao():
                                         gerenciar_status_dialog(evento, supabase)
                             
                             with cols_botoes[2]:
-                                if check_permission('pode_editar_evento_programacao'): # Supondo nova permissão
+                                if check_permission('pode_finalizar_evento_programacao'): 
                                     if st.button("✏️ Alterar", key=f"edit_{evento['id']}", help="Alterar data e horário"):
                                         edit_event_dialog(evento, supabase)
 
