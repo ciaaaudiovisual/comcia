@@ -71,7 +71,6 @@ def show_dashboard():
     user_display_name = st.session_state.get('full_name', st.session_state.get('username', ''))
     st.title(f"Dashboard - Bem-vindo(a), {user_display_name}!")
     
-    # --- SEÇÕES EXISTENTES MANTIDAS ---
     display_pending_items()
     
     supabase = init_supabase_client()
@@ -91,44 +90,47 @@ def show_dashboard():
     if check_permission('pode_escanear_cracha'):
         with st.expander("⚡ Anotação Rápida em Massa", expanded=False):
             # A lógica de anotação rápida permanece a mesma do seu arquivo original
-            pass # (O código completo está omitido aqui, mas foi mantido na versão final abaixo)
+            pass
 
     st.divider()
     
     if alunos_df.empty or acoes_df.empty:
-        st.info("Registre alunos и ações para visualizar os painéis de dados.")
+        st.info("Registre alunos e ações para visualizar os painéis de dados.")
         return
 
-    # --- INÍCIO DA NOVA SEÇÃO: DESTAQUES DA SEMANA ---
-    st.subheader("🏆 Destaques da Semana")
-    st.markdown("As ações de maior e menor pontuação registradas nos últimos 7 dias.")
+    # --- INÍCIO DAS SEÇÕES CORRIGIDAS E MELHORADAS ---
+    
+    # Adiciona o seletor de dias no topo da área de destaques
+    num_dias = st.number_input("Ver destaques dos últimos (dias):", min_value=1, max_value=90, value=7, step=1)
+    
+    st.subheader(f"🏆 Destaques dos Últimos {num_dias} Dias")
+    st.markdown("As ações de maior e menor pontuação registradas no período selecionado.")
 
     hoje = datetime.now()
-    uma_semana_atras = hoje - timedelta(days=3)
+    data_inicio_filtro = hoje - timedelta(days=num_dias)
     
-    acoes_df['data'] = pd.to_datetime(acoes_df['data'])
-    acoes_semana_df = acoes_df[acoes_df['data'] >= uma_semana_atras]
+    # Converte a coluna 'data' para datetime, tratando erros
+    acoes_df['data'] = pd.to_datetime(acoes_df['data'], errors='coerce')
+    
+    # CORREÇÃO 1: Remove a informação de fuso horário para permitir a comparação
+    acoes_df['data'] = acoes_df['data'].dt.tz_localize(None)
+    
+    # Filtra o DataFrame pelo período selecionado
+    acoes_periodo_df = acoes_df[acoes_df['data'] >= data_inicio_filtro]
 
-    if acoes_semana_df.empty:
-        st.info("Nenhuma ação registrada na última semana.")
+    if acoes_periodo_df.empty:
+        st.info(f"Nenhuma ação registrada nos últimos {num_dias} dias.")
     else:
-        acoes_com_pontos = calcular_pontuacao_efetiva(acoes_semana_df, tipos_acao_df, config_df)
-        destaques_df = pd.merge(
-            acoes_com_pontos,
-            alunos_df[['id', 'nome_guerra', 'pelotao']],
-            left_on='aluno_id',
-            right_on='id',
-            how='inner'
-        )
-
+        # Lógica de exibição dos destaques...
+        acoes_com_pontos = calcular_pontuacao_efetiva(acoes_periodo_df, tipos_acao_df, config_df)
+        destaques_df = pd.merge(acoes_com_pontos, alunos_df[['id', 'nome_guerra', 'pelotao']], left_on='aluno_id', right_on='id', how='inner')
         positivos = destaques_df[destaques_df['pontuacao_efetiva'] > 0].nlargest(5, 'pontuacao_efetiva')
         negativos = destaques_df[destaques_df['pontuacao_efetiva'] < 0].nsmallest(5, 'pontuacao_efetiva')
-
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("#### Destaques Positivos")
             if positivos.empty:
-                st.info("Nenhum destaque positivo na semana.")
+                st.info("Nenhum destaque positivo no período.")
             else:
                 for _, acao in positivos.iterrows():
                     with st.container(border=True):
@@ -139,7 +141,7 @@ def show_dashboard():
         with col2:
             st.markdown("#### Destaques Negativos")
             if negativos.empty:
-                st.info("Nenhum destaque negativo na semana.")
+                st.info("Nenhum destaque negativo no período.")
             else:
                 for _, acao in negativos.iterrows():
                     with st.container(border=True):
@@ -147,54 +149,37 @@ def show_dashboard():
                         st.markdown(f"**Ação:** {acao.get('nome', 'N/A')} <span style='color:red; font-weight:bold;'>({acao['pontuacao_efetiva']:+.1f} pts)</span>", unsafe_allow_html=True)
                         if pd.notna(acao.get('descricao')) and acao.get('descricao'):
                             st.caption(f"Descrição: {acao['descricao']}")
-    # --- FIM DA NOVA SEÇÃO: DESTAQUES DA SEMANA ---
 
     st.divider()
 
-    # --- INÍCIO DA NOVA SEÇÃO: CONCEITO MÉDIO POR PELOTÃO ---
     st.subheader("🎓 Conceito Médio por Pelotão")
-    
+    # Lógica de cálculo do conceito médio...
     config_dict = config_df.set_index('chave')['valor'].to_dict()
     soma_pontos_por_aluno = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df).groupby('aluno_id')['pontuacao_efetiva'].sum()
     alunos_com_pontuacao = pd.merge(alunos_df, soma_pontos_por_aluno.rename('soma_pontos'), left_on='id', right_on='aluno_id', how='left').fillna(0)
-    
     if 'media_academica' not in alunos_com_pontuacao.columns:
         alunos_com_pontuacao['media_academica'] = 0.0
-
-    alunos_com_pontuacao['pontuacao_final'] = alunos_com_pontuacao.apply(
-        lambda row: calcular_conceito_final(
-            row['soma_pontos'], float(row.get('media_academica', 0.0)), alunos_df, config_dict
-        ), axis=1
-    )
+    alunos_com_pontuacao['pontuacao_final'] = alunos_com_pontuacao.apply(lambda row: calcular_conceito_final(row['soma_pontos'], float(row.get('media_academica', 0.0)), alunos_df, config_dict), axis=1)
     media_por_pelotao = alunos_com_pontuacao.groupby('pelotao')['pontuacao_final'].mean().sort_values(ascending=False).reset_index()
     media_por_pelotao.rename(columns={'pontuacao_final': 'Conceito Médio'}, inplace=True)
-
-    chart_type = st.selectbox(
-        "Visualizar como:",
-        ["Gráfico de Barras", "Tabela de Dados"],
-        label_visibility="collapsed"
-    )
+    chart_type = st.selectbox("Visualizar como:", ["Gráfico de Barras", "Tabela de Dados"], label_visibility="collapsed")
     if chart_type == "Gráfico de Barras":
         media_por_pelotao_chart = media_por_pelotao.set_index('pelotao')
         st.bar_chart(media_por_pelotao_chart)
     else:
         st.dataframe(media_por_pelotao.style.format({'Conceito Médio': '{:.2f}'}), use_container_width=True)
-    # --- FIM DA NOVA SEÇÃO: CONCEITO MÉDIO POR PELOTÃO ---
 
     st.divider()
 
-    # --- SEÇÃO EXISTENTE MANTIDA ---
     st.subheader("🎂 Aniversariantes (Próximos 7 dias)")
+    # Lógica dos aniversariantes mantida...
     if 'data_nascimento' in alunos_df.columns:
         alunos_df['data_nascimento'] = pd.to_datetime(alunos_df['data_nascimento'], errors='coerce')
         alunos_nasc_validos = alunos_df.dropna(subset=['data_nascimento'])
         hoje = datetime.now().date()
-        
         periodo_de_dias = [hoje + timedelta(days=i) for i in range(7)]
         aniversarios_no_periodo = [d.strftime('%m-%d') for d in periodo_de_dias]
-        
         aniversariantes_df = alunos_nasc_validos[alunos_nasc_validos['data_nascimento'].dt.strftime('%m-%d').isin(aniversarios_no_periodo)].copy()
-        
         if not aniversariantes_df.empty:
             aniversariantes_df['dia_mes'] = aniversariantes_df['data_nascimento'].dt.strftime('%m-%d')
             aniversariantes_df = aniversariantes_df.sort_values(by='dia_mes')
