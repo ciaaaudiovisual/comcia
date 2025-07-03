@@ -6,7 +6,7 @@ from auth import check_permission
 from alunos import calcular_pontuacao_efetiva
 from io import BytesIO
 import zipfile
-from gestao_acoes import show_gestao_acoes
+
 # ==============================================================================
 # DIÁLOGOS E POPUPS
 # ==============================================================================
