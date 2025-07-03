@@ -61,7 +61,7 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
     with col2:
         if st.button("FINALIZAR E LANÇAR NA FAIA", type="primary"):
             if not tipo_selecionado_str:
-                show_notification_dialog("Por favor, selecione um tipo de ação.", status_type="warning")
+                st.warning("Por favor, selecione um tipo de ação.")
                 return
 
             with st.spinner("Registrando participações..."):
@@ -91,19 +91,24 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
                             'descricao': descricao_acao, 
                             'data': data_acao, 
                             'usuario': st.session_state.username, 
-                            'status': 'Lançado' # CORRIGIDO: Ações agora são criadas como 'Lançado'
+                            'status': 'Lançado'
                         }
                         novas_acoes.append(nova_acao)
                     
-                    if novas_acoes:
-                        try:
-                            supabase.table("Acoes").insert(novas_acoes).execute()
-                            load_data.clear()
-                            show_notification_dialog(f"Ação '{tipo_acao_nome}' registrada com sucesso para {len(novas_acoes)} alunos!", status_type="success")
-                        except Exception as e:
-                            show_notification_dialog(f"Falha ao salvar os registros na FAIA: {e}", status_type="error")
+                    try:
+                        supabase.table("Acoes").insert(novas_acoes).execute()
+                        load_data.clear()
+                        # Salva a mensagem de sucesso no estado da sessão
+                        st.session_state.notification = {"message": f"Ação '{tipo_acao_nome}' registrada com sucesso para {len(novas_acoes)} alunos!", "type": "success"}
+                    except Exception as e:
+                        # Salva a mensagem de erro no estado da sessão
+                        st.session_state.notification = {"message": f"Falha ao salvar os registros na FAIA: {e}", "type": "error"}
                 else:
-                    show_notification_dialog("Nenhum aluno encontrado nas turmas selecionadas.", status_type="warning")
+                    st.session_state.notification = {"message": "Nenhum aluno encontrado nas turmas selecionadas.", "type": "warning"}
+                
+                # Força o recarregamento, que fechará este diálogo e permitirá que o próximo seja aberto
+                st.rerun()
+
 
 @st.dialog("Gerenciar Status Parcial do Evento")
 def gerenciar_status_dialog(evento, supabase):
@@ -164,7 +169,7 @@ def on_finalize_click(evento, supabase):
             
         st.toast("Evento finalizado!", icon="🎉")
         load_data.clear()
-        st.rerun() # CORRIGIDO: Comando st.rerun() adicionado para garantir que o diálogo seja chamado
+        st.rerun()
     except Exception as e:
         st.error(f"Falha ao finalizar o evento: {e}")
 
@@ -191,6 +196,13 @@ def show_programacao():
     st.title("Programação de Eventos")
     supabase = init_supabase_client()
     
+    # --- NOVO BLOCO ---
+    # Verifica se há uma notificação agendada e a exibe
+    if 'notification' in st.session_state and st.session_state.notification:
+        notification = st.session_state.pop('notification') # .pop() para exibir apenas uma vez
+        show_notification_dialog(notification['message'], status_type=notification['type'])
+    # --- FIM DO NOVO BLOCO ---
+
     if 'evento_para_logar' in st.session_state and st.session_state['evento_para_logar'] is not None:
         evento = st.session_state.pop('evento_para_logar')
         turmas = st.session_state.pop('turmas_para_logar')
