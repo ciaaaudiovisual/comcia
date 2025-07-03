@@ -87,7 +87,6 @@ def show_dashboard():
         alunos_df['label'] = alunos_df.apply(create_student_label, axis=1)
         label_to_id_map = pd.Series(alunos_df.id.values, index=alunos_df.label).to_dict()
 
-    # --- SEÇÃO DE ANOTAÇÃO RÁPIDA RESTAURADA ---
     if check_permission('pode_escanear_cracha'):
         with st.expander("⚡ Anotação Rápida em Massa", expanded=False):
             if st.toggle("Ativar Leitor de Crachás 📸"):
@@ -154,7 +153,6 @@ def show_dashboard():
                         st.warning("Nenhum aluno foi selecionado. Por favor, selecione alunos manualmente ou use um filtro de grupo.")
                     else:
                         try:
-                            # Lógica para registrar as ações (mantida do seu arquivo original)
                             response = supabase.table("Acoes").select("id", count='exact').execute()
                             ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
                             ultimo_id = max(ids_existentes) if ids_existentes else 0
@@ -184,7 +182,7 @@ def show_dashboard():
         st.info("Registre alunos e ações para visualizar os painéis de dados.")
         return
 
-    # --- SEÇÃO DE DESTAQUES CORRIGIDA E MELHORADA ---
+    # --- SEÇÃO DE DESTAQUES COM CORREÇÃO ---
     num_dias = st.number_input("Ver destaques dos últimos (dias):", min_value=1, max_value=90, value=7, step=1)
     
     st.subheader(f"🏆 Destaques dos Últimos {num_dias} Dias")
@@ -197,9 +195,14 @@ def show_dashboard():
     acoes_df['data'] = acoes_df['data'].dt.tz_localize(None)
     
     acoes_periodo_df = acoes_df[acoes_df['data'] >= data_inicio_filtro]
-
+    
+    # --- CORREÇÃO APLICADA AQUI ---
+    # Garante que ações com status 'Arquivado' não apareçam nos destaques
+    if 'status' in acoes_periodo_df.columns:
+        acoes_periodo_df = acoes_periodo_df[acoes_periodo_df['status'] != 'Arquivado']
+    
     if acoes_periodo_df.empty:
-        st.info(f"Nenhuma ação registrada nos últimos {num_dias} dias.")
+        st.info(f"Nenhuma ação (não-arquivada) registrada nos últimos {num_dias} dias.")
     else:
         acoes_com_pontos = calcular_pontuacao_efetiva(acoes_periodo_df, tipos_acao_df, config_df)
         destaques_df = pd.merge(acoes_com_pontos, alunos_df[['id', 'nome_guerra', 'pelotao']], left_on='aluno_id', right_on='id', how='inner')
@@ -231,7 +234,6 @@ def show_dashboard():
 
     st.divider()
 
-    # --- SEÇÃO DE CONCEITO MÉDIO CORRIGIDA E MELHORADA ---
     st.subheader("🎓 Conceito Médio por Pelotão")
     config_dict = config_df.set_index('chave')['valor'].to_dict()
     soma_pontos_por_aluno = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df).groupby('aluno_id')['pontuacao_efetiva'].sum()
@@ -250,7 +252,6 @@ def show_dashboard():
 
     st.divider()
 
-    # --- SEÇÃO DE ANIVERSARIANTES MANTIDA ---
     st.subheader("🎂 Aniversariantes (Próximos 7 dias)")
     if 'data_nascimento' in alunos_df.columns:
         alunos_df['data_nascimento'] = pd.to_datetime(alunos_df['data_nascimento'], errors='coerce')
