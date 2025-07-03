@@ -8,11 +8,10 @@ from io import BytesIO
 import zipfile
 
 # ==============================================================================
-# DIÁLOGOS E FUNÇÕES DE APOIO
+# DIÁLOGOS E POPUPS
 # ==============================================================================
 @st.dialog("Sucesso!")
 def show_success_dialog(message):
-    """Exibe um popup de sucesso que o utilizador precisa de fechar manualmente."""
     st.success(message)
     if st.button("OK"):
         st.rerun()
@@ -25,6 +24,35 @@ def preview_faia_dialog(aluno_info, acoes_aluno_df):
     nome_arquivo = f"FAIA_{aluno_info.get('numero_interno','SN')}_{aluno_info.get('nome_guerra','N/A')}.txt"
     st.download_button(label="✅ Exportar Relatório", data=texto_relatorio.encode('utf-8'), file_name=nome_arquivo, mime="text/plain")
 
+# ==============================================================================
+# FUNÇÕES DE CALLBACK (APENAS PARA AÇÕES EM MASSA)
+# ==============================================================================
+def launch_selected_actions(selected_ids, supabase):
+    if not selected_ids:
+        st.warning("Nenhuma ação foi selecionada.")
+        return
+    BATCH_SIZE = 50
+    total_items = len(selected_ids)
+    progress_bar = st.progress(0, text="Iniciando lançamento em massa...")
+    try:
+        processed_count = 0
+        for i in range(0, total_items, BATCH_SIZE):
+            batch_ids = selected_ids[i:i + BATCH_SIZE]
+            progress_text = f"Processando lote {i//BATCH_SIZE + 1}... ({processed_count}/{total_items})"
+            progress_bar.progress(i / total_items, text=progress_text)
+            supabase.table("Acoes").update({'status': 'Lançado'}).in_('id', batch_ids).execute()
+            processed_count += len(batch_ids)
+        progress_bar.progress(1.0, text="Lançamento concluído!")
+        st.session_state.action_selection = {}
+        load_data.clear()
+        show_success_dialog(f"{processed_count} de {total_items} ações foram lançadas na FAIA com sucesso!")
+    except Exception as e:
+        st.error(f"Ocorreu um erro durante o lançamento em massa: {e}")
+        progress_bar.empty()
+
+# ==============================================================================
+# FUNÇÕES DE APOIO
+# ==============================================================================
 def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
     texto = [
         "============================================================",
