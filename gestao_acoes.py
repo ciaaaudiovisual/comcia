@@ -12,12 +12,14 @@ import zipfile
 # ==============================================================================
 @st.dialog("Sucesso!")
 def show_success_dialog(message):
+    """Exibe um popup de sucesso que o utilizador precisa de fechar manualmente."""
     st.success(message)
     if st.button("OK"):
         st.rerun()
 
 @st.dialog("Pré-visualização da FAIA")
 def preview_faia_dialog(aluno_info, acoes_aluno_df):
+    """Exibe o conteúdo da FAIA e o botão para exportar."""
     st.header(f"FAIA de: {aluno_info.get('nome_guerra', 'N/A')}")
     texto_relatorio = formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df)
     st.text_area("Conteúdo do Relatório:", value=texto_relatorio, height=300)
@@ -28,6 +30,7 @@ def preview_faia_dialog(aluno_info, acoes_aluno_df):
 # FUNÇÕES DE CALLBACK (APENAS PARA AÇÕES EM MASSA)
 # ==============================================================================
 def launch_selected_actions(selected_ids, supabase):
+    """Callback para lançar MÚLTIPLAS ações em lotes para evitar timeouts."""
     if not selected_ids:
         st.warning("Nenhuma ação foi selecionada.")
         return
@@ -54,6 +57,7 @@ def launch_selected_actions(selected_ids, supabase):
 # FUNÇÕES DE APOIO
 # ==============================================================================
 def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
+    """Formata os dados de um único aluno para uma string de texto."""
     texto = [
         "============================================================",
         f"FICHA DE ACOMPANHAMENTO INDIVIDUAL DO ALUNO (FAIA)\n",
@@ -92,6 +96,7 @@ def show_gestao_acoes():
     st.title("Lançamentos de Ações dos Alunos")
     supabase = init_supabase_client()
 
+    if 'action_selection' not in st.session_state: st.session_state.action_selection = {}
     if 'search_results_df_gestao' not in st.session_state: st.session_state.search_results_df_gestao = pd.DataFrame()
     if 'selected_student_id_gestao' not in st.session_state: st.session_state.selected_student_id_gestao = None
 
