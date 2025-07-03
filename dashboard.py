@@ -87,10 +87,96 @@ def show_dashboard():
         alunos_df['label'] = alunos_df.apply(create_student_label, axis=1)
         label_to_id_map = pd.Series(alunos_df.id.values, index=alunos_df.label).to_dict()
 
+    # --- SEÇÃO DE ANOTAÇÃO RÁPIDA RESTAURADA ---
     if check_permission('pode_escanear_cracha'):
         with st.expander("⚡ Anotação Rápida em Massa", expanded=False):
-            # A lógica de anotação rápida permanece a mesma do seu arquivo original
-            pass
+            if st.toggle("Ativar Leitor de Crachás 📸"):
+                imagem_cracha = st.camera_input("Aponte a câmara para o código de barras", label_visibility="collapsed")
+                if imagem_cracha:
+                    nips, msg = decodificar_codigo_de_barras(imagem_cracha)
+                    if nips and 'nip' in alunos_df.columns:
+                        alunos_encontrados_df = alunos_df[alunos_df['nip'].isin(nips)]
+                        if not alunos_encontrados_df.empty:
+                            for _, aluno_row in alunos_encontrados_df.iterrows():
+                                label = create_student_label(aluno_row)
+                                if label not in st.session_state.alunos_selecionados_scanner_labels:
+                                    st.session_state.alunos_selecionados_scanner_labels.append(label)
+                            st.toast("Aluno(s) adicionado(s) à seleção!", icon="✅")
+                            st.balloons()
+                    else:
+                        st.error(msg)
+            
+            with st.form("anotacao_rapida_form_simplificada"):
+                st.subheader("1. Selecione os Alunos")
+                st.info("Pode selecionar alunos individualmente OU usar os filtros de grupo (se a seleção manual estiver vazia).")
+
+                opcoes_labels = sorted(alunos_df['label'].unique()) if not alunos_df.empty else []
+                alunos_selecionados_labels = st.multiselect(
+                    "Seleção Manual de Alunos:",
+                    options=opcoes_labels,
+                    default=st.session_state.alunos_selecionados_scanner_labels
+                )
+
+                st.markdown("--- **OU, se a seleção acima estiver vazia, use os filtros abaixo** ---")
+                
+                col1, col2 = st.columns(2)
+                opcoes_pelotao = ["Nenhum"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p) and p])
+                pelotao_selecionado = col1.selectbox("Aplicar a todo o Pelotão:", opcoes_pelotao)
+                
+                opcoes_especialidade = ["Nenhuma"] + sorted([e for e in alunos_df['especialidade'].unique() if pd.notna(e) and e])
+                especialidade_selecionada = col2.selectbox("Aplicar a toda a Especialidade:", opcoes_especialidade)
+
+                st.divider()
+                st.subheader("2. Defina e Registre a Ação")
+
+                if not acoes_df.empty:
+                    contagem = acoes_df['tipo_acao_id'].value_counts().to_dict()
+                    tipos_acao_df['contagem'] = tipos_acao_df['id'].astype(str).map(contagem).fillna(0)
+                    tipos_acao_df = tipos_acao_df.sort_values('contagem', ascending=False)
+                
+                tipos_opcoes = {f"{row['nome']} ({float(row.get('pontuacao',0)):.1f})": row['id'] for _, row in tipos_acao_df.iterrows()}
+                tipo_selecionado_label = st.selectbox("Tipo de Ação:", options=tipos_opcoes.keys())
+                descricao = st.text_area("Descrição da Ação (Opcional)")
+                
+                if st.form_submit_button("Registrar Ação em Massa"):
+                    alunos_para_anotar_ids = []
+                    if alunos_selecionados_labels:
+                        alunos_para_anotar_ids = [label_to_id_map[label] for label in alunos_selecionados_labels]
+                    elif pelotao_selecionado != "Nenhum" or especialidade_selecionada != "Nenhuma":
+                        df_filtrado = alunos_df.copy()
+                        if pelotao_selecionado != "Nenhum":
+                            df_filtrado = df_filtrado[df_filtrado['pelotao'] == pelotao_selecionado]
+                        if especialidade_selecionada != "Nenhuma":
+                            df_filtrado = df_filtrado[df_filtrado['especialidade'] == especialidade_selecionada]
+                        alunos_para_anotar_ids = df_filtrado['id'].tolist()
+                    
+                    if not alunos_para_anotar_ids:
+                        st.warning("Nenhum aluno foi selecionado. Por favor, selecione alunos manualmente ou use um filtro de grupo.")
+                    else:
+                        try:
+                            # Lógica para registrar as ações (mantida do seu arquivo original)
+                            response = supabase.table("Acoes").select("id", count='exact').execute()
+                            ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
+                            ultimo_id = max(ids_existentes) if ids_existentes else 0
+                            tipo_acao_id = tipos_opcoes[tipo_selecionado_label]
+                            tipo_acao_info = tipos_acao_df[tipos_acao_df['id'] == tipo_acao_id].iloc[0]
+                            novas_acoes = []
+                            for i, aluno_id in enumerate(alunos_para_anotar_ids):
+                                novo_id = ultimo_id + 1 + i
+                                nova_acao = {
+                                    'id': str(novo_id), 'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_acao_id),
+                                    'tipo': tipo_acao_info['nome'], 'descricao': descricao, 'data': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                    'usuario': st.session_state.username, 'status': 'Pendente'
+                                }
+                                novas_acoes.append(nova_acao)
+                            if novas_acoes:
+                                supabase.table("Acoes").insert(novas_acoes).execute()
+                                st.success(f"Ação registrada com sucesso para {len(novas_acoes)} aluno(s)!")
+                                st.session_state.alunos_selecionados_scanner_labels = []
+                                load_data.clear()
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Falha ao salvar a(s) ação(ões): {e}")
 
     st.divider()
     
@@ -98,9 +184,7 @@ def show_dashboard():
         st.info("Registre alunos e ações para visualizar os painéis de dados.")
         return
 
-    # --- INÍCIO DAS SEÇÕES CORRIGIDAS E MELHORADAS ---
-    
-    # Adiciona o seletor de dias no topo da área de destaques
+    # --- SEÇÃO DE DESTAQUES CORRIGIDA E MELHORADA ---
     num_dias = st.number_input("Ver destaques dos últimos (dias):", min_value=1, max_value=90, value=7, step=1)
     
     st.subheader(f"🏆 Destaques dos Últimos {num_dias} Dias")
@@ -109,19 +193,14 @@ def show_dashboard():
     hoje = datetime.now()
     data_inicio_filtro = hoje - timedelta(days=num_dias)
     
-    # Converte a coluna 'data' para datetime, tratando erros
     acoes_df['data'] = pd.to_datetime(acoes_df['data'], errors='coerce')
-    
-    # CORREÇÃO 1: Remove a informação de fuso horário para permitir a comparação
     acoes_df['data'] = acoes_df['data'].dt.tz_localize(None)
     
-    # Filtra o DataFrame pelo período selecionado
     acoes_periodo_df = acoes_df[acoes_df['data'] >= data_inicio_filtro]
 
     if acoes_periodo_df.empty:
         st.info(f"Nenhuma ação registrada nos últimos {num_dias} dias.")
     else:
-        # Lógica de exibição dos destaques...
         acoes_com_pontos = calcular_pontuacao_efetiva(acoes_periodo_df, tipos_acao_df, config_df)
         destaques_df = pd.merge(acoes_com_pontos, alunos_df[['id', 'nome_guerra', 'pelotao']], left_on='aluno_id', right_on='id', how='inner')
         positivos = destaques_df[destaques_df['pontuacao_efetiva'] > 0].nlargest(5, 'pontuacao_efetiva')
@@ -152,8 +231,8 @@ def show_dashboard():
 
     st.divider()
 
+    # --- SEÇÃO DE CONCEITO MÉDIO CORRIGIDA E MELHORADA ---
     st.subheader("🎓 Conceito Médio por Pelotão")
-    # Lógica de cálculo do conceito médio...
     config_dict = config_df.set_index('chave')['valor'].to_dict()
     soma_pontos_por_aluno = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df).groupby('aluno_id')['pontuacao_efetiva'].sum()
     alunos_com_pontuacao = pd.merge(alunos_df, soma_pontos_por_aluno.rename('soma_pontos'), left_on='id', right_on='aluno_id', how='left').fillna(0)
@@ -171,8 +250,8 @@ def show_dashboard():
 
     st.divider()
 
+    # --- SEÇÃO DE ANIVERSARIANTES MANTIDA ---
     st.subheader("🎂 Aniversariantes (Próximos 7 dias)")
-    # Lógica dos aniversariantes mantida...
     if 'data_nascimento' in alunos_df.columns:
         alunos_df['data_nascimento'] = pd.to_datetime(alunos_df['data_nascimento'], errors='coerce')
         alunos_nasc_validos = alunos_df.dropna(subset=['data_nascimento'])
