@@ -91,7 +91,7 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
                             'descricao': descricao_acao, 
                             'data': data_acao, 
                             'usuario': st.session_state.username, 
-                            'status': 'Lançado'
+                            'status': 'Pendente'
                         }
                         novas_acoes.append(nova_acao)
                     
