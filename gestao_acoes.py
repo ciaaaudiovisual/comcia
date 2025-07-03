@@ -135,8 +135,15 @@ def show_gestao_acoes():
     with col_filtros1:
         filtro_pelotao = st.selectbox("1. Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
         alunos_filtrados_pelotao = alunos_df[alunos_df['pelotao'] == filtro_pelotao] if filtro_pelotao != "Todos" else alunos_df
-        opcoes_alunos = ["Nenhum"] + sorted(alunos_filtrados_pelotao['nome_guerra'].unique().tolist())
-        filtro_aluno = st.selectbox("2. Filtrar Aluno (Opcional)", opcoes_alunos)
+        # Pega os nomes de guerra únicos
+        nomes_unicos = alunos_filtrados_pelotao['nome_guerra'].unique()
+        # Remove valores nulos (None/NaN) e garante que tudo seja string antes de ordenar
+        nomes_validos = [str(nome) for nome in nomes_unicos if pd.notna(nome)]
+        
+        # Cria a lista de opções final com os dados limpos e ordenados
+        opcoes_alunos = ["Nenhum"] + sorted(nomes_validos)
+
+filtro_aluno = st.selectbox("2. Filtrar Aluno (Opcional)", opcoes_alunos)
     with col_filtros2:
         filtro_status = st.selectbox("Filtrar Status", ["Pendente", "Lançado", "Arquivado", "Todos"], index=0)
         opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
