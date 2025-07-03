@@ -113,15 +113,77 @@ def show_gestao_acoes():
     st.title("Lançamentos de Ações dos Alunos")
     supabase = init_supabase_client()
 
+    if 'search_results_df_gestao' not in st.session_state: st.session_state.search_results_df_gestao = pd.DataFrame()
+    if 'selected_student_id_gestao' not in st.session_state: st.session_state.selected_student_id_gestao = None
+
     alunos_df = load_data("Alunos")
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
     
+    # --- SEÇÃO DE REGISTRO DE AÇÃO RESTAURADA ---
     with st.expander("➕ Registrar Nova Ação", expanded=False):
-        # O código do formulário de registro permanece o mesmo
-        # (Omitido para brevidade, mas está no seu código original)
-        pass
+        with st.form("search_form_gestao"):
+            st.subheader("Passo 1: Buscar Aluno")
+            c1, c2 = st.columns(2)
+            busca_num_interno = c1.text_input("Nº Interno")
+            busca_nome_guerra = c2.text_input("Nome de Guerra")
+            c3, c4 = st.columns(2)
+            busca_nip = c3.text_input("NIP")
+            busca_nome_completo = c4.text_input("Nome Completo")
+            if st.form_submit_button("🔎 Buscar Aluno"):
+                df_busca = alunos_df.copy()
+                if busca_num_interno: df_busca = df_busca[df_busca['numero_interno'].astype(str).str.contains(busca_num_interno, na=False)]
+                if busca_nome_guerra: df_busca = df_busca[df_busca['nome_guerra'].str.contains(busca_nome_guerra, case=False, na=False)]
+                if busca_nip and 'nip' in df_busca.columns: df_busca = df_busca[df_busca['nip'].astype(str).str.contains(busca_nip, na=False)]
+                if busca_nome_completo and 'nome_completo' in df_busca.columns: df_busca = df_busca[df_busca['nome_completo'].str.contains(busca_nome_completo, case=False, na=False)]
+                st.session_state.search_results_df_gestao = df_busca
+                st.session_state.selected_student_id_gestao = None
+
+        search_results_df = st.session_state.search_results_df_gestao
+        if not search_results_df.empty:
+            st.write("Resultados da busca:")
+            search_results_df['label'] = search_results_df.apply(lambda row: f"{row.get('numero_interno', '')} - {row.get('nome_guerra', '')} ({row.get('pelotao', '')})", axis=1)
+            opcoes_encontradas = pd.Series(search_results_df.id.values, index=search_results_df.label).to_dict()
+            aluno_selecionado_label = st.radio("Selecione um aluno:", options=opcoes_encontradas.keys(), index=None)
+            if aluno_selecionado_label:
+                st.session_state.selected_student_id_gestao = str(opcoes_encontradas[aluno_selecionado_label])
+        
+        if st.session_state.selected_student_id_gestao:
+            st.divider()
+            aluno_selecionado = alunos_df[alunos_df['id'] == st.session_state.selected_student_id_gestao].iloc[0]
+            st.subheader(f"Passo 2: Registrar Ação para {aluno_selecionado['nome_guerra']}")
+            with st.form("form_nova_acao"):
+                c1, c2 = st.columns(2)
+                tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
+                positivas_df, neutras_df, negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome'), tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome'), tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
+                opcoes_finais, tipos_opcoes_map = [], {}
+                if not positivas_df.empty:
+                    opcoes_finais.append("--- AÇÕES POSITIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in positivas_df.iterrows()]
+                if not neutras_df.empty:
+                    opcoes_finais.append("--- AÇÕES NEUTRAS ---"); [opcoes_finais.append(f"{r['nome']} (0.0 pts)") or tipos_opcoes_map.update({f"{r['nome']} (0.0 pts)": r}) for _, r in neutras_df.iterrows()]
+                if not negativas_df.empty:
+                    opcoes_finais.append("--- AÇÕES NEGATIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in negativas_df.iterrows()]
+                tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_finais)
+                data = c2.date_input("Data e Hora da Ação", datetime.now())
+                descricao = st.text_area("Descrição/Justificativa (Opcional)")
+                confirmacao_registro = st.checkbox("Confirmo que os dados estão corretos para o registo.")
+
+                if st.form_submit_button("Registrar Ação"):
+                    if tipo_selecionado_str.startswith("---"): st.warning("Por favor, selecione um tipo de ação válido.")
+                    elif not confirmacao_registro: st.warning("Por favor, confirme que os dados estão corretos.")
+                    else:
+                        try:
+                            response = supabase.table("Acoes").select("id", count='exact').execute()
+                            ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
+                            novo_id = max(ids_existentes) + 1 if ids_existentes else 1
+                            tipo_info = tipos_opcoes_map[tipo_selecionado_str]
+                            nova_acao = {'id': str(novo_id), 'aluno_id': str(st.session_state.selected_student_id_gestao), 'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 'descricao': descricao, 'data': data.isoformat(), 'usuario': st.session_state.username, 'status': 'Pendente'}
+                            supabase.table("Acoes").insert(nova_acao).execute()
+                            st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!"); load_data.clear(); st.rerun()
+                        except Exception as e: st.error(f"Erro ao registrar ação: {e}")
+        else:
+            st.info("⬅️ Busque e selecione um aluno acima para registrar uma nova ação.")
     
     st.divider()
     
