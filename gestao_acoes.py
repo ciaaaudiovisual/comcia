@@ -186,7 +186,7 @@ def show_gestao_acoes():
     
     st.divider()
     
-    st.subheader("Filtros e Exportação")
+    st.subheader("Filtros de Visualização")
     
     col_filtros1, col_filtros2 = st.columns(2)
     with col_filtros1:
@@ -213,8 +213,8 @@ def show_gestao_acoes():
     if not df_filtrado_final.empty:
         if filtro_pelotao != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['pelotao'] == filtro_pelotao]
         if filtro_aluno != "Nenhum":
-             aluno_id_filtrado = alunos_df[alunos_df['nome_guerra'] == filtro_aluno].iloc[0]['id']
-             df_filtrado_final = df_filtrado_final[df_filtrado_final['aluno_id'] == aluno_id_filtrado]
+            aluno_id_filtrado = alunos_df[alunos_df['nome_guerra'] == filtro_aluno].iloc[0]['id']
+            df_filtrado_final = df_filtrado_final[df_filtrado_final['aluno_id'] == aluno_id_filtrado]
         if filtro_status != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['status'] == filtro_status]
         if filtro_tipo_acao != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['nome'] == filtro_tipo_acao]
         
@@ -222,8 +222,6 @@ def show_gestao_acoes():
         elif ordenar_por == "Aluno (A-Z)": df_filtrado_final = df_filtrado_final.sort_values(by="nome_guerra", ascending=True)
         else: df_filtrado_final = df_filtrado_final.sort_values(by="data", ascending=False) 
 
-    st.divider()
-    render_export_section(acoes_com_pontos, alunos_df, filtro_pelotao, filtro_aluno)
     st.divider()
 
     st.subheader("Fila de Revisão e Ações")
@@ -297,3 +295,7 @@ def show_gestao_acoes():
                             if st.form_submit_button("🗑️ Arquivar", use_container_width=True):
                                 supabase.table("Acoes").update({'status': 'Arquivado'}).eq('id', acao_id).execute()
                                 load_data.clear(); st.rerun()
+
+    # --- SEÇÃO DE EXPORTAÇÃO (MOVIDA PARA O FINAL) ---
+    st.divider()
+    render_export_section(acoes_com_pontos, alunos_df, filtro_pelotao, filtro_aluno)
