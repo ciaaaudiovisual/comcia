@@ -10,21 +10,34 @@ import xlsxwriter
 # DIÁLOGOS E FUNÇÕES DE CALLBACK
 # ==============================================================================
 
-@st.dialog("Notificação", width="small")
-def show_notification_dialog(message, status_type="success"):
-    """Exibe um popup de notificação (success, error, warning) com botão OK."""
-    if status_type == "success":
-        st.success(message)
-    elif status_type == "error":
-        st.error(message)
-    elif status_type == "warning":
-        st.warning(message)
-    else:
-        st.info(message)
+@st.dialog("Alterar Data e Horário do Evento")
+def edit_event_dialog(evento, supabase):
+    """Diálogo para editar a data e o horário de um evento existente."""
+    st.write(f"Editando evento: **{evento['descricao']}**")
+    with st.form("edit_event_form"):
+        try:
+            current_date = pd.to_datetime(evento['data']).date()
+        except:
+            current_date = datetime.now().date()
+        
+        current_time = evento.get('horario', '08:00')
 
-    if st.button("OK", use_container_width=True):
-        st.rerun()
+        cols = st.columns(2)
+        new_date = cols[0].date_input("Nova Data", value=current_date)
+        new_time = cols[1].text_input("Novo Horário", value=current_time)
 
+        if st.form_submit_button("Salvar Alterações"):
+            try:
+                update_data = {
+                    "data": new_date.strftime('%Y-%m-%d'),
+                    "horario": new_time
+                }
+                supabase.table("Programacao").update(update_data).eq("id", evento['id']).execute()
+                st.success("Evento atualizado com sucesso!")
+                load_data.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Falha ao atualizar o evento: {e}")
 
 @st.dialog("Registrar Participação na FAIA")
 def registrar_faia_dialog(evento, turmas_concluidas, supabase):
@@ -61,8 +74,7 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
     with col2:
         if st.button("FINALIZAR E LANÇAR NA FAIA", type="primary"):
             if not tipo_selecionado_str:
-                st.warning("Por favor, selecione um tipo de ação.")
-                return
+                st.warning("Por favor, selecione um tipo de ação."); return
 
             with st.spinner("Registrando participações..."):
                 alunos_df = load_data("Alunos")
@@ -70,8 +82,9 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
                 alunos_para_registrar = alunos_df[alunos_df['pelotao'].isin(turmas_concluidas)]
                 
                 if not alunos_para_registrar.empty:
-                    ids_numericos = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
-                    id_atual = int(ids_numericos.max()) if not ids_numericos.empty else 0
+                    response = supabase.table("Acoes").select("id", count='exact').execute()
+                    ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
+                    id_atual = max(ids_existentes) if ids_existentes else 0
                     
                     tipo_info = tipos_opcoes[tipo_selecionado_str]
                     tipo_acao_id = tipo_info['id']
@@ -91,24 +104,20 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
                             'descricao': descricao_acao, 
                             'data': data_acao, 
                             'usuario': st.session_state.username, 
-                            'status': 'Pendente'
+                            'lancado_faia': False
                         }
                         novas_acoes.append(nova_acao)
                     
-                    try:
-                        supabase.table("Acoes").insert(novas_acoes).execute()
-                        load_data.clear()
-                        # Salva a mensagem de sucesso no estado da sessão
-                        st.session_state.notification = {"message": f"Ação '{tipo_acao_nome}' registrada com sucesso para {len(novas_acoes)} alunos!", "type": "success"}
-                    except Exception as e:
-                        # Salva a mensagem de erro no estado da sessão
-                        st.session_state.notification = {"message": f"Falha ao salvar os registros na FAIA: {e}", "type": "error"}
+                    if novas_acoes:
+                        try:
+                            supabase.table("Acoes").insert(novas_acoes).execute()
+                            st.success(f"Ação '{tipo_acao_nome}' registrada com sucesso para {len(novas_acoes)} alunos!")
+                            load_data.clear()
+                        except Exception as e:
+                            st.error(f"Falha ao salvar os registros na FAIA: {e}")
                 else:
-                    st.session_state.notification = {"message": "Nenhum aluno encontrado nas turmas selecionadas.", "type": "warning"}
-                
-                # Força o recarregamento, que fechará este diálogo e permitirá que o próximo seja aberto
-                st.rerun()
-
+                    st.warning("Nenhum aluno encontrado nas turmas selecionadas.")
+            st.rerun()
 
 @st.dialog("Gerenciar Status Parcial do Evento")
 def gerenciar_status_dialog(evento, supabase):
@@ -169,7 +178,6 @@ def on_finalize_click(evento, supabase):
             
         st.toast("Evento finalizado!", icon="🎉")
         load_data.clear()
-        st.rerun()
     except Exception as e:
         st.error(f"Falha ao finalizar o evento: {e}")
 
@@ -178,7 +186,6 @@ def on_delete_click(evento_id, supabase):
         supabase.table("Programacao").delete().eq('id', evento_id).execute()
         st.success("Evento excluído.")
         load_data.clear()
-        st.rerun()
     except Exception as e:
         st.error(f"Falha ao excluir o evento: {e}")
 
@@ -196,13 +203,6 @@ def show_programacao():
     st.title("Programação de Eventos")
     supabase = init_supabase_client()
     
-    # --- NOVO BLOCO ---
-    # Verifica se há uma notificação agendada e a exibe
-    if 'notification' in st.session_state and st.session_state.notification:
-        notification = st.session_state.pop('notification') # .pop() para exibir apenas uma vez
-        show_notification_dialog(notification['message'], status_type=notification['type'])
-    # --- FIM DO NOVO BLOCO ---
-
     if 'evento_para_logar' in st.session_state and st.session_state['evento_para_logar'] is not None:
         evento = st.session_state.pop('evento_para_logar')
         turmas = st.session_state.pop('turmas_para_logar')
@@ -260,8 +260,7 @@ def show_programacao():
                         try:
                             supabase.table("Programacao").insert(novo_evento).execute()
                             st.success("Evento adicionado com sucesso!")
-                            load_data.clear()
-                            st.rerun()
+                            load_data.clear(); st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao adicionar evento: {e}")
 
@@ -274,7 +273,49 @@ def show_programacao():
             
             uploaded_file = st.file_uploader("Escolha um arquivo XLSX", type="xlsx")
             if uploaded_file:
-                st.info("Funcionalidade de importação de XLSX a ser implementada.")
+                try:
+                    with st.spinner("Processando o ficheiro..."):
+                        df_import = pd.read_excel(uploaded_file)
+                        required_cols = ['data', 'horario', 'descricao']
+                        if not all(col in df_import.columns for col in required_cols):
+                            st.error(f"O ficheiro deve conter as colunas obrigatórias: {', '.join(required_cols)}")
+                        else:
+                            registros_para_upsert = []
+                            programacao_atual = load_data("Programacao")
+                            ids_existentes = pd.to_numeric(programacao_atual['id'], errors='coerce').dropna()
+                            id_atual = int(ids_existentes.max()) if not ids_existentes.empty else 0
+
+                            for _, row in df_import.iterrows():
+                                row['data'] = pd.to_datetime(row['data']).date()
+                                row['horario'] = str(row['horario']).strip()
+                                row['descricao'] = str(row['descricao']).strip()
+
+                                match = programacao_atual[
+                                    (pd.to_datetime(programacao_atual['data']).dt.date == row['data']) &
+                                    (programacao_atual['horario'] == row['horario']) &
+                                    (programacao_atual['descricao'] == row['descricao'])
+                                ]
+                                
+                                if not match.empty:
+                                    id_evento = match.iloc[0]['id']
+                                    registro = row.to_dict()
+                                    registro['id'] = id_evento
+                                else:
+                                    id_atual += 1
+                                    registro = row.to_dict()
+                                    registro['id'] = str(id_atual)
+                                    registro['status'] = 'A Realizar'
+                                    registro['pelotoes_concluidos'] = ''
+                                
+                                registro['data'] = row['data'].strftime('%Y-%m-%d')
+                                registros_para_upsert.append(registro)
+
+                            if registros_para_upsert:
+                                supabase.table("Programacao").upsert(registros_para_upsert, on_conflict='id').execute()
+                                st.success(f"Importação concluída! {len(registros_para_upsert)} eventos foram processados.")
+                                load_data.clear(); st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao processar o ficheiro: {e}")
             
     st.header("Agenda")
     if df_filtrado.empty:
@@ -303,15 +344,21 @@ def show_programacao():
 
                     if check_permission('pode_finalizar_evento_programacao') or check_permission('pode_excluir_evento_programacao'):
                         st.write("")
-                        cols_botoes = st.columns(3)
+                        cols_botoes = st.columns(4)
+                        
                         with cols_botoes[0]:
                             if check_permission('pode_finalizar_evento_programacao'):
-                                st.button("Finalizar", key=f"finish_{evento['id']}", help="Marcar como concluído para todas as turmas.", type="primary", disabled=(status == 'Concluído'), on_click=on_finalize_click, args=(evento, supabase))
+                                if st.button("✏️ Alterar", key=f"edit_{evento['id']}", help="Alterar data e horário"):
+                                    edit_event_dialog(evento, supabase)
+                        
                         with cols_botoes[1]:
+                            if check_permission('pode_finalizar_evento_programacao'):
+                                st.button("Finalizar", key=f"finish_{evento['id']}", help="Marcar como concluído para todas as turmas.", type="primary", disabled=(status == 'Concluído'), on_click=on_finalize_click, args=(evento, supabase))
+                        with cols_botoes[2]:
                             if check_permission('pode_finalizar_evento_programacao'):
                                 if st.button("Status Parcial", key=f"status_{evento['id']}", help="Gerenciar status por turma."):
                                     gerenciar_status_dialog(evento, supabase)
-                        with cols_botoes[2]:
+                        with cols_botoes[3]:
                             if check_permission('pode_excluir_evento_programacao'):
                                 st.button("🗑️ Excluir", key=f"delete_{evento['id']}", help="Excluir permanentemente.", on_click=on_delete_click, args=(evento['id'], supabase))
             st.divider()
