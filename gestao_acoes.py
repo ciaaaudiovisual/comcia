@@ -8,14 +8,8 @@ from io import BytesIO
 import zipfile
 
 # ==============================================================================
-# DIÁLOGOS E FUNÇÕES DE APOIO (Inalterados)
+# DIÁLOGOS E FUNÇÕES DE APOIO
 # ==============================================================================
-@st.dialog("Sucesso!")
-def show_success_dialog(message):
-    st.success(message)
-    if st.button("OK"):
-        st.rerun()
-
 @st.dialog("Pré-visualização da FAIA")
 def preview_faia_dialog(aluno_info, acoes_aluno_df):
     st.header(f"FAIA de: {aluno_info.get('nome_guerra', 'N/A')}")
@@ -80,6 +74,7 @@ def show_gestao_acoes():
             c3, c4 = st.columns(2)
             busca_nip = c3.text_input("NIP")
             busca_nome_completo = c4.text_input("Nome Completo")
+            
             if st.form_submit_button("🔎 Buscar Aluno"):
                 df_busca = alunos_df.copy()
                 if busca_num_interno: df_busca = df_busca[df_busca['numero_interno'].astype(str).str.contains(busca_num_interno, na=False)]
@@ -105,9 +100,7 @@ def show_gestao_acoes():
             with st.form("form_nova_acao"):
                 c1, c2 = st.columns(2)
                 tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
-                positivas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome')
-                neutras_df = tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome')
-                negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
+                positivas_df, neutras_df, negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome'), tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome'), tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
                 opcoes_finais, tipos_opcoes_map = [], {}
                 if not positivas_df.empty:
                     opcoes_finais.append("--- AÇÕES POSITIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in positivas_df.iterrows()]
@@ -144,6 +137,7 @@ def show_gestao_acoes():
     st.divider()
     st.subheader("Fila de Revisão e Ações")
 
+    # --- FILTROS INDEPENDENTES (sem st.form) ---
     c1, c2, c3, c4 = st.columns(4)
     filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
     filtro_status = c2.selectbox("Filtrar Status", ["Pendente", "Lançado", "Arquivado", "Todos"], index=0)
