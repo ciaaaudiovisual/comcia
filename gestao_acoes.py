@@ -24,37 +24,10 @@ def preview_faia_dialog(aluno_info, acoes_aluno_df):
     texto_relatorio = formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df)
     st.text_area("Conteúdo do Relatório:", value=texto_relatorio, height=300)
     nome_arquivo = f"FAIA_{aluno_info.get('numero_interno','SN')}_{aluno_info.get('nome_guerra','N/A')}.txt"
-    st.download_button(label="✅ Exportar Relatório", data=texto_relatorio.encode('utf-8'), file_name=nome_arquivo, mime="text/plain")
+    st.download_button(label="✅ Baixar Relatório .TXT", data=texto_relatorio.encode('utf-8'), file_name=nome_arquivo, mime="text/plain")
 
 # ==============================================================================
-# FUNÇÕES DE CALLBACK (APENAS PARA AÇÕES EM MASSA)
-# ==============================================================================
-def launch_selected_actions(selected_ids, supabase):
-    """Callback para lançar MÚLTIPLAS ações em lotes para evitar timeouts."""
-    if not selected_ids:
-        st.warning("Nenhuma ação foi selecionada.")
-        return
-    BATCH_SIZE = 50
-    total_items = len(selected_ids)
-    progress_bar = st.progress(0, text="Iniciando lançamento em massa...")
-    try:
-        processed_count = 0
-        for i in range(0, total_items, BATCH_SIZE):
-            batch_ids = selected_ids[i:i + BATCH_SIZE]
-            progress_text = f"Processando lote {i//BATCH_SIZE + 1}... ({processed_count}/{total_items})"
-            progress_bar.progress(i / total_items, text=progress_text)
-            supabase.table("Acoes").update({'status': 'Lançado'}).in_('id', batch_ids).execute()
-            processed_count += len(batch_ids)
-        progress_bar.progress(1.0, text="Lançamento concluído!")
-        st.session_state.action_selection = {}
-        load_data.clear()
-        show_success_dialog(f"{processed_count} de {total_items} ações foram lançadas na FAIA com sucesso!")
-    except Exception as e:
-        st.error(f"Ocorreu um erro durante o lançamento em massa: {e}")
-        progress_bar.empty()
-
-# ==============================================================================
-# FUNÇÕES DE APOIO
+# FUNÇÕES DE APOIO E EXPORTAÇÃO
 # ==============================================================================
 def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
     """Formata os dados de um único aluno para uma string de texto."""
@@ -66,20 +39,22 @@ def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
         f"Nome de Guerra: {aluno_info.get('nome_guerra', 'N/A')}",
         f"Numero Interno: {aluno_info.get('numero_interno', 'N/A')}",
         "\n------------------------------------------------------------",
-        "LANÇAMENTOS EM ORDEM CRONOLÓGICA:",
+        "LANÇAMENTOS (STATUS 'LANÇADO') EM ORDEM CRONOLÓGICA:",
         "------------------------------------------------------------\n"
     ]
-    if acoes_aluno_df.empty:
-        texto.append("Nenhum lançamento encontrado para este aluno no período filtrado.")
+    # Filtra o histórico para mostrar apenas ações com status 'Lançado'
+    acoes_lancadas = acoes_aluno_df[acoes_aluno_df['status'] == 'Lançado']
+
+    if acoes_lancadas.empty:
+        texto.append("Nenhum lançamento com status 'Lançado' encontrado para este aluno.")
     else:
-        for _, acao in acoes_aluno_df.sort_values(by='data').iterrows():
+        for _, acao in acoes_lancadas.sort_values(by='data').iterrows():
             texto.extend([
                 f"Data: {pd.to_datetime(acao['data']).strftime('%d/%m/%Y %H:%M')}",
                 f"Tipo: {acao.get('nome', 'Tipo Desconhecido')}",
                 f"Pontos: {acao.get('pontuacao_efetiva', 0.0):+.1f}",
                 f"Descrição: {acao.get('descricao', '')}",
                 f"Registrado por: {acao.get('usuario', 'N/A')}",
-                f"Status: {acao.get('status', 'N/A')}",
                 "\n-----------------------------------\n"
             ])
     texto.extend([
@@ -88,25 +63,38 @@ def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
         "============================================================"
     ])
     return "\n".join(texto)
-# --- INÍCIO DA SEÇÃO DE CÓDIGO REINTRODUZIDA ---
-def render_export_section(df_acoes_filtrado, alunos_df, pelotao_selecionado):
-    """Renderiza a seção de exportação de relatórios com base no pelotão selecionado."""
+
+def render_export_section(df_acoes_geral, alunos_df, pelotao_selecionado, aluno_selecionado):
+    """Renderiza a seção de exportação com opções individual e por pelotão."""
     if not check_permission('pode_exportar_relatorio_faia'):
         return
 
     with st.container(border=True):
         st.subheader("📥 Exportar Relatórios FAIA")
         
-        if pelotao_selecionado != "Todos":
-            st.info(f"A exportação gerará um arquivo .ZIP contendo os relatórios de todos os alunos do pelotão '{pelotao_selecionado}'. Serão incluídas apenas as ações com status 'Lançado'.")
+        # --- LÓGICA PARA EXPORTAÇÃO INDIVIDUAL ---
+        if aluno_selecionado != "Nenhum":
+            st.info(f"Pré-visualize e exporte o relatório individual para {aluno_selecionado}. Serão incluídas apenas as ações com status 'Lançado'.")
+            aluno_info = alunos_df[alunos_df['nome_guerra'] == aluno_selecionado].iloc[0]
+            acoes_do_aluno = df_acoes_geral[df_acoes_geral['aluno_id'] == aluno_info['id']]
+            if st.button(f"👁️ Pré-visualizar e Exportar FAIA de {aluno_selecionado}"):
+                preview_faia_dialog(aluno_info, acoes_do_aluno)
+
+        # --- LÓGICA PARA EXPORTAÇÃO POR PELOTÃO ---
+        elif pelotao_selecionado != "Todos":
+            st.info(f"A exportação gerará um arquivo .ZIP com os relatórios de todos os alunos do pelotão '{pelotao_selecionado}'. Serão incluídas apenas as ações com status 'Lançado'.")
+            
+            alunos_do_pelotao = alunos_df[alunos_df['pelotao'] == pelotao_selecionado]
+            with st.expander(f"Ver os {len(alunos_do_pelotao)} alunos que serão incluídos no .ZIP"):
+                for _, aluno_info in alunos_do_pelotao.iterrows():
+                    st.write(f"- {aluno_info.get('numero_interno', 'SN')} - {aluno_info.get('nome_guerra', 'N/A')}")
+
             if st.button(f"Gerar e Baixar .ZIP para {pelotao_selecionado}"):
                 with st.spinner("Gerando relatórios..."):
-                    alunos_do_pelotao = alunos_df[alunos_df['pelotao'] == pelotao_selecionado]
                     zip_buffer = BytesIO()
                     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
                         for _, aluno_info in alunos_do_pelotao.iterrows():
-                            # Filtra as ações para o aluno atual
-                            acoes_do_aluno = df_acoes_filtrado[df_acoes_filtrado['aluno_id'] == aluno_info['id']]
+                            acoes_do_aluno = df_acoes_geral[df_acoes_geral['aluno_id'] == aluno_info['id']]
                             conteudo_txt = formatar_relatorio_individual_txt(aluno_info, acoes_do_aluno)
                             nome_arquivo = f"FAIA_{aluno_info.get('numero_interno','SN')}_{aluno_info.get('nome_guerra','S-N')}.txt"
                             zip_file.writestr(nome_arquivo, conteudo_txt)
@@ -119,8 +107,8 @@ def render_export_section(df_acoes_filtrado, alunos_df, pelotao_selecionado):
                         use_container_width=True
                     )
         else:
-            st.warning("Selecione um pelotão específico no filtro acima para habilitar a exportação em massa.")
-# --- FIM DA SEÇÃO DE CÓDIGO REINTRODUZIDA ---
+            st.warning("Selecione um pelotão ou um aluno específico nos filtros para habilitar a exportação.")
+
 # ==============================================================================
 # PÁGINA PRINCIPAL
 # ==============================================================================
@@ -138,6 +126,7 @@ def show_gestao_acoes():
     config_df = load_data("Config")
     
     with st.expander("➕ Registrar Nova Ação", expanded=False):
+        # O código do formulário de registro permanece o mesmo
         with st.form("search_form_gestao"):
             st.subheader("Passo 1: Buscar Aluno")
             c1, c2 = st.columns(2)
@@ -202,14 +191,21 @@ def show_gestao_acoes():
     
     st.divider()
     
-    # --- FILTROS PRINCIPAIS ---
     st.subheader("Filtros e Exportação")
-    c1, c2, c3, c4 = st.columns(4)
-    filtro_pelotao = c1.selectbox("Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
-    filtro_status = c2.selectbox("Filtrar Status", ["Pendente", "Lançado", "Arquivado", "Todos"], index=0)
-    opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
-    filtro_tipo_acao = c3.selectbox("Filtrar por Ação", opcoes_tipo_acao)
-    ordenar_por = c4.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
+    
+    # --- FILTROS PRINCIPAIS COM FILTRO DE ALUNO ---
+    col_filtros1, col_filtros2 = st.columns(2)
+    with col_filtros1:
+        filtro_pelotao = st.selectbox("1. Filtrar Pelotão", ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)]))
+        alunos_filtrados_pelotao = alunos_df[alunos_df['pelotao'] == filtro_pelotao] if filtro_pelotao != "Todos" else alunos_df
+        opcoes_alunos = ["Nenhum"] + sorted(alunos_filtrados_pelotao['nome_guerra'].unique().tolist())
+        filtro_aluno = st.selectbox("2. Filtrar Aluno (Opcional)", opcoes_alunos)
+    with col_filtros2:
+        filtro_status = st.selectbox("Filtrar Status", ["Pendente", "Lançado", "Arquivado", "Todos"], index=0)
+        opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
+        filtro_tipo_acao = st.selectbox("Filtrar por Tipo de Ação", opcoes_tipo_acao)
+
+    ordenar_por = st.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
 
     # --- LÓGICA DE FILTRAGEM ---
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
@@ -220,22 +216,26 @@ def show_gestao_acoes():
     df_filtrado_final = df_display.copy()
     if not df_filtrado_final.empty:
         if filtro_pelotao != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['pelotao'] == filtro_pelotao]
+        if filtro_aluno != "Nenhum":
+             # Pega o ID do aluno pelo nome de guerra para filtrar as ações
+             aluno_id_filtrado = alunos_df[alunos_df['nome_guerra'] == filtro_aluno].iloc[0]['id']
+             df_filtrado_final = df_filtrado_final[df_filtrado_final['aluno_id'] == aluno_id_filtrado]
         if filtro_status != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['status'] == filtro_status]
         if filtro_tipo_acao != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['nome'] == filtro_tipo_acao]
+        
         if ordenar_por == "Mais Antigos": df_filtrado_final = df_filtrado_final.sort_values(by="data", ascending=True)
         elif ordenar_por == "Aluno (A-Z)": df_filtrado_final = df_filtrado_final.sort_values(by="nome_guerra", ascending=True)
         else: df_filtrado_final = df_filtrado_final.sort_values(by="data", ascending=False) 
 
     # --- CHAMADA DA SEÇÃO DE EXPORTAÇÃO ---
     st.divider()
-    render_export_section(acoes_com_pontos, alunos_df, filtro_pelotao)
+    render_export_section(acoes_com_pontos, alunos_df, filtro_pelotao, filtro_aluno)
     st.divider()
 
     st.subheader("Fila de Revisão e Ações")
     if df_filtrado_final.empty:
         st.info("Nenhuma ação encontrada para os filtros selecionados.")
     else:
-        # Usa o id_x que é o ID original da tabela Acoes após o merge
         df_filtrado_final.drop_duplicates(subset=['id_x'], keep='first', inplace=True)
         for _, acao in df_filtrado_final.iterrows():
             with st.container(border=True):
