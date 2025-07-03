@@ -44,8 +44,9 @@ def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
         texto.append("Nenhum lançamento com status 'Lançado' encontrado para este aluno.")
     else:
         for _, acao in acoes_lancadas.sort_values(by='data').iterrows():
+            data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
             texto.extend([
-                f"Data: {pd.to_datetime(acao['data']).strftime('%d/%m/%Y %H:%M')}",
+                f"Data: {data_formatada}",
                 f"Tipo: {acao.get('nome', 'Tipo Desconhecido')}",
                 f"Pontos: {acao.get('pontuacao_efetiva', 0.0):+.1f}",
                 f"Descrição: {acao.get('descricao', '')}",
@@ -119,10 +120,47 @@ def show_gestao_acoes():
     config_df = load_data("Config")
     
     with st.expander("➕ Registrar Nova Ação", expanded=False):
-        # A lógica para registrar nova ação precisa ser implementada aqui.
-        # Por enquanto, deixaremos um placeholder.
-        st.info("A funcionalidade de registrar uma nova ação será adicionada aqui.")
-        pass
+        # Esta secção foi restaurada com base no seu código original e com a lógica de ID corrigida.
+        with st.form("novo_lancamento_restaurado"):
+            st.subheader("Registrar Nova Ação")
+            alunos_opcoes_dict = {f"Nº: {aluno.get('numero_interno', 'S/N')} | {aluno['nome_guerra']}": aluno['id'] for _, aluno in alunos_df.sort_values('numero_interno').iterrows()}
+            aluno_selecionado_label = st.selectbox("Selecione o Aluno", options=list(alunos_opcoes_dict.keys()))
+
+            tipos_opcoes = {f"{tipo['nome']} ({float(tipo.get('pontuacao', 0)):.1f} pts)": tipo for _, tipo in tipos_acao_df.iterrows()}
+            tipo_selecionado_str = st.selectbox("Tipo de Ação", tipos_opcoes.keys())
+            
+            data = st.date_input("Data da Ação", datetime.now())
+            descricao = st.text_area("Descrição/Justificativa")
+
+            if st.form_submit_button("Registrar Ação"):
+                if not all([aluno_selecionado_label, tipo_selecionado_str, descricao]):
+                    st.warning("Todos os campos são obrigatórios.")
+                else:
+                    try:
+                        # --- LÓGICA DE GERAÇÃO DE ID ROBUSTA ---
+                        response = supabase.table("Acoes").select("id", count='exact').execute()
+                        ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
+                        novo_id = max(ids_existentes) + 1 if ids_existentes else 1
+
+                        aluno_id = alunos_opcoes_dict[aluno_selecionado_label]
+                        tipo_info = tipos_opcoes[tipo_selecionado_str]
+                        
+                        nova_acao = {
+                            'id': str(novo_id),
+                            'aluno_id': aluno_id,
+                            'tipo_acao_id': tipo_info['id'],
+                            'tipo': tipo_info['nome'],
+                            'descricao': descricao,
+                            'data': data.strftime('%Y-%m-%d'),
+                            'usuario': st.session_state.username,
+                            'status': 'Pendente' # O status padrão é pendente
+                        }
+                        supabase.table("Acoes").insert(nova_acao).execute()
+                        st.success(f"Ação '{tipo_info['nome']}' registrada com sucesso!")
+                        load_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar a ação: {e}")
     
     st.divider()
     
@@ -183,7 +221,7 @@ def show_gestao_acoes():
 
             def toggle_all_visible():
                 new_state = st.session_state.get('select_all_toggle', False)
-                for acao_id in df_filtrado_final['id'].unique():
+                for acao_id in df_filtrado_final['id'].unique(): # Correção para usar 'id'
                     st.session_state.action_selection[acao_id] = new_state
             
             with col_check:
@@ -191,8 +229,7 @@ def show_gestao_acoes():
         
         st.write("")
         
-        # Correção para usar 'id' como a chave única
-        df_filtrado_final.drop_duplicates(subset=['id'], keep='first', inplace=True)
+        df_filtrado_final.drop_duplicates(subset=['id'], keep='first', inplace=True) # Correção para usar 'id'
         for _, acao in df_filtrado_final.iterrows():
             acao_id = acao['id']
             with st.container(border=True):
@@ -221,12 +258,10 @@ def show_gestao_acoes():
                         with st.form(f"launch_form_{acao_id}", clear_on_submit=True):
                             if st.form_submit_button("🚀 Lançar", use_container_width=True):
                                 supabase.table("Acoes").update({'status': 'Lançado'}).eq('id', acao_id).execute()
-                                load_data.clear()
-                                st.rerun()
+                                load_data.clear(); st.rerun()
                     
                     if status_atual != 'Arquivado' and can_delete:
                         with st.form(f"archive_form_{acao_id}", clear_on_submit=True):
                             if st.form_submit_button("🗑️ Arquivar", use_container_width=True):
                                 supabase.table("Acoes").update({'status': 'Arquivado'}).eq('id', acao_id).execute()
-                                load_data.clear()
-                                st.rerun()
+                                load_data.clear(); st.rerun()
