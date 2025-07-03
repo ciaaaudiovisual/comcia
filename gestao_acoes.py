@@ -216,11 +216,10 @@ def show_gestao_acoes():
                         st.warning("🗄️ Arquivado")
                     elif status_atual == 'Pendente' and can_launch:
                         with st.form(f"launch_form_{acao['id']}"):
-                            if st.form_submit_button("🚀 Lançar", use_container_width=True):
-                                # Ação de atualização corrigida para incluir ambos os campos
-                                dados_update = {'status': 'Lançado', 'lancado_faia': True}
-                                supabase.table("Acoes").update(dados_update).eq('id', acao['id']).execute()
-                                load_data.clear(); st.rerun()
+                    with st.form(f"launch_form_{acao['id_x']}"):
+                        if st.form_submit_button("🚀 Lançar", use_container_width=True):
+                            supabase.table("Acoes").update({'status': 'Lançado'}).eq('id', acao['id_x']).execute()
+                            load_data.clear(); st.rerun()
                     
                     if status_atual != 'Arquivado' and can_delete:
                         with st.form(f"archive_form_{acao['id']}"):
