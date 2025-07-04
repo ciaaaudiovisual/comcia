@@ -121,7 +121,6 @@ def show_gestao_acoes():
     config_df = load_data("Config")
     
     with st.expander("➕ Registrar Nova Ação", expanded=True):
-        # O código do formulário de registro permanece o mesmo
         with st.form("search_form_gestao"):
             st.subheader("Passo 1: Buscar Aluno")
             c1, c2 = st.columns(2)
@@ -152,6 +151,7 @@ def show_gestao_acoes():
             st.divider()
             aluno_selecionado = alunos_df[alunos_df['id'] == st.session_state.selected_student_id_gestao].iloc[0]
             st.subheader(f"Passo 2: Registrar Ação para {aluno_selecionado['nome_guerra']}")
+            
             with st.form("form_nova_acao"):
                 c1, c2 = st.columns(2)
                 tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
@@ -163,9 +163,28 @@ def show_gestao_acoes():
                     opcoes_finais.append("--- AÇÕES NEUTRAS ---"); [opcoes_finais.append(f"{r['nome']} (0.0 pts)") or tipos_opcoes_map.update({f"{r['nome']} (0.0 pts)": r}) for _, r in neutras_df.iterrows()]
                 if not negativas_df.empty:
                     opcoes_finais.append("--- AÇÕES NEGATIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in negativas_df.iterrows()]
+                
                 tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_finais)
                 data = c2.date_input("Data e Hora da Ação", datetime.now())
                 descricao = st.text_area("Descrição/Justificativa (Opcional)")
+
+                # Lógica para mostrar campos de saúde condicionalmente
+                tipos_de_saude = ["Enfermaria", "Hospital", "NAS"]
+                nome_acao_selecionada = ""
+                if tipo_selecionado_str and not tipo_selecionado_str.startswith("---"):
+                    nome_acao_selecionada = tipos_opcoes_map[tipo_selecionado_str]['nome']
+                
+                dispensado = False
+                if nome_acao_selecionada in tipos_de_saude:
+                    st.divider()
+                    st.markdown("##### Controle de Dispensa Médica")
+                    dispensado = st.toggle("Gerou dispensa médica?")
+                    if dispensado:
+                        col_d1, col_d2 = st.columns(2)
+                        data_inicio_dispensa = col_d1.date_input("Início da Dispensa", value=datetime.now().date())
+                        data_fim_dispensa = col_d2.date_input("Fim da Dispensa", value=datetime.now().date())
+                        tipo_dispensa = st.selectbox("Tipo de Dispensa", ["", "Total", "Parcial", "Para Esforço Físico", "Outro"])
+                
                 confirmacao_registro = st.checkbox("Confirmo que os dados estão corretos para o registo.")
 
                 if st.form_submit_button("Registrar Ação"):
@@ -176,8 +195,31 @@ def show_gestao_acoes():
                             response = supabase.table("Acoes").select("id", count='exact').execute()
                             ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
                             novo_id = max(ids_existentes) + 1 if ids_existentes else 1
+                            
                             tipo_info = tipos_opcoes_map[tipo_selecionado_str]
-                            nova_acao = {'id': str(novo_id), 'aluno_id': str(st.session_state.selected_student_id_gestao), 'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 'descricao': descricao, 'data': data.isoformat(), 'usuario': st.session_state.username, 'status': 'Pendente'}
+                            
+                            nova_acao = {
+                                'id': str(novo_id), 
+                                'aluno_id': str(st.session_state.selected_student_id_gestao), 
+                                'tipo_acao_id': str(tipo_info['id']), 
+                                'tipo': tipo_info['nome'], 
+                                'descricao': descricao, 
+                                'data': data.isoformat(), 
+                                'usuario': st.session_state.username, 
+                                'status': 'Pendente'
+                            }
+
+                            if nome_acao_selecionada in tipos_de_saude and dispensado:
+                                nova_acao['esta_dispensado'] = True
+                                nova_acao['periodo_dispensa_inicio'] = data_inicio_dispensa.isoformat()
+                                nova_acao['periodo_dispensa_fim'] = data_fim_dispensa.isoformat()
+                                nova_acao['tipo_dispensa'] = tipo_dispensa
+                            else:
+                                nova_acao['esta_dispensado'] = False
+                                nova_acao['periodo_dispensa_inicio'] = None
+                                nova_acao['periodo_dispensa_fim'] = None
+                                nova_acao['tipo_dispensa'] = None
+
                             supabase.table("Acoes").insert(nova_acao).execute()
                             st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!"); load_data.clear(); st.rerun()
                         except Exception as e: st.error(f"Erro ao registrar ação: {e}")
@@ -229,11 +271,9 @@ def show_gestao_acoes():
     if df_filtrado_final.empty:
         st.info("Nenhuma ação encontrada para os filtros selecionados.")
     else:
-        # --- SEÇÃO DE AÇÕES EM MASSA ---
         with st.container(border=True):
             col_botoes1, col_botoes2, col_check = st.columns([2, 2, 3])
             
-            # Coleta os IDs que estão atualmente selecionados no estado da sessão
             selected_ids = [acao_id for acao_id, is_selected in st.session_state.action_selection.items() if is_selected]
             
             with col_botoes1:
@@ -241,7 +281,6 @@ def show_gestao_acoes():
             with col_botoes2:
                 st.button(f"🗄️ Arquivar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Arquivado', supabase), disabled=not selected_ids, use_container_width=True)
 
-            # Callback para o checkbox "Marcar todos"
             def toggle_all_visible():
                 new_state = st.session_state.get('select_all_toggle', False)
                 for acao_id in df_filtrado_final['id_x']:
@@ -250,9 +289,8 @@ def show_gestao_acoes():
             with col_check:
                 st.checkbox("Marcar/Desmarcar todos os visíveis", key='select_all_toggle', on_change=toggle_all_visible)
         
-        st.write("") # Espaçamento
+        st.write("") 
 
-        # --- LISTA DE AÇÕES COM CHECKBOX INDIVIDUAL ---
         df_filtrado_final.drop_duplicates(subset=['id_x'], keep='first', inplace=True)
         for _, acao in df_filtrado_final.iterrows():
             acao_id = acao['id_x']
@@ -260,7 +298,6 @@ def show_gestao_acoes():
                 col_check_ind, col_info, col_actions = st.columns([1, 6, 3])
                 
                 with col_check_ind:
-                    # O valor do checkbox é lido do estado da sessão, e qualquer mudança atualiza o estado
                     st.session_state.action_selection[acao_id] = st.checkbox(
                         " ", 
                         value=st.session_state.action_selection.get(acao_id, False), 
@@ -296,6 +333,5 @@ def show_gestao_acoes():
                                 supabase.table("Acoes").update({'status': 'Arquivado'}).eq('id', acao_id).execute()
                                 load_data.clear(); st.rerun()
 
-    # --- SEÇÃO DE EXPORTAÇÃO (MOVIDA PARA O FINAL) ---
     st.divider()
     render_export_section(acoes_com_pontos, alunos_df, filtro_pelotao, filtro_aluno)
