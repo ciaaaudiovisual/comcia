@@ -8,6 +8,8 @@ from pyzbar.pyzbar import decode
 import plotly.express as px
 from acoes import calcular_pontuacao_efetiva
 from auth import check_permission
+import show_dashboard
+
 
 # --- FUNÇÕES AUXILIARES (Sem alterações) ---
 def decodificar_codigo_de_barras(upload_de_imagem):
