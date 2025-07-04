@@ -8,10 +8,8 @@ from pyzbar.pyzbar import decode
 import plotly.express as px
 from acoes import calcular_pontuacao_efetiva
 from auth import check_permission
-import show_dashboard
 
-
-# --- FUNÇÕES AUXILIARES (Sem alterações) ---
+# --- FUNÇÕES AUXILIARES ---
 def decodificar_codigo_de_barras(upload_de_imagem):
     """Lê um arquivo de imagem e retorna uma lista de NIPs encontrados."""
     try:
@@ -92,7 +90,6 @@ def show_dashboard():
                 with st.container(border=True):
                     st.info("O modo scanner está ativo. Aponte a câmera para um ou mais crachás e tire a foto.")
                     imagem_cracha = st.camera_input("Escanear Crachá(s)", label_visibility="collapsed")
-
                     if imagem_cracha is not None:
                         nips, msg = decodificar_codigo_de_barras(imagem_cracha)
                         if nips:
@@ -198,10 +195,9 @@ def show_dashboard():
             st.write("---")
             render_highlights_column_collapsible(df_negativos)
         st.divider()
-        ===================================
+        
         st.subheader("Análise de Desempenho por Pelotão")
         
-        # --- MODIFICAÇÃO 1: DEFINIÇÃO DOS PELOTÕES A SEREM EXIBIDOS ---
         pelotoes_para_exibir = ["MIKE-1", "MIKE-2", "MIKE-3", "MIKE-4", "MIKE-5", "QTPA"]
         
         chart_mode = st.radio(
@@ -211,7 +207,6 @@ def show_dashboard():
             key="chart_view_mode"
         )
 
-        # --- MODIFICAÇÃO 2: FILTRAGEM DOS DADOS ANTES DE GERAR OS GRÁFICOS ---
         alunos_df_filtrado = alunos_df[alunos_df['pelotao'].isin(pelotoes_para_exibir)]
         acoes_com_alunos_df = pd.merge(acoes_com_pontos_df, alunos_df_filtrado[['id', 'pelotao']], left_on='aluno_id', right_on='id', how='inner')
 
@@ -225,7 +220,6 @@ def show_dashboard():
                     except (IndexError, ValueError): pass
                 
                 soma_pontos_por_aluno = acoes_com_alunos_df.groupby('aluno_id')['pontuacao_efetiva'].sum()
-                # Usa o dataframe de alunos já filtrado
                 alunos_com_pontuacao = pd.merge(alunos_df_filtrado, soma_pontos_por_aluno.rename('soma_pontos'), left_on='id', right_on='aluno_id', how='left')
                 alunos_com_pontuacao['soma_pontos'] = alunos_com_pontuacao['soma_pontos'].fillna(0)
                 alunos_com_pontuacao['pontuacao_final'] = alunos_com_pontuacao['soma_pontos'] + pontuacao_inicial
@@ -263,7 +257,9 @@ def show_dashboard():
             hoje = datetime.now().date()
             periodo_de_dias = [hoje + timedelta(days=i) for i in range(7)]
             aniversarios_no_periodo = [d.strftime('%m-%d') for d in periodo_de_dias]
+            
             aniversariantes_df = alunos_nasc_validos[alunos_nasc_validos['data_nascimento'].dt.strftime('%m-%d').isin(aniversarios_no_periodo)].copy()
+            
             if not aniversariantes_df.empty:
                 aniversariantes_df['dia_mes'] = aniversariantes_df['data_nascimento'].dt.strftime('%m-%d')
                 aniversariantes_df = aniversariantes_df.sort_values(by='dia_mes')
