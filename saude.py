@@ -4,7 +4,7 @@ from datetime import datetime
 from database import load_data, init_supabase_client
 
 # ==============================================================================
-# DIÁLOGO DE EDIÇÃO (CORRIGIDO)
+# DIÁLOGO DE EDIÇÃO
 # ==============================================================================
 @st.dialog("Editar Dados de Saúde")
 def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
@@ -14,25 +14,21 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
     st.write(f"Editando evento para: **{dados_acao_atual.get('nome_guerra', 'N/A')}**")
     st.caption(f"Ação: {dados_acao_atual.get('tipo', 'N/A')} em {pd.to_datetime(dados_acao_atual.get('data')).strftime('%d/%m/%Y')}")
 
-    # --- INÍCIO DA CORREÇÃO ---
     with st.form("edit_saude_form"):
         st.divider()
         st.markdown("##### Controle de Dispensa Médica")
         
-        # Carrega o valor atual da dispensa
         esta_dispensado_atual = dados_acao_atual.get('esta_dispensado', False)
         if pd.isna(esta_dispensado_atual):
             esta_dispensado_atual = False
-        
+            
         dispensado = st.toggle("Aluno está Dispensado?", value=bool(esta_dispensado_atual))
         
-        # Garante que os campos de data e tipo sempre existam, mesmo que vazios inicialmente
         data_inicio_dispensa = None
         data_fim_dispensa = None
         tipo_dispensa = ""
 
         if dispensado:
-            # Lógica robusta para lidar com datas que podem ser nulas (None/NaT)
             start_date_val = dados_acao_atual.get('periodo_dispensa_inicio')
             end_date_val = dados_acao_atual.get('periodo_dispensa_fim')
 
@@ -57,7 +53,6 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
                 index=tipos_dispensa_opcoes.index(tipo_dispensa_atual)
             )
 
-        # O botão de submissão do formulário DEVE estar dentro do 'with st.form'
         if st.form_submit_button("Salvar Alterações"):
             dados_para_atualizar = {
                 'esta_dispensado': dispensado,
@@ -72,11 +67,9 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
                 load_data.clear()
             except Exception as e:
                 st.error(f"Erro ao salvar as alterações: {e}")
-    # --- FIM DA CORREÇÃO ---
-
 
 # ==============================================================================
-# PÁGINA PRINCIPAL DO MÓDULO DE SAÚDE (Sem alterações na lógica principal)
+# PÁGINA PRINCIPAL DO MÓDULO DE SAÚDE
 # ==============================================================================
 def show_saude():
     st.title("⚕️ Módulo de Saúde")
@@ -92,24 +85,17 @@ def show_saude():
         st.error(f"Erro ao carregar dados: {e}")
         return
 
-# --- MELHORIA 1: Filtro com Padrão e Ordem Alfabética ---
-st.subheader("Filtro de Eventos")
-
-# Pega todos os tipos de ação e os ordena alfabeticamente
-todos_tipos_nomes = sorted(tipos_acao_df['nome'].unique().tolist())
-
-# Define a lista padrão de itens que você quer pré-selecionar
-tipos_saude_padrao = ["Enfermaria", "Hospital", "NAS", "DISPENÇA MÉDICA", "SAÚDE"]
-
-# Garante que apenas os itens da lista padrão que realmente existem na sua base de dados sejam selecionados
-tipos_selecionados_default = [tipo for tipo in tipos_saude_padrao if tipo in todos_tipos_nomes]
-
-# Cria o seletor múltiplo, já com os itens padrão selecionados
-tipos_selecionados = st.multiselect(
-    "Selecione os tipos de evento para exibir:",
-    options=todos_tipos_nomes,
-    default=tipos_selecionados_default
-)
+    st.subheader("Filtro de Eventos")
+    
+    todos_tipos_nomes = sorted(tipos_acao_df['nome'].unique().tolist())
+    tipos_saude_padrao = ["Enfermaria", "Hospital", "NAS", "DISPENÇA MÉDICA", "SAÚDE"]
+    tipos_selecionados_default = [tipo for tipo in tipos_saude_padrao if tipo in todos_tipos_nomes]
+    
+    tipos_selecionados = st.multiselect(
+        "Selecione os tipos de evento para exibir:",
+        options=todos_tipos_nomes,
+        default=tipos_selecionados_default
+    )
     
     if not tipos_selecionados:
         st.warning("Selecione pelo menos um tipo de evento para continuar.")
