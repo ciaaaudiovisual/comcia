@@ -4,7 +4,7 @@ from datetime import datetime
 from database import load_data, init_supabase_client
 
 # ==============================================================================
-# DIÁLOGO DE EDIÇÃO
+# DIÁLOGO DE EDIÇÃO (CORRIGIDO)
 # ==============================================================================
 @st.dialog("Editar Dados de Saúde")
 def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
@@ -14,26 +14,30 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
     st.write(f"Editando evento para: **{dados_acao_atual.get('nome_guerra', 'N/A')}**")
     st.caption(f"Ação: {dados_acao_atual.get('tipo', 'N/A')} em {pd.to_datetime(dados_acao_atual.get('data')).strftime('%d/%m/%Y')}")
 
+    # --- INÍCIO DA CORREÇÃO ---
     with st.form("edit_saude_form"):
         st.divider()
         st.markdown("##### Controle de Dispensa Médica")
-
+        
+        # Carrega o valor atual da dispensa
         esta_dispensado_atual = dados_acao_atual.get('esta_dispensado', False)
         if pd.isna(esta_dispensado_atual):
             esta_dispensado_atual = False
-            
-        dispensado = st.toggle("Gerou dispensa médica?", value=bool(esta_dispensado_atual))
         
-        if dispensado:
-            try:
-                data_inicio_atual = pd.to_datetime(dados_acao_atual.get('periodo_dispensa_inicio')).date()
-            except (TypeError, ValueError):
-                data_inicio_atual = datetime.now().date()
+        dispensado = st.toggle("Aluno está Dispensado?", value=bool(esta_dispensado_atual))
+        
+        # Garante que os campos de data e tipo sempre existam, mesmo que vazios inicialmente
+        data_inicio_dispensa = None
+        data_fim_dispensa = None
+        tipo_dispensa = ""
 
-            try:
-                data_fim_atual = pd.to_datetime(dados_acao_atual.get('periodo_dispensa_fim')).date()
-            except (TypeError, ValueError):
-                data_fim_atual = datetime.now().date()
+        if dispensado:
+            # Lógica robusta para lidar com datas que podem ser nulas (None/NaT)
+            start_date_val = dados_acao_atual.get('periodo_dispensa_inicio')
+            end_date_val = dados_acao_atual.get('periodo_dispensa_fim')
+
+            data_inicio_atual = pd.to_datetime(start_date_val).date() if pd.notna(start_date_val) else datetime.now().date()
+            data_fim_atual = pd.to_datetime(end_date_val).date() if pd.notna(end_date_val) else datetime.now().date()
 
             col_d1, col_d2 = st.columns(2)
             data_inicio_dispensa = col_d1.date_input("Início da Dispensa", value=data_inicio_atual)
@@ -41,6 +45,8 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
             
             tipos_dispensa_opcoes = ["", "Total", "Parcial", "Para Esforço Físico", "Outro"]
             tipo_dispensa_atual = dados_acao_atual.get('tipo_dispensa', '')
+            if pd.isna(tipo_dispensa_atual):
+                tipo_dispensa_atual = ""
             
             if tipo_dispensa_atual not in tipos_dispensa_opcoes:
                 tipos_dispensa_opcoes.append(tipo_dispensa_atual)
@@ -48,25 +54,17 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
             tipo_dispensa = st.selectbox(
                 "Tipo de Dispensa", 
                 options=tipos_dispensa_opcoes,
-                index=tipos_dispensa_opcoes.index(tipo_dispensa_atual) if tipo_dispensa_atual in tipos_dispensa_opcoes else 0
+                index=tipos_dispensa_opcoes.index(tipo_dispensa_atual)
             )
 
+        # O botão de submissão do formulário DEVE estar dentro do 'with st.form'
         if st.form_submit_button("Salvar Alterações"):
-            dados_para_atualizar = {}
-            if dispensado:
-                dados_para_atualizar = {
-                    'esta_dispensado': True,
-                    'periodo_dispensa_inicio': data_inicio_dispensa.isoformat(),
-                    'periodo_dispensa_fim': data_fim_dispensa.isoformat(),
-                    'tipo_dispensa': tipo_dispensa
-                }
-            else:
-                dados_para_atualizar = {
-                    'esta_dispensado': False,
-                    'periodo_dispensa_inicio': None,
-                    'periodo_dispensa_fim': None,
-                    'tipo_dispensa': None
-                }
+            dados_para_atualizar = {
+                'esta_dispensado': dispensado,
+                'periodo_dispensa_inicio': data_inicio_dispensa.isoformat() if dispensado and data_inicio_dispensa else None,
+                'periodo_dispensa_fim': data_fim_dispensa.isoformat() if dispensado and data_fim_dispensa else None,
+                'tipo_dispensa': tipo_dispensa if dispensado else None
+            }
             
             try:
                 supabase.table("Acoes").update(dados_para_atualizar).eq("id", acao_id).execute()
@@ -74,10 +72,11 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
                 load_data.clear()
             except Exception as e:
                 st.error(f"Erro ao salvar as alterações: {e}")
+    # --- FIM DA CORREÇÃO ---
 
 
 # ==============================================================================
-# PÁGINA PRINCIPAL DO MÓDULO DE SAÚDE
+# PÁGINA PRINCIPAL DO MÓDULO DE SAÚDE (Sem alterações na lógica principal)
 # ==============================================================================
 def show_saude():
     st.title("⚕️ Módulo de Saúde")
@@ -93,7 +92,6 @@ def show_saude():
         st.error(f"Erro ao carregar dados: {e}")
         return
 
-    # --- MELHORIA 1: Filtro com Padrão e Ordem Alfabética ---
     st.subheader("Filtro de Eventos")
     
     todos_tipos_nomes = sorted(tipos_acao_df['nome'].unique().tolist())
@@ -116,7 +114,6 @@ def show_saude():
         st.info("Nenhum evento encontrado para os tipos selecionados.")
         return
 
-    # Junta com os nomes dos alunos para fácil identificação
     acoes_com_nomes_df = pd.merge(
         acoes_saude_df,
         alunos_df[['id', 'nome_guerra', 'pelotao']],
@@ -155,8 +152,6 @@ def show_saude():
                     st.success("**SEM DISPENSA**", icon="✅")
             
             with col3:
-                # --- CORREÇÃO DO BUG: Usando 'id_x' ---
-                # O merge renomeia a coluna 'id' da tabela de ações para 'id_x'.
                 id_da_acao = acao['id_x'] 
                 if st.button("✏️ Editar", key=f"edit_{id_da_acao}"):
                     edit_saude_dialog(id_da_acao, acao, supabase)
