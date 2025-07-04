@@ -215,15 +215,24 @@ def show_dashboard():
             st.info(f"Nenhuma ação encontrada para os pelotões selecionados: {', '.join(pelotoes_para_exibir)}")
         else:
             if chart_mode == "Conceito Médio":
-                pontuacao_inicial = 8.5
-                if not config_df.empty and 'chave' in config_df.columns and 'pontuacao_inicial' in config_df['chave'].values:
-                    try: pontuacao_inicial = float(config_df[config_df['chave'] == 'pontuacao_inicial']['valor'].iloc[0])
-                    except (IndexError, ValueError): pass
+                # ======================================================================
+                # --- INÍCIO DA CORREÇÃO ---
+                # ======================================================================
                 
+                # 1. Cria um dicionário a partir do DataFrame de configurações para fácil acesso
+                config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
+                
+                # 2. Busca o valor dinâmico de 'linha_base_conceito', com 8.5 como padrão caso não encontre
+                linha_base_conceito = float(config_dict.get('linha_base_conceito', 8.5))
+                
+                # 3. Calcula a pontuação final usando a linha de base correta
                 soma_pontos_por_aluno = acoes_com_alunos_df.groupby('aluno_id')['pontuacao_efetiva'].sum()
                 alunos_com_pontuacao = pd.merge(alunos_df_filtrado, soma_pontos_por_aluno.rename('soma_pontos'), left_on='id', right_on='aluno_id', how='left')
                 alunos_com_pontuacao['soma_pontos'] = alunos_com_pontuacao['soma_pontos'].fillna(0)
-                alunos_com_pontuacao['pontuacao_final'] = alunos_com_pontuacao['soma_pontos'] + pontuacao_inicial
+                
+                # A pontuação final agora usa a 'linha_base_conceito' que veio das configurações
+                alunos_com_pontuacao['pontuacao_final'] = linha_base_conceito + alunos_com_pontuacao['soma_pontos']
+                
                 media_por_pelotao = alunos_com_pontuacao.groupby('pelotao')['pontuacao_final'].mean().reset_index()
                 
                 fig = px.bar(media_por_pelotao, x='pelotao', y='pontuacao_final', title='Conceito Médio Atual por Pelotão', labels={'pelotao': 'Pelotão', 'pontuacao_final': 'Conceito Médio'}, color='pontuacao_final', color_continuous_scale='RdYlGn', text_auto='.2f')
