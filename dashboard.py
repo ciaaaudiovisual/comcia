@@ -215,7 +215,7 @@ def show_dashboard():
             st.info(f"Nenhuma ação encontrada para os pelotões selecionados: {', '.join(pelotoes_para_exibir)}")
         else:
             if chart_mode == "Conceito Médio":
-                pontuacao_inicial = 10.0
+                pontuacao_inicial = 8.5
                 if not config_df.empty and 'chave' in config_df.columns and 'pontuacao_inicial' in config_df['chave'].values:
                     try: pontuacao_inicial = float(config_df[config_df['chave'] == 'pontuacao_inicial']['valor'].iloc[0])
                     except (IndexError, ValueError): pass
