@@ -196,8 +196,11 @@ def show_dashboard():
             st.write("---")
             render_highlights_column_collapsible(df_negativos)
         st.divider()
-        
+        ===================================
         st.subheader("Análise de Desempenho por Pelotão")
+        
+        # --- MODIFICAÇÃO 1: DEFINIÇÃO DOS PELOTÕES A SEREM EXIBIDOS ---
+        pelotoes_para_exibir = ["MIKE-1", "MIKE-2", "MIKE-3", "MIKE-4", "MIKE-5", "QTPA"]
         
         chart_mode = st.radio(
             "Selecione o modo de visualização do gráfico:",
@@ -206,44 +209,50 @@ def show_dashboard():
             key="chart_view_mode"
         )
 
-        acoes_com_alunos_df = pd.merge(acoes_com_pontos_df, alunos_df[['id', 'pelotao']], left_on='aluno_id', right_on='id', how='left')
+        # --- MODIFICAÇÃO 2: FILTRAGEM DOS DADOS ANTES DE GERAR OS GRÁFICOS ---
+        alunos_df_filtrado = alunos_df[alunos_df['pelotao'].isin(pelotoes_para_exibir)]
+        acoes_com_alunos_df = pd.merge(acoes_com_pontos_df, alunos_df_filtrado[['id', 'pelotao']], left_on='aluno_id', right_on='id', how='inner')
 
-        if chart_mode == "Conceito Médio":
-            pontuacao_inicial = 10.0
-            if not config_df.empty and 'chave' in config_df.columns and 'pontuacao_inicial' in config_df['chave'].values:
-                try: pontuacao_inicial = float(config_df[config_df['chave'] == 'pontuacao_inicial']['valor'].iloc[0])
-                except (IndexError, ValueError): pass
-            
-            soma_pontos_por_aluno = acoes_com_alunos_df.groupby('aluno_id')['pontuacao_efetiva'].sum()
-            alunos_com_pontuacao = pd.merge(alunos_df, soma_pontos_por_aluno.rename('soma_pontos'), left_on='id', right_on='aluno_id', how='left')
-            alunos_com_pontuacao['soma_pontos'] = alunos_com_pontuacao['soma_pontos'].fillna(0)
-            alunos_com_pontuacao['pontuacao_final'] = alunos_com_pontuacao['soma_pontos'] + pontuacao_inicial
-            media_por_pelotao = alunos_com_pontuacao.groupby('pelotao')['pontuacao_final'].mean().reset_index()
-            
-            fig = px.bar(media_por_pelotao, x='pelotao', y='pontuacao_final', title='Conceito Médio Atual por Pelotão', labels={'pelotao': 'Pelotão', 'pontuacao_final': 'Conceito Médio'}, color='pontuacao_final', color_continuous_scale='RdYlGn', text_auto='.2f')
-            st.plotly_chart(fig, use_container_width=True)
+        if acoes_com_alunos_df.empty:
+            st.info(f"Nenhuma ação encontrada para os pelotões selecionados: {', '.join(pelotoes_para_exibir)}")
+        else:
+            if chart_mode == "Conceito Médio":
+                pontuacao_inicial = 10.0
+                if not config_df.empty and 'chave' in config_df.columns and 'pontuacao_inicial' in config_df['chave'].values:
+                    try: pontuacao_inicial = float(config_df[config_df['chave'] == 'pontuacao_inicial']['valor'].iloc[0])
+                    except (IndexError, ValueError): pass
+                
+                soma_pontos_por_aluno = acoes_com_alunos_df.groupby('aluno_id')['pontuacao_efetiva'].sum()
+                # Usa o dataframe de alunos já filtrado
+                alunos_com_pontuacao = pd.merge(alunos_df_filtrado, soma_pontos_por_aluno.rename('soma_pontos'), left_on='id', right_on='aluno_id', how='left')
+                alunos_com_pontuacao['soma_pontos'] = alunos_com_pontuacao['soma_pontos'].fillna(0)
+                alunos_com_pontuacao['pontuacao_final'] = alunos_com_pontuacao['soma_pontos'] + pontuacao_inicial
+                media_por_pelotao = alunos_com_pontuacao.groupby('pelotao')['pontuacao_final'].mean().reset_index()
+                
+                fig = px.bar(media_por_pelotao, x='pelotao', y='pontuacao_final', title='Conceito Médio Atual por Pelotão', labels={'pelotao': 'Pelotão', 'pontuacao_final': 'Conceito Médio'}, color='pontuacao_final', color_continuous_scale='RdYlGn', text_auto='.2f')
+                st.plotly_chart(fig, use_container_width=True)
 
-        elif chart_mode == "Soma de Pontos (Valor)":
-            acoes_com_alunos_df['pontos_positivos'] = acoes_com_alunos_df['pontuacao_efetiva'].where(acoes_com_alunos_df['pontuacao_efetiva'] > 0, 0)
-            acoes_com_alunos_df['pontos_negativos'] = acoes_com_alunos_df['pontuacao_efetiva'].where(acoes_com_alunos_df['pontuacao_efetiva'] < 0, 0)
-            soma_por_pelotao = acoes_com_alunos_df.groupby('pelotao')[['pontos_positivos', 'pontos_negativos']].sum().reset_index()
-            df_melted = pd.melt(soma_por_pelotao, id_vars=['pelotao'], value_vars=['pontos_positivos', 'pontos_negativos'], var_name='Tipo de Pontuação', value_name='Total de Pontos')
-            df_melted['Tipo de Pontuação'] = df_melted['Tipo de Pontuação'].map({'pontos_positivos': 'Positivos', 'pontos_negativos': 'Negativos'})
-            fig = px.bar(df_melted, x='pelotao', y='Total de Pontos', color='Tipo de Pontuação', barmode='group', title='Soma dos Valores de Pontos por Pelotão', labels={'pelotao': 'Pelotão', 'Total de Pontos': 'Soma dos Pontos'}, color_discrete_map={'Positivos': 'green', 'Negativos': 'red'}, text_auto='.1f')
-            st.plotly_chart(fig, use_container_width=True)
+            elif chart_mode == "Soma de Pontos (Valor)":
+                acoes_com_alunos_df['pontos_positivos'] = acoes_com_alunos_df['pontuacao_efetiva'].where(acoes_com_alunos_df['pontuacao_efetiva'] > 0, 0)
+                acoes_com_alunos_df['pontos_negativos'] = acoes_com_alunos_df['pontuacao_efetiva'].where(acoes_com_alunos_df['pontuacao_efetiva'] < 0, 0)
+                soma_por_pelotao = acoes_com_alunos_df.groupby('pelotao')[['pontos_positivos', 'pontos_negativos']].sum().reset_index()
+                df_melted = pd.melt(soma_por_pelotao, id_vars=['pelotao'], value_vars=['pontos_positivos', 'pontos_negativos'], var_name='Tipo de Pontuação', value_name='Total de Pontos')
+                df_melted['Tipo de Pontuação'] = df_melted['Tipo de Pontuação'].map({'pontos_positivos': 'Positivos', 'pontos_negativos': 'Negativos'})
+                fig = px.bar(df_melted, x='pelotao', y='Total de Pontos', color='Tipo de Pontuação', barmode='group', title='Soma dos Valores de Pontos por Pelotão', labels={'pelotao': 'Pelotão', 'Total de Pontos': 'Soma dos Pontos'}, color_discrete_map={'Positivos': 'green', 'Negativos': 'red'}, text_auto='.1f')
+                st.plotly_chart(fig, use_container_width=True)
 
-        else: # Quantidade de Anotações
-            df_positivas = acoes_com_alunos_df[acoes_com_alunos_df['pontuacao_efetiva'] > 0]
-            df_negativas = acoes_com_alunos_df[acoes_com_alunos_df['pontuacao_efetiva'] < 0]
-            contagem_positivas = df_positivas.groupby('pelotao').size().reset_index(name='Positivas')
-            contagem_negativas = df_negativas.groupby('pelotao').size().reset_index(name='Negativas')
-            
-            contagem_df = pd.merge(contagem_positivas, contagem_negativas, on='pelotao', how='outer').fillna(0)
-            
-            df_melted = pd.melt(contagem_df, id_vars=['pelotao'], value_vars=['Positivas', 'Negativas'], var_name='Tipo de Anotação', value_name='Quantidade')
+            else: # Quantidade de Anotações
+                df_positivas = acoes_com_alunos_df[acoes_com_alunos_df['pontuacao_efetiva'] > 0]
+                df_negativas = acoes_com_alunos_df[acoes_com_alunos_df['pontuacao_efetiva'] < 0]
+                contagem_positivas = df_positivas.groupby('pelotao').size().reset_index(name='Positivas')
+                contagem_negativas = df_negativas.groupby('pelotao').size().reset_index(name='Negativas')
+                
+                contagem_df = pd.merge(contagem_positivas, contagem_negativas, on='pelotao', how='outer').fillna(0)
+                
+                df_melted = pd.melt(contagem_df, id_vars=['pelotao'], value_vars=['Positivas', 'Negativas'], var_name='Tipo de Anotação', value_name='Quantidade')
 
-            fig = px.bar(df_melted, x='pelotao', y='Quantidade', color='Tipo de Anotação', barmode='group', title='Quantidade de Anotações por Pelotão', labels={'pelotao': 'Pelotão', 'Quantidade': 'Nº de Anotações'}, color_discrete_map={'Positivas': 'green', 'Negativas': 'red'}, text_auto=True)
-            st.plotly_chart(fig, use_container_width=True)
+                fig = px.bar(df_melted, x='pelotao', y='Quantidade', color='Tipo de Anotação', barmode='group', title='Quantidade de Anotações por Pelotão', labels={'pelotao': 'Pelotão', 'Quantidade': 'Nº de Anotações'}, color_discrete_map={'Positivas': 'green', 'Negativas': 'red'}, text_auto=True)
+                st.plotly_chart(fig, use_container_width=True)
 
         st.subheader("🎂 Aniversariantes (Próximos 7 dias)")
         if not alunos_df.empty and 'data_nascimento' in alunos_df.columns:
