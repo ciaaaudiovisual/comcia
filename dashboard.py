@@ -6,9 +6,8 @@ from PIL import Image
 import numpy as np
 from pyzbar.pyzbar import decode
 import plotly.express as px
-from acoes import calcular_pontuacao_efetiva
-from auth import check_permission
 from alunos import calcular_pontuacao_efetiva
+from auth import check_permission
 
 # --- FUNÇÕES AUXILIARES ---
 def decodificar_codigo_de_barras(upload_de_imagem):
