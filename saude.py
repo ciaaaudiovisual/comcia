@@ -92,17 +92,24 @@ def show_saude():
         st.error(f"Erro ao carregar dados: {e}")
         return
 
-    st.subheader("Filtro de Eventos")
-    
-    todos_tipos_nomes = sorted(tipos_acao_df['nome'].unique().tolist())
-    tipos_saude_padrao = ["Enfermaria", "Hospital", "NAS", "DISPENÇA MÉDICA", "SAÚDE"]
-    tipos_selecionados_default = [tipo for tipo in tipos_saude_padrao if tipo in todos_tipos_nomes]
-    
-    tipos_selecionados = st.multiselect(
-        "Selecione os tipos de evento para exibir:",
-        options=todos_tipos_nomes,
-        default=tipos_selecionados_default
-    )
+# --- MELHORIA 1: Filtro com Padrão e Ordem Alfabética ---
+st.subheader("Filtro de Eventos")
+
+# Pega todos os tipos de ação e os ordena alfabeticamente
+todos_tipos_nomes = sorted(tipos_acao_df['nome'].unique().tolist())
+
+# Define a lista padrão de itens que você quer pré-selecionar
+tipos_saude_padrao = ["Enfermaria", "Hospital", "NAS", "DISPENÇA MÉDICA", "SAÚDE"]
+
+# Garante que apenas os itens da lista padrão que realmente existem na sua base de dados sejam selecionados
+tipos_selecionados_default = [tipo for tipo in tipos_saude_padrao if tipo in todos_tipos_nomes]
+
+# Cria o seletor múltiplo, já com os itens padrão selecionados
+tipos_selecionados = st.multiselect(
+    "Selecione os tipos de evento para exibir:",
+    options=todos_tipos_nomes,
+    default=tipos_selecionados_default
+)
     
     if not tipos_selecionados:
         st.warning("Selecione pelo menos um tipo de evento para continuar.")
