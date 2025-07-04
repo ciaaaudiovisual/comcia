@@ -9,6 +9,7 @@ from relatorios import show_relatorios
 from config import show_config
 from admin_panel import show_admin_panel
 from gestao_acoes import show_gestao_acoes
+from saude import show_saude
 
 if not check_authentication():
     st.stop()
@@ -27,17 +28,15 @@ if st.sidebar.button("🔄 Recarregar Dados"):
     st.toast("Os dados foram recarregados com sucesso!", icon="✅")
     st.rerun()
 
-# --- MODIFICAÇÃO: Menu atualizado com a página unificada ---
 menu_options = {
     "Dashboard": show_dashboard,
     "Programação": show_programacao,
     "Cadastro de Alunos": show_alunos,
-    "Lançamento de Ações": show_gestao_acoes, # Nova página unificada
+    "Lançamento de Ações": show_gestao_acoes,
+    "Saúde": show_saude,
     "Parada Diária": show_parada_diaria,
 }
 
-# As permissões agora controlam o acesso à página unificada.
-# A permissão 'acesso_pagina_lancamentos_faia' ainda é útil para controlar quem pode lançar.
 if check_permission('acesso_pagina_relatorios'):
     menu_options["Relatórios"] = show_relatorios
 if check_permission('acesso_pagina_configuracoes'):
