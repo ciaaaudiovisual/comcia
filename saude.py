@@ -4,7 +4,7 @@ from datetime import datetime
 from database import load_data, init_supabase_client
 
 # ==============================================================================
-# DIÁLOGO DE EDIÇÃO (COM EDIÇÃO DE ALUNO)
+# DIÁLOGO DE EDIÇÃO (Sem alterações nesta versão)
 # ==============================================================================
 @st.dialog("Editar Dados de Saúde")
 def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
@@ -19,28 +19,17 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
     with st.form("edit_saude_form"):
         st.divider()
         
-        # --- MELHORIA: Edição do Aluno ---
         st.markdown("##### Corrigir Aluno (se necessário)")
-        
-        # Cria uma lista de opções para o selectbox
         opcoes_alunos = pd.Series(alunos_df.id.values, index=alunos_df.nome_guerra).to_dict()
         nomes_alunos_lista = list(opcoes_alunos.keys())
-        
-        # Encontra o índice do aluno atual para pré-selecionar
         aluno_atual_id = dados_acao_atual.get('aluno_id')
         aluno_atual_nome = ""
         if pd.notna(aluno_atual_id):
             aluno_info = alunos_df[alunos_df['id'] == aluno_atual_id]
             if not aluno_info.empty:
                 aluno_atual_nome = aluno_info.iloc[0]['nome_guerra']
-
         indice_aluno_atual = nomes_alunos_lista.index(aluno_atual_nome) if aluno_atual_nome in nomes_alunos_lista else 0
-        
-        aluno_selecionado_nome = st.selectbox(
-            "Selecione o aluno correto:",
-            options=nomes_alunos_lista,
-            index=indice_aluno_atual
-        )
+        aluno_selecionado_nome = st.selectbox("Selecione o aluno correto:", options=nomes_alunos_lista, index=indice_aluno_atual)
         
         st.divider()
         st.markdown("##### Controle de Dispensa Médica")
@@ -77,11 +66,9 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
         nova_descricao = st.text_area("Comentários/Observações (Opcional)", value=dados_acao_atual.get('descricao', ''))
 
         if st.form_submit_button("Salvar Alterações"):
-            # Pega o ID do aluno selecionado no selectbox
             novo_aluno_id = opcoes_alunos[aluno_selecionado_nome]
-            
             dados_para_atualizar = {
-                'aluno_id': novo_aluno_id, # Salva o ID do aluno corrigido
+                'aluno_id': novo_aluno_id,
                 'esta_dispensado': dispensado,
                 'periodo_dispensa_inicio': data_inicio_dispensa.isoformat() if dispensado and data_inicio_dispensa else None,
                 'periodo_dispensa_fim': data_fim_dispensa.isoformat() if dispensado and data_fim_dispensa else None,
@@ -97,7 +84,7 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
                 st.error(f"Erro ao salvar as alterações: {e}")
 
 # ==============================================================================
-# PÁGINA PRINCIPAL DO MÓDULO DE SAÚDE (Sem alterações na lógica principal)
+# PÁGINA PRINCIPAL DO MÓDULO DE SAÚDE
 # ==============================================================================
 def show_saude():
     st.title("⚕️ Módulo de Saúde")
@@ -116,7 +103,10 @@ def show_saude():
     st.subheader("Filtro de Eventos")
     
     todos_tipos_nomes = sorted(tipos_acao_df['nome'].unique().tolist())
+    
+    # --- MODIFICAÇÃO 1: Lista padrão de filtros atualizada com a capitalização correta ---
     tipos_saude_padrao = ["ENFERMARIA", "HOSPITAL", "NAS", "DISPENSA MÉDICA", "SAÚDE"]
+    
     tipos_selecionados_default = [tipo for tipo in tipos_saude_padrao if tipo in todos_tipos_nomes]
     
     tipos_selecionados = st.multiselect(
@@ -135,9 +125,10 @@ def show_saude():
         st.info("Nenhum evento encontrado para os tipos selecionados.")
         return
 
+    # --- MODIFICAÇÃO 2: Adicionado 'numero_interno' ao merge para exibição ---
     acoes_com_nomes_df = pd.merge(
         acoes_saude_df,
-        alunos_df[['id', 'nome_guerra', 'pelotao']],
+        alunos_df[['id', 'nome_guerra', 'pelotao', 'numero_interno']],
         left_on='aluno_id',
         right_on='id',
         how='left'
@@ -156,7 +147,8 @@ def show_saude():
             col1, col2, col3 = st.columns([3, 2, 1])
             
             with col1:
-                st.markdown(f"##### {acao.get('nome_guerra', 'N/A')} ({acao.get('pelotao', 'N/A')})")
+                # --- MODIFICAÇÃO 3: Exibição alterada para "Número - Nome de Guerra" ---
+                st.markdown(f"##### {acao.get('numero_interno', 'S/N')} - {acao.get('nome_guerra', 'N/A')}")
                 st.markdown(f"**Evento:** {acao.get('tipo', 'N/A')}")
                 st.caption(f"Data do Registro: {acao['data'].strftime('%d/%m/%Y')}")
                 if acao.get('descricao'):
