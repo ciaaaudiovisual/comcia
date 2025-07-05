@@ -24,39 +24,48 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
             
         dispensado = st.toggle("Aluno está Dispensado?", value=bool(esta_dispensado_atual))
         
-        # --- CORREÇÃO 1: Campos sempre visíveis, mas desabilitados se o toggle estiver desligado ---
-        # Lógica robusta para lidar com datas que podem ser nulas (None/NaT)
-        start_date_val = dados_acao_atual.get('periodo_dispensa_inicio')
-        end_date_val = dados_acao_atual.get('periodo_dispensa_fim')
+        # --- CORREÇÃO 1: Campos de data aparecem/desaparecem com o toggle ---
+        if dispensado:
+            start_date_val = dados_acao_atual.get('periodo_dispensa_inicio')
+            end_date_val = dados_acao_atual.get('periodo_dispensa_fim')
 
-        data_inicio_atual = pd.to_datetime(start_date_val).date() if pd.notna(start_date_val) else datetime.now().date()
-        data_fim_atual = pd.to_datetime(end_date_val).date() if pd.notna(end_date_val) else datetime.now().date()
+            data_inicio_atual = pd.to_datetime(start_date_val).date() if pd.notna(start_date_val) else datetime.now().date()
+            data_fim_atual = pd.to_datetime(end_date_val).date() if pd.notna(end_date_val) else datetime.now().date()
 
-        col_d1, col_d2 = st.columns(2)
-        data_inicio_dispensa = col_d1.date_input("Início da Dispensa", value=data_inicio_atual, disabled=not dispensado)
-        data_fim_dispensa = col_d2.date_input("Fim da Dispensa", value=data_fim_atual, disabled=not dispensado)
-        
-        tipos_dispensa_opcoes = ["", "Total", "Parcial", "Para Esforço Físico", "Outro"]
-        tipo_dispensa_atual = dados_acao_atual.get('tipo_dispensa', '')
-        if pd.isna(tipo_dispensa_atual):
-            tipo_dispensa_atual = ""
-        
-        if tipo_dispensa_atual not in tipos_dispensa_opcoes:
-            tipos_dispensa_opcoes.append(tipo_dispensa_atual)
+            col_d1, col_d2 = st.columns(2)
+            data_inicio_dispensa = col_d1.date_input("Início da Dispensa", value=data_inicio_atual)
+            data_fim_dispensa = col_d2.date_input("Fim da Dispensa", value=data_fim_atual)
+            
+            tipos_dispensa_opcoes = ["", "Total", "Parcial", "Para Esforço Físico", "Outro"]
+            tipo_dispensa_atual = dados_acao_atual.get('tipo_dispensa', '')
+            if pd.isna(tipo_dispensa_atual):
+                tipo_dispensa_atual = ""
+            
+            if tipo_dispensa_atual not in tipos_dispensa_opcoes:
+                tipos_dispensa_opcoes.append(tipo_dispensa_atual)
 
-        tipo_dispensa = st.selectbox(
-            "Tipo de Dispensa", 
-            options=tipos_dispensa_opcoes,
-            index=tipos_dispensa_opcoes.index(tipo_dispensa_atual),
-            disabled=not dispensado
-        )
+            tipo_dispensa = st.selectbox(
+                "Tipo de Dispensa", 
+                options=tipos_dispensa_opcoes,
+                index=tipos_dispensa_opcoes.index(tipo_dispensa_atual)
+            )
+        else:
+            # Garante que as variáveis existam mesmo quando o toggle está desligado
+            data_inicio_dispensa = None
+            data_fim_dispensa = None
+            tipo_dispensa = None
+            
+        # --- MELHORIA 2: Adição do campo de comentários/descrição ---
+        st.divider()
+        nova_descricao = st.text_area("Comentários/Observações (Opcional)", value=dados_acao_atual.get('descricao', ''))
 
         if st.form_submit_button("Salvar Alterações"):
             dados_para_atualizar = {
                 'esta_dispensado': dispensado,
                 'periodo_dispensa_inicio': data_inicio_dispensa.isoformat() if dispensado and data_inicio_dispensa else None,
                 'periodo_dispensa_fim': data_fim_dispensa.isoformat() if dispensado and data_fim_dispensa else None,
-                'tipo_dispensa': tipo_dispensa if dispensado else None
+                'tipo_dispensa': tipo_dispensa if dispensado else None,
+                'descricao': nova_descricao # Salva o novo comentário
             }
             
             try:
@@ -67,7 +76,7 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
                 st.error(f"Erro ao salvar as alterações: {e}")
 
 # ==============================================================================
-# PÁGINA PRINCIPAL DO MÓDULO DE SAÚDE
+# PÁGINA PRINCIPAL DO MÓDULO DE SAÚDE (Sem alterações na lógica principal)
 # ==============================================================================
 def show_saude():
     st.title("⚕️ Módulo de Saúde")
@@ -129,11 +138,11 @@ def show_saude():
                 st.markdown(f"##### {acao.get('nome_guerra', 'N/A')} ({acao.get('pelotao', 'N/A')})")
                 st.markdown(f"**Evento:** {acao.get('tipo', 'N/A')}")
                 st.caption(f"Data do Registro: {acao['data'].strftime('%d/%m/%Y')}")
+                # Exibição do comentário/descrição
                 if acao.get('descricao'):
                     st.caption(f"Observação: {acao.get('descricao')}")
             
             with col2:
-                # --- CORREÇÃO 2: Lógica para status de dispensa vencida ---
                 if acao.get('esta_dispensado'):
                     inicio_str = pd.to_datetime(acao.get('periodo_dispensa_inicio')).strftime('%d/%m/%y') if pd.notna(acao.get('periodo_dispensa_inicio')) else "N/A"
                     fim_str = pd.to_datetime(acao.get('periodo_dispensa_fim')).strftime('%d/%m/%y') if pd.notna(acao.get('periodo_dispensa_fim')) else "N/A"
