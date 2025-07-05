@@ -4,7 +4,7 @@ from datetime import datetime
 from database import load_data, init_supabase_client
 
 # ==============================================================================
-# DIÁLOGO DE EDIÇÃO
+# DIÁLOGO DE EDIÇÃO (CORRIGIDO)
 # ==============================================================================
 @st.dialog("Editar Dados de Saúde")
 def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
@@ -24,34 +24,32 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
             
         dispensado = st.toggle("Aluno está Dispensado?", value=bool(esta_dispensado_atual))
         
-        data_inicio_dispensa = None
-        data_fim_dispensa = None
-        tipo_dispensa = ""
+        # --- CORREÇÃO 1: Campos sempre visíveis, mas desabilitados se o toggle estiver desligado ---
+        # Lógica robusta para lidar com datas que podem ser nulas (None/NaT)
+        start_date_val = dados_acao_atual.get('periodo_dispensa_inicio')
+        end_date_val = dados_acao_atual.get('periodo_dispensa_fim')
 
-        if dispensado:
-            start_date_val = dados_acao_atual.get('periodo_dispensa_inicio')
-            end_date_val = dados_acao_atual.get('periodo_dispensa_fim')
+        data_inicio_atual = pd.to_datetime(start_date_val).date() if pd.notna(start_date_val) else datetime.now().date()
+        data_fim_atual = pd.to_datetime(end_date_val).date() if pd.notna(end_date_val) else datetime.now().date()
 
-            data_inicio_atual = pd.to_datetime(start_date_val).date() if pd.notna(start_date_val) else datetime.now().date()
-            data_fim_atual = pd.to_datetime(end_date_val).date() if pd.notna(end_date_val) else datetime.now().date()
+        col_d1, col_d2 = st.columns(2)
+        data_inicio_dispensa = col_d1.date_input("Início da Dispensa", value=data_inicio_atual, disabled=not dispensado)
+        data_fim_dispensa = col_d2.date_input("Fim da Dispensa", value=data_fim_atual, disabled=not dispensado)
+        
+        tipos_dispensa_opcoes = ["", "Total", "Parcial", "Para Esforço Físico", "Outro"]
+        tipo_dispensa_atual = dados_acao_atual.get('tipo_dispensa', '')
+        if pd.isna(tipo_dispensa_atual):
+            tipo_dispensa_atual = ""
+        
+        if tipo_dispensa_atual not in tipos_dispensa_opcoes:
+            tipos_dispensa_opcoes.append(tipo_dispensa_atual)
 
-            col_d1, col_d2 = st.columns(2)
-            data_inicio_dispensa = col_d1.date_input("Início da Dispensa", value=data_inicio_atual)
-            data_fim_dispensa = col_d2.date_input("Fim da Dispensa", value=data_fim_atual)
-            
-            tipos_dispensa_opcoes = ["", "Total", "Parcial", "Para Esforço Físico", "Outro"]
-            tipo_dispensa_atual = dados_acao_atual.get('tipo_dispensa', '')
-            if pd.isna(tipo_dispensa_atual):
-                tipo_dispensa_atual = ""
-            
-            if tipo_dispensa_atual not in tipos_dispensa_opcoes:
-                tipos_dispensa_opcoes.append(tipo_dispensa_atual)
-
-            tipo_dispensa = st.selectbox(
-                "Tipo de Dispensa", 
-                options=tipos_dispensa_opcoes,
-                index=tipos_dispensa_opcoes.index(tipo_dispensa_atual)
-            )
+        tipo_dispensa = st.selectbox(
+            "Tipo de Dispensa", 
+            options=tipos_dispensa_opcoes,
+            index=tipos_dispensa_opcoes.index(tipo_dispensa_atual),
+            disabled=not dispensado
+        )
 
         if st.form_submit_button("Salvar Alterações"):
             dados_para_atualizar = {
@@ -88,7 +86,7 @@ def show_saude():
     st.subheader("Filtro de Eventos")
     
     todos_tipos_nomes = sorted(tipos_acao_df['nome'].unique().tolist())
-    tipos_saude_padrao = ["ENFERMARIA", "HOSPITAL", "NAS", "DISPENSA MÉDICA", "SAÚDE"]
+    tipos_saude_padrao = ["Enfermaria", "Hospital", "NAS", "DISPENÇA MÉDICA", "SAÚDE"]
     tipos_selecionados_default = [tipo for tipo in tipos_saude_padrao if tipo in todos_tipos_nomes]
     
     tipos_selecionados = st.multiselect(
@@ -135,10 +133,19 @@ def show_saude():
                     st.caption(f"Observação: {acao.get('descricao')}")
             
             with col2:
+                # --- CORREÇÃO 2: Lógica para status de dispensa vencida ---
                 if acao.get('esta_dispensado'):
                     inicio_str = pd.to_datetime(acao.get('periodo_dispensa_inicio')).strftime('%d/%m/%y') if pd.notna(acao.get('periodo_dispensa_inicio')) else "N/A"
                     fim_str = pd.to_datetime(acao.get('periodo_dispensa_fim')).strftime('%d/%m/%y') if pd.notna(acao.get('periodo_dispensa_fim')) else "N/A"
-                    st.error(f"**DISPENSADO**", icon="⚕️")
+                    
+                    data_fim = pd.to_datetime(acao.get('periodo_dispensa_fim')).date() if pd.notna(acao.get('periodo_dispensa_fim')) else None
+                    hoje = datetime.now().date()
+                    
+                    if data_fim and data_fim < hoje:
+                        st.warning("**DISPENSA VENCIDA**", icon="⌛")
+                    else:
+                        st.error("**DISPENSADO**", icon="⚕️")
+                    
                     st.markdown(f"**Período:** {inicio_str} a {fim_str}")
                     st.caption(f"Tipo: {acao.get('tipo_dispensa', 'Não especificado')}")
                 else:
