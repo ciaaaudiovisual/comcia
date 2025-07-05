@@ -86,7 +86,7 @@ def show_saude():
     st.subheader("Filtro de Eventos")
     
     todos_tipos_nomes = sorted(tipos_acao_df['nome'].unique().tolist())
-    tipos_saude_padrao = ["Enfermaria", "Hospital", "NAS", "DISPENÇA MÉDICA", "SAÚDE"]
+    tipos_saude_padrao = ["ENFERMARIA", "HOSPITAL", "NAS", "DISPENÇA MÉDICA", "SAÚDE"]
     tipos_selecionados_default = [tipo for tipo in tipos_saude_padrao if tipo in todos_tipos_nomes]
     
     tipos_selecionados = st.multiselect(
