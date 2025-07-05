@@ -4,17 +4,44 @@ from datetime import datetime
 from database import load_data, init_supabase_client
 
 # ==============================================================================
-# DIÁLOGO DE EDIÇÃO (CORRIGIDO)
+# DIÁLOGO DE EDIÇÃO (COM EDIÇÃO DE ALUNO)
 # ==============================================================================
 @st.dialog("Editar Dados de Saúde")
 def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
     """
-    Abre um formulário para editar os detalhes de saúde de uma ação específica.
+    Abre um formulário para editar os detalhes de saúde e o aluno de uma ação específica.
     """
+    alunos_df = load_data("Alunos")
+    
     st.write(f"Editando evento para: **{dados_acao_atual.get('nome_guerra', 'N/A')}**")
     st.caption(f"Ação: {dados_acao_atual.get('tipo', 'N/A')} em {pd.to_datetime(dados_acao_atual.get('data')).strftime('%d/%m/%Y')}")
 
     with st.form("edit_saude_form"):
+        st.divider()
+        
+        # --- MELHORIA: Edição do Aluno ---
+        st.markdown("##### Corrigir Aluno (se necessário)")
+        
+        # Cria uma lista de opções para o selectbox
+        opcoes_alunos = pd.Series(alunos_df.id.values, index=alunos_df.nome_guerra).to_dict()
+        nomes_alunos_lista = list(opcoes_alunos.keys())
+        
+        # Encontra o índice do aluno atual para pré-selecionar
+        aluno_atual_id = dados_acao_atual.get('aluno_id')
+        aluno_atual_nome = ""
+        if pd.notna(aluno_atual_id):
+            aluno_info = alunos_df[alunos_df['id'] == aluno_atual_id]
+            if not aluno_info.empty:
+                aluno_atual_nome = aluno_info.iloc[0]['nome_guerra']
+
+        indice_aluno_atual = nomes_alunos_lista.index(aluno_atual_nome) if aluno_atual_nome in nomes_alunos_lista else 0
+        
+        aluno_selecionado_nome = st.selectbox(
+            "Selecione o aluno correto:",
+            options=nomes_alunos_lista,
+            index=indice_aluno_atual
+        )
+        
         st.divider()
         st.markdown("##### Controle de Dispensa Médica")
         
@@ -24,11 +51,13 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
             
         dispensado = st.toggle("Aluno está Dispensado?", value=bool(esta_dispensado_atual))
         
-        # --- CORREÇÃO 1: Campos de data aparecem/desaparecem com o toggle ---
+        data_inicio_dispensa = None
+        data_fim_dispensa = None
+        tipo_dispensa = ""
+
         if dispensado:
             start_date_val = dados_acao_atual.get('periodo_dispensa_inicio')
             end_date_val = dados_acao_atual.get('periodo_dispensa_fim')
-
             data_inicio_atual = pd.to_datetime(start_date_val).date() if pd.notna(start_date_val) else datetime.now().date()
             data_fim_atual = pd.to_datetime(end_date_val).date() if pd.notna(end_date_val) else datetime.now().date()
 
@@ -40,32 +69,24 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
             tipo_dispensa_atual = dados_acao_atual.get('tipo_dispensa', '')
             if pd.isna(tipo_dispensa_atual):
                 tipo_dispensa_atual = ""
-            
             if tipo_dispensa_atual not in tipos_dispensa_opcoes:
                 tipos_dispensa_opcoes.append(tipo_dispensa_atual)
+            tipo_dispensa = st.selectbox("Tipo de Dispensa", options=tipos_dispensa_opcoes, index=tipos_dispensa_opcoes.index(tipo_dispensa_atual))
 
-            tipo_dispensa = st.selectbox(
-                "Tipo de Dispensa", 
-                options=tipos_dispensa_opcoes,
-                index=tipos_dispensa_opcoes.index(tipo_dispensa_atual)
-            )
-        else:
-            # Garante que as variáveis existam mesmo quando o toggle está desligado
-            data_inicio_dispensa = None
-            data_fim_dispensa = None
-            tipo_dispensa = None
-            
-        # --- MELHORIA 2: Adição do campo de comentários/descrição ---
         st.divider()
         nova_descricao = st.text_area("Comentários/Observações (Opcional)", value=dados_acao_atual.get('descricao', ''))
 
         if st.form_submit_button("Salvar Alterações"):
+            # Pega o ID do aluno selecionado no selectbox
+            novo_aluno_id = opcoes_alunos[aluno_selecionado_nome]
+            
             dados_para_atualizar = {
+                'aluno_id': novo_aluno_id, # Salva o ID do aluno corrigido
                 'esta_dispensado': dispensado,
                 'periodo_dispensa_inicio': data_inicio_dispensa.isoformat() if dispensado and data_inicio_dispensa else None,
                 'periodo_dispensa_fim': data_fim_dispensa.isoformat() if dispensado and data_fim_dispensa else None,
                 'tipo_dispensa': tipo_dispensa if dispensado else None,
-                'descricao': nova_descricao # Salva o novo comentário
+                'descricao': nova_descricao
             }
             
             try:
@@ -95,7 +116,7 @@ def show_saude():
     st.subheader("Filtro de Eventos")
     
     todos_tipos_nomes = sorted(tipos_acao_df['nome'].unique().tolist())
-    tipos_saude_padrao = ["ENFERMARIA", "HOSPITAL", "NAS", "DISPENSA MÉDICA", "SAÚDE"]
+    tipos_saude_padrao = ["Enfermaria", "Hospital", "NAS", "DISPENÇA MÉDICA", "SAÚDE"]
     tipos_selecionados_default = [tipo for tipo in tipos_saude_padrao if tipo in todos_tipos_nomes]
     
     tipos_selecionados = st.multiselect(
@@ -138,7 +159,6 @@ def show_saude():
                 st.markdown(f"##### {acao.get('nome_guerra', 'N/A')} ({acao.get('pelotao', 'N/A')})")
                 st.markdown(f"**Evento:** {acao.get('tipo', 'N/A')}")
                 st.caption(f"Data do Registro: {acao['data'].strftime('%d/%m/%Y')}")
-                # Exibição do comentário/descrição
                 if acao.get('descricao'):
                     st.caption(f"Observação: {acao.get('descricao')}")
             
