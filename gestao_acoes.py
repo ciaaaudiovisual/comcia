@@ -106,6 +106,8 @@ def bulk_update_status(ids_to_update, new_status, supabase):
 # ==============================================================================
 # PÁGINA PRINCIPAL
 # ==============================================================================
+# No arquivo gestao_acoes.py
+
 def show_gestao_acoes():
     st.title("Lançamentos de Ações dos Alunos")
     supabase = init_supabase_client()
@@ -167,7 +169,7 @@ def show_gestao_acoes():
                 data = c2.date_input("Data e Hora da Ação", datetime.now())
                 descricao = st.text_area("Descrição/Justificativa (Opcional)")
 
-                tipos_de_saude = ["Enfermaria", "Hospital", "NAS"]
+                tipos_de_saude = ["ENFERMARIA", "HOSPITAL", "NAS", "DISPENSA MÉDICA", "SAÚDE"]
                 nome_acao_selecionada = ""
                 if tipo_selecionado_str and not tipo_selecionado_str.startswith("---"):
                     nome_acao_selecionada = tipos_opcoes_map[tipo_selecionado_str]['nome']
@@ -190,11 +192,12 @@ def show_gestao_acoes():
                     elif not confirmacao_registro: st.warning("Por favor, confirme que os dados estão corretos.")
                     else:
                         try:
-                            # Lógica de gerar o ID manual foi REMOVIDA para evitar erros.
+                            # --- CORREÇÃO APLICADA AQUI ---
+                            # A lógica de calcular o 'id' manualmente foi removida.
+                            
                             tipo_info = tipos_opcoes_map[tipo_selecionado_str]
                             
-                            # O campo 'id' foi REMOVIDO do dicionário abaixo.
-                            # O Supabase/PostgreSQL irá gerar o ID automaticamente.
+                            # O campo 'id' foi removido do dicionário. O banco de dados irá gerá-lo.
                             nova_acao = {
                                 'aluno_id': str(st.session_state.selected_student_id_gestao), 
                                 'tipo_acao_id': str(tipo_info['id']), 
@@ -222,6 +225,7 @@ def show_gestao_acoes():
                             st.error(f"Erro ao registrar ação: {e}")
         else:
             st.info("⬅️ Busque e selecione um aluno acima para registrar uma nova ação.")
+    
     
     st.divider()
     
