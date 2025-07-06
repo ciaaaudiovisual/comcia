@@ -62,7 +62,7 @@ def show_dashboard():
     
     display_pending_items()
     
-    supabase = init_supabase_client()
+    base = init_base_client()
     
     if 'scanner_ativo' not in st.session_state:
         st.session_state.scanner_ativo = False
@@ -145,7 +145,9 @@ def show_dashboard():
                                 nova_acao = {'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_acao_info['id']),'tipo': tipo_acao_info['nome'],'descricao': descricao,'data': datetime.now().strftime('%Y-%m-%d'),'usuario': st.session_state.username,'lancado_faia': False}
                                 novas_acoes.append(nova_acao)
                             if novas_acoes:
-                                supabase.table("Acoes").insert(novas_acoes).execute()
+                                response = supabase.table("Acoes").insert(novas_acoes, returning="representation").execute()
+                                st.write("--- RESPOSTA DO BANCO DE DADOS (DIAGNÓSTICO) ---")
+                                st.write(response)
                                 st.success(f"Ação registrada com sucesso para {len(novas_acoes)} aluno(s)!")
                                 st.session_state.alunos_escaneados_nomes = []
                                 load_data.clear()
