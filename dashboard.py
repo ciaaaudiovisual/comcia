@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-from database import load_data, init_supabase_client
+from database import load_data, init_supabase_client # <-- A função correta é importada aqui
 from PIL import Image
 import numpy as np
 from pyzbar.pyzbar import decode
@@ -62,7 +62,8 @@ def show_dashboard():
     
     display_pending_items()
     
-    base = init_base_client()
+    # --- CORREÇÃO APLICADA AQUI ---
+    supabase = init_supabase_client()
     
     if 'scanner_ativo' not in st.session_state:
         st.session_state.scanner_ativo = False
@@ -145,9 +146,7 @@ def show_dashboard():
                                 nova_acao = {'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_acao_info['id']),'tipo': tipo_acao_info['nome'],'descricao': descricao,'data': datetime.now().strftime('%Y-%m-%d'),'usuario': st.session_state.username,'lancado_faia': False}
                                 novas_acoes.append(nova_acao)
                             if novas_acoes:
-                                response = supabase.table("Acoes").insert(novas_acoes, returning="representation").execute()
-                                st.write("--- RESPOSTA DO BANCO DE DADOS (DIAGNÓSTICO) ---")
-                                st.write(response)
+                                supabase.table("Acoes").insert(novas_acoes).execute()
                                 st.success(f"Ação registrada com sucesso para {len(novas_acoes)} aluno(s)!")
                                 st.session_state.alunos_escaneados_nomes = []
                                 load_data.clear()
@@ -216,22 +215,13 @@ def show_dashboard():
             st.info(f"Nenhuma ação encontrada para os pelotões selecionados: {', '.join(pelotoes_para_exibir)}")
         else:
             if chart_mode == "Conceito Médio":
-                # ======================================================================
-                # --- INÍCIO DA CORREÇÃO ---
-                # ======================================================================
-                
-                # 1. Cria um dicionário a partir do DataFrame de configurações para fácil acesso
                 config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
-                
-                # 2. Busca o valor dinâmico de 'linha_base_conceito', com 8.5 como padrão caso não encontre
                 linha_base_conceito = float(config_dict.get('linha_base_conceito', 8.5))
                 
-                # 3. Calcula a pontuação final usando a linha de base correta
                 soma_pontos_por_aluno = acoes_com_alunos_df.groupby('aluno_id')['pontuacao_efetiva'].sum()
                 alunos_com_pontuacao = pd.merge(alunos_df_filtrado, soma_pontos_por_aluno.rename('soma_pontos'), left_on='id', right_on='aluno_id', how='left')
                 alunos_com_pontuacao['soma_pontos'] = alunos_com_pontuacao['soma_pontos'].fillna(0)
                 
-                # A pontuação final agora usa a 'linha_base_conceito' que veio das configurações
                 alunos_com_pontuacao['pontuacao_final'] = linha_base_conceito + alunos_com_pontuacao['soma_pontos']
                 
                 media_por_pelotao = alunos_com_pontuacao.groupby('pelotao')['pontuacao_final'].mean().reset_index()
