@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-from database import load_data, init_supabase_client # <-- A função correta é importada aqui
+from database import load_data, init_supabase_client
 from PIL import Image
 import numpy as np
 from pyzbar.pyzbar import decode
@@ -62,7 +62,6 @@ def show_dashboard():
     
     display_pending_items()
     
-    # --- CORREÇÃO APLICADA AQUI ---
     supabase = init_supabase_client()
     
     if 'scanner_ativo' not in st.session_state:
@@ -143,13 +142,19 @@ def show_dashboard():
                             tipo_acao_info = tipos_opcoes_map[tipo_selecionado_str]
                             novas_acoes = []
                             for aluno_id in ids_alunos_selecionados:
-                                nova_acao = {'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_acao_info['id']),'tipo': tipo_acao_info['nome'],'descricao': descricao,'data': datetime.now().strftime('%Y-%m-%d'), 'status': 'Pendente', 'usuario': st.session_state.username,'lancado_faia': False}
+                                nova_acao = {
+                                    'aluno_id': str(aluno_id), 
+                                    'tipo_acao_id': str(tipo_acao_info['id']),
+                                    'tipo': tipo_acao_info['nome'],
+                                    'descricao': descricao,
+                                    'data': datetime.now().strftime('%Y-%m-%d'),
+                                    'usuario': st.session_state.username,
+                                    'status': 'Pendente',
+                                    'lancado_faia': False
+                                }
                                 novas_acoes.append(nova_acao)
                             if novas_acoes:
-                                # Mude para estas três linhas (temporariamente para diagnóstico):
-                                response = supabase.table("Acoes").insert(novas_acoes, returning="representation").execute()
-                                st.write("--- RESPOSTA DO BANCO DE DADOS (DIAGNÓSTICO) ---")
-                                st.write(response)
+                                supabase.table("Acoes").insert(novas_acoes).execute()
                                 st.success(f"Ação registrada com sucesso para {len(novas_acoes)} aluno(s)!")
                                 st.session_state.alunos_escaneados_nomes = []
                                 load_data.clear()
@@ -158,10 +163,9 @@ def show_dashboard():
                             st.error(f"Falha ao salvar a(s) ação(ões): {e}")
     st.divider()
 
-     if alunos_df.empty or acoes_com_pontos_df.empty:
+    if alunos_df.empty or acoes_com_pontos_df.empty:
         st.info("Registre alunos e ações para visualizar os painéis de dados.")
     else:
-        # --- PREPARAÇÃO DE DADOS PARA DESTAQUES ---
         acoes_com_pontos_df['data'] = pd.to_datetime(acoes_com_pontos_df['data'], errors='coerce')
         acoes_com_nomes_df = pd.merge(acoes_com_pontos_df, alunos_df[['id', 'nome_guerra']], left_on='aluno_id', right_on='id', how='left')
         acoes_com_nomes_df['nome_guerra'].fillna('N/A', inplace=True)
@@ -169,8 +173,6 @@ def show_dashboard():
         hoje = datetime.now().date()
         data_limite = hoje - timedelta(days=2)
 
-        # --- MODIFICAÇÃO APLICADA AQUI ---
-        # Adicionado (acoes_com_nomes_df['status'] != 'Arquivado') para remover os arquivados da lista de destaques.
         df_filtrado = acoes_com_nomes_df[
             (acoes_com_nomes_df['data'].dt.date >= data_limite) &
             (acoes_com_nomes_df['pontuacao_efetiva'] != 0) &
@@ -181,7 +183,6 @@ def show_dashboard():
         df_positivos = df_filtrado[df_filtrado['pontuacao_efetiva'] > 0]
         df_negativos = df_filtrado[df_filtrado['pontuacao_efetiva'] < 0]
 
-        # --- SEÇÃO DE DESTAQUES (sem alterações na exibição) ---
         st.header("Destaques dos Últimos 3 Dias")
         col_pos, col_neg = st.columns(2)
         def render_highlights_column_collapsible(dataframe, is_first_day_expanded=True):
@@ -231,15 +232,11 @@ def show_dashboard():
             if chart_mode == "Conceito Médio":
                 config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
                 linha_base_conceito = float(config_dict.get('linha_base_conceito', 8.5))
-                
                 soma_pontos_por_aluno = acoes_com_alunos_df.groupby('aluno_id')['pontuacao_efetiva'].sum()
                 alunos_com_pontuacao = pd.merge(alunos_df_filtrado, soma_pontos_por_aluno.rename('soma_pontos'), left_on='id', right_on='aluno_id', how='left')
                 alunos_com_pontuacao['soma_pontos'] = alunos_com_pontuacao['soma_pontos'].fillna(0)
-                
                 alunos_com_pontuacao['pontuacao_final'] = linha_base_conceito + alunos_com_pontuacao['soma_pontos']
-                
                 media_por_pelotao = alunos_com_pontuacao.groupby('pelotao')['pontuacao_final'].mean().reset_index()
-                
                 fig = px.bar(media_por_pelotao, x='pelotao', y='pontuacao_final', title='Conceito Médio Atual por Pelotão', labels={'pelotao': 'Pelotão', 'pontuacao_final': 'Conceito Médio'}, color='pontuacao_final', color_continuous_scale='RdYlGn', text_auto='.2f')
                 st.plotly_chart(fig, use_container_width=True)
 
@@ -257,11 +254,8 @@ def show_dashboard():
                 df_negativas = acoes_com_alunos_df[acoes_com_alunos_df['pontuacao_efetiva'] < 0]
                 contagem_positivas = df_positivas.groupby('pelotao').size().reset_index(name='Positivas')
                 contagem_negativas = df_negativas.groupby('pelotao').size().reset_index(name='Negativas')
-                
                 contagem_df = pd.merge(contagem_positivas, contagem_negativas, on='pelotao', how='outer').fillna(0)
-                
                 df_melted = pd.melt(contagem_df, id_vars=['pelotao'], value_vars=['Positivas', 'Negativas'], var_name='Tipo de Anotação', value_name='Quantidade')
-
                 fig = px.bar(df_melted, x='pelotao', y='Quantidade', color='Tipo de Anotação', barmode='group', title='Quantidade de Anotações por Pelotão', labels={'pelotao': 'Pelotão', 'Quantidade': 'Nº de Anotações'}, color_discrete_map={'Positivas': 'green', 'Negativas': 'red'}, text_auto=True)
                 st.plotly_chart(fig, use_container_width=True)
 
