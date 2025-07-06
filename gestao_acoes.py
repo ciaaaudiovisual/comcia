@@ -97,9 +97,8 @@ def bulk_update_status(ids_to_update, new_status, supabase):
     try:
         supabase.table("Acoes").update({'status': new_status}).in_('id', ids_to_update).execute()
         st.toast(f"{len(ids_to_update)} ações foram atualizadas para '{new_status}' com sucesso!", icon="✅")
-        # Limpa a seleção após a ação
         st.session_state.action_selection = {}
-        st.session_state.select_all_toggle = False # Desmarca o checkbox geral
+        st.session_state.select_all_toggle = False
         load_data.clear()
     except Exception as e:
         st.error(f"Erro ao atualizar ações em massa: {e}")
@@ -168,7 +167,6 @@ def show_gestao_acoes():
                 data = c2.date_input("Data e Hora da Ação", datetime.now())
                 descricao = st.text_area("Descrição/Justificativa (Opcional)")
 
-                # Lógica para mostrar campos de saúde condicionalmente
                 tipos_de_saude = ["Enfermaria", "Hospital", "NAS"]
                 nome_acao_selecionada = ""
                 if tipo_selecionado_str and not tipo_selecionado_str.startswith("---"):
@@ -192,14 +190,12 @@ def show_gestao_acoes():
                     elif not confirmacao_registro: st.warning("Por favor, confirme que os dados estão corretos.")
                     else:
                         try:
-                            response = supabase.table("Acoes").select("id", count='exact').execute()
-                            ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
-                            novo_id = max(ids_existentes) + 1 if ids_existentes else 1
-                            
+                            # Lógica de gerar o ID manual foi REMOVIDA para evitar erros.
                             tipo_info = tipos_opcoes_map[tipo_selecionado_str]
                             
+                            # O campo 'id' foi REMOVIDO do dicionário abaixo.
+                            # O Supabase/PostgreSQL irá gerar o ID automaticamente.
                             nova_acao = {
-                                'id': str(novo_id), 
                                 'aluno_id': str(st.session_state.selected_student_id_gestao), 
                                 'tipo_acao_id': str(tipo_info['id']), 
                                 'tipo': tipo_info['nome'], 
@@ -222,7 +218,8 @@ def show_gestao_acoes():
 
                             supabase.table("Acoes").insert(nova_acao).execute()
                             st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!"); load_data.clear(); st.rerun()
-                        except Exception as e: st.error(f"Erro ao registrar ação: {e}")
+                        except Exception as e: 
+                            st.error(f"Erro ao registrar ação: {e}")
         else:
             st.info("⬅️ Busque e selecione um aluno acima para registrar uma nova ação.")
     
