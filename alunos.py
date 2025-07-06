@@ -4,7 +4,7 @@ from datetime import datetime
 from database import load_data, init_supabase_client
 from auth import check_permission
 import math
-import re # Importado para limpar o número de telefone
+import re 
 
 # ==============================================================================
 # FUNÇÃO DE APOIO PARA IMPORTAÇÃO
@@ -28,7 +28,6 @@ def create_csv_template():
         'numero_armario': ['A-15', 'B-07']
     }
     df = pd.DataFrame(template_data)
-    # Usa ponto e vírgula como separador para compatibilidade com Excel em português
     return df.to_csv(index=False, sep=';').encode('utf-8')
 
 # ==============================================================================
@@ -137,62 +136,22 @@ def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
         if st.form_submit_button("Registrar"):
             if not tipo_selecionado_str or tipo_selecionado_str.startswith("---"):
                 st.warning("Por favor, selecione um tipo de ação válido."); return
-            @st.dialog("Registrar Nova Ação")
-def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
-    st.write(f"Aluno: **{aluno_nome}**")
-    tipos_acao_df = load_data("Tipos_Acao")
-    if tipos_acao_df.empty:
-        st.error("Não há tipos de ação cadastrados."); return
-    
-    with st.form("nova_acao_dialog_form"):
-        tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
-        sorted_tipos_df = tipos_acao_df.sort_values('nome')
-        positivas_df = sorted_tipos_df[sorted_tipos_df['pontuacao'] > 0]
-        neutras_df = sorted_tipos_df[sorted_tipos_df['pontuacao'] == 0]
-        negativas_df = sorted_tipos_df[sorted_tipos_df['pontuacao'] < 0]
-        opcoes_finais, tipos_opcoes_map = [], {}
-        if not positivas_df.empty:
-            opcoes_finais.append("--- AÇÕES POSITIVAS ---")
-            for _, r in positivas_df.iterrows():
-                label = f"{r['nome']} ({r['pontuacao']:.1f} pts)"
-                opcoes_finais.append(label); tipos_opcoes_map[label] = r
-        if not neutras_df.empty:
-            opcoes_finais.append("--- AÇÕES NEUTRAS ---")
-            for _, r in neutras_df.iterrows():
-                label = f"{r['nome']} (0.0 pts)"
-                opcoes_finais.append(label); tipos_opcoes_map[label] = r
-        if not negativas_df.empty:
-            opcoes_finais.append("--- AÇÕES NEGATIVAS ---")
-            for _, r in negativas_df.iterrows():
-                label = f"{r['nome']} ({r['pontuacao']:.1f} pts)"
-                opcoes_finais.append(label); tipos_opcoes_map[label] = r
-        
-        tipo_selecionado_str = st.selectbox("Tipo de Ação", options=opcoes_finais)
-        descricao = st.text_area("Descrição/Justificativa (Opcional)")
-        data = st.date_input("Data da Ação", value=datetime.now())
-        
-        if st.form_submit_button("Registrar"):
-            if not tipo_selecionado_str or tipo_selecionado_str.startswith("---"):
-                st.warning("Por favor, selecione um tipo de ação válido."); return
-            
             try:
                 tipo_info = tipos_opcoes_map[tipo_selecionado_str]
-                
-                # O campo 'id' foi removido e a linha de status foi adicionada/garantida.
                 nova_acao = {
                     'aluno_id': str(aluno_id), 
-                    'tipo_acao_id': str(tipo_info['id']), 
+                    'tipo_acao_id': str(tipo_info['id']),
                     'tipo': tipo_info['nome'], 
                     'descricao': descricao, 
-                    'data': data.strftime('%Y-%m-%d'), 
+                    'data': data.strftime('%Y-%m-%d'),
                     'usuario': st.session_state.username, 
-                    'status': 'Pendente' # <-- GARANTE QUE O STATUS SEJA DEFINIDO
+                    'status': 'Pendente'
                 }
                 supabase.table("Acoes").insert(nova_acao).execute()
                 st.success("Ação registrada com sucesso!"); load_data.clear(); st.rerun()
             except Exception as e:
                 st.error(f"Falha ao registrar a ação: {e}")
-                
+
 @st.dialog("Histórico de Ações")
 def historico_dialog(aluno, acoes_df, tipos_acao_df, config_df):
     st.header(f"Histórico de: {aluno.get('nome_guerra', 'N/A')}")
@@ -272,8 +231,6 @@ def informacoes_dialog(aluno, supabase):
         with tab_outros:
             st.subheader("Outras Informações")
             new_numero_armario = st.text_input("Número do Armário", value=aluno.get('numero_armario', ''))
-            # Adicione aqui futuros campos...
-            # st.text_input("Nova Informação 1", value=aluno.get('nova_info_1', ''))
 
         if st.form_submit_button("Salvar Alterações"):
             if check_permission('pode_editar_aluno'):
@@ -308,8 +265,6 @@ def show_alunos():
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
     
-    # Adiciona as novas colunas ao DataFrame se elas não existirem, para evitar erros.
-    # Lembre-se de criar essas colunas na sua tabela "Alunos" no Supabase.
     novas_colunas = {
         'media_academica': 0.0, 'endereco': '', 'telefone_contato': '',
         'contato_emergencia_nome': '', 'contato_emergencia_numero': '', 'numero_armario': ''
@@ -399,10 +354,8 @@ def show_alunos():
                         st.warning("Número, Nome de Guerra e Pelotão são obrigatórios.")
                     else:
                         try:
-                            ids = pd.to_numeric(alunos_df['id'], errors='coerce').dropna()
-                            novo_id = int(ids.max()) + 1 if not ids.empty else 1
                             novo_aluno = {
-                                'id': str(novo_id), 'numero_interno': numero_interno, 
+                                'numero_interno': numero_interno, 
                                 'nome_guerra': nome_guerra, 'nome_completo': nome_completo, 
                                 'pelotao': pelotao, 'especialidade': especialidade, 'nip': nip
                             }
@@ -488,5 +441,4 @@ def show_alunos():
         with col_page:
             st.write(f"Página **{st.session_state.page_num} de {total_pages}**")
         with col_next:
-            if st.button("Próxima ➡️", use_container_width=True, disabled=(st.session_state.page_num >= total_pages)):
-                st.session_state.page_num += 1; st.rerun()
+            if st
