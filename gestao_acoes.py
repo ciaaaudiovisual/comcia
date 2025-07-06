@@ -249,8 +249,20 @@ def show_gestao_acoes():
 
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
     df_display = pd.DataFrame()
-    if not acoes_com_pontos.empty:
+
+    # ======================================================================
+    # --- INÍCIO DA CORREÇÃO ---
+    # ======================================================================
+    if not acoes_com_pontos.empty and not alunos_df.empty:
+        # Garante que as chaves de junção tenham o mesmo tipo de dado (string)
+        # para evitar falhas no merge.
+        acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
+        alunos_df['id'] = alunos_df['id'].astype(str)
+
         df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'numero_interno', 'nome_guerra', 'pelotao', 'nome_completo']], left_on='aluno_id', right_on='id', how='inner')
+    # ======================================================================
+    # --- FIM DA CORREÇÃO ---
+    # ======================================================================
     
     df_filtrado_final = df_display.copy()
     if not df_filtrado_final.empty:
@@ -266,6 +278,7 @@ def show_gestao_acoes():
         else: df_filtrado_final = df_filtrado_final.sort_values(by="data", ascending=False) 
 
     st.divider()
+
 
     st.subheader("Fila de Revisão e Ações")
 
