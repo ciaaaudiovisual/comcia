@@ -137,15 +137,48 @@ def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
         if st.form_submit_button("Registrar"):
             if not tipo_selecionado_str or tipo_selecionado_str.startswith("---"):
                 st.warning("Por favor, selecione um tipo de ação válido."); return
+            @st.dialog("Registrar Nova Ação")
+def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
+    st.write(f"Aluno: **{aluno_nome}**")
+    tipos_acao_df = load_data("Tipos_Acao")
+    if tipos_acao_df.empty:
+        st.error("Não há tipos de ação cadastrados."); return
+    
+    with st.form("nova_acao_dialog_form"):
+        tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
+        sorted_tipos_df = tipos_acao_df.sort_values('nome')
+        positivas_df = sorted_tipos_df[sorted_tipos_df['pontuacao'] > 0]
+        neutras_df = sorted_tipos_df[sorted_tipos_df['pontuacao'] == 0]
+        negativas_df = sorted_tipos_df[sorted_tipos_df['pontuacao'] < 0]
+        opcoes_finais, tipos_opcoes_map = [], {}
+        if not positivas_df.empty:
+            opcoes_finais.append("--- AÇÕES POSITIVAS ---")
+            for _, r in positivas_df.iterrows():
+                label = f"{r['nome']} ({r['pontuacao']:.1f} pts)"
+                opcoes_finais.append(label); tipos_opcoes_map[label] = r
+        if not neutras_df.empty:
+            opcoes_finais.append("--- AÇÕES NEUTRAS ---")
+            for _, r in neutras_df.iterrows():
+                label = f"{r['nome']} (0.0 pts)"
+                opcoes_finais.append(label); tipos_opcoes_map[label] = r
+        if not negativas_df.empty:
+            opcoes_finais.append("--- AÇÕES NEGATIVAS ---")
+            for _, r in negativas_df.iterrows():
+                label = f"{r['nome']} ({r['pontuacao']:.1f} pts)"
+                opcoes_finais.append(label); tipos_opcoes_map[label] = r
+        
+        tipo_selecionado_str = st.selectbox("Tipo de Ação", options=opcoes_finais)
+        descricao = st.text_area("Descrição/Justificativa (Opcional)")
+        data = st.date_input("Data da Ação", value=datetime.now())
+        
+        if st.form_submit_button("Registrar"):
+            if not tipo_selecionado_str or tipo_selecionado_str.startswith("---"):
+                st.warning("Por favor, selecione um tipo de ação válido."); return
             
-            # --- INÍCIO DA CORREÇÃO ---
             try:
                 tipo_info = tipos_opcoes_map[tipo_selecionado_str]
                 
-                # A lógica de calcular o ID manualmente foi REMOVIDA daqui.
-                
-                # O campo 'id' foi REMOVIDO do dicionário. 
-                # O banco de dados irá gerá-lo automaticamente.
+                # O campo 'id' foi removido e a linha de status foi adicionada/garantida.
                 nova_acao = {
                     'aluno_id': str(aluno_id), 
                     'tipo_acao_id': str(tipo_info['id']), 
@@ -153,7 +186,7 @@ def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
                     'descricao': descricao, 
                     'data': data.strftime('%Y-%m-%d'), 
                     'usuario': st.session_state.username, 
-                    'status': 'Pendente'
+                    'status': 'Pendente' # <-- GARANTE QUE O STATUS SEJA DEFINIDO
                 }
                 supabase.table("Acoes").insert(nova_acao).execute()
                 st.success("Ação registrada com sucesso!"); load_data.clear(); st.rerun()
