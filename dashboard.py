@@ -143,7 +143,7 @@ def show_dashboard():
                             tipo_acao_info = tipos_opcoes_map[tipo_selecionado_str]
                             novas_acoes = []
                             for aluno_id in ids_alunos_selecionados:
-                                nova_acao = {'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_acao_info['id']),'tipo': tipo_acao_info['nome'],'descricao': descricao,'data': datetime.now().strftime('%Y-%m-%d'),'usuario': st.session_state.username,'lancado_faia': False}
+                                nova_acao = {'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_acao_info['id']),'tipo': tipo_acao_info['nome'],'descricao': descricao,'data': datetime.now().strftime('%Y-%m-%d'), 'status': 'Pendente', 'usuario': st.session_state.username,'lancado_faia': False}
                                 novas_acoes.append(nova_acao)
                             if novas_acoes:
                                 # Mude para estas três linhas (temporariamente para diagnóstico):
