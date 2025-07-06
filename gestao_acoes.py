@@ -251,8 +251,34 @@ def show_gestao_acoes():
     df_display = pd.DataFrame()
 
     # ======================================================================
-    # --- INÍCIO DA CORREÇÃO ---
+    st.warning("INFORMAÇÕES DE DIAGNÓSTICO (pode remover depois)")
+
+    # Mostra os 5 primeiros IDs de alunos da tabela de Alunos
+    st.write("Primeiros 5 IDs disponíveis na tabela 'Alunos':")
+    st.dataframe(alunos_df['id'].head())
+
+    # Mostra os 5 primeiros IDs de alunos que estão na tabela de Ações
+    st.write("Primeiros 5 'aluno_id' que precisam de correspondência na tabela 'Acoes':")
+    st.dataframe(acoes_com_pontos['aluno_id'].head())
+    
+    # Verifica matematicamente se há alguma correspondência entre os conjuntos de IDs
+    ids_alunos = set(alunos_df['id'].astype(str))
+    ids_acoes = set(acoes_com_pontos['aluno_id'].astype(str))
+    ids_em_comum = ids_alunos.intersection(ids_acoes)
+    
+    st.write(f"Total de IDs em comum encontrados entre as duas tabelas: **{len(ids_em_comum)}**")
+    
+    if len(ids_em_comum) > 0:
+        st.success("Foram encontradas correspondências! O problema pode ser outro.")
+        st.write("Exemplo de IDs que correspondem:", list(ids_em_comum)[:5])
+    else:
+        st.error("NENHUMA CORRESPONDÊNCIA ENCONTRADA! Este é o problema. Os IDs dos alunos nas ações não existem na tabela de alunos.")
+    
+    st.warning("FIM DAS INFORMAÇÕES DE DIAGNÓSTICO")
     # ======================================================================
+    # --- FIM DO CÓDIGO DE DIAGNÓSTICO ---
+    # ======================================================================
+
     if not acoes_com_pontos.empty and not alunos_df.empty:
         # Garante que as chaves de junção tenham o mesmo tipo de dado (string)
         # para evitar falhas no merge.
