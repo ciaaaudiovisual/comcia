@@ -158,19 +158,30 @@ def show_dashboard():
                             st.error(f"Falha ao salvar a(s) ação(ões): {e}")
     st.divider()
 
-    if alunos_df.empty or acoes_com_pontos_df.empty:
+     if alunos_df.empty or acoes_com_pontos_df.empty:
         st.info("Registre alunos e ações para visualizar os painéis de dados.")
     else:
+        # --- PREPARAÇÃO DE DADOS PARA DESTAQUES ---
         acoes_com_pontos_df['data'] = pd.to_datetime(acoes_com_pontos_df['data'], errors='coerce')
         acoes_com_nomes_df = pd.merge(acoes_com_pontos_df, alunos_df[['id', 'nome_guerra']], left_on='aluno_id', right_on='id', how='left')
         acoes_com_nomes_df['nome_guerra'].fillna('N/A', inplace=True)
+        
         hoje = datetime.now().date()
         data_limite = hoje - timedelta(days=2)
-        df_filtrado = acoes_com_nomes_df[(acoes_com_nomes_df['data'].dt.date >= data_limite) & (acoes_com_nomes_df['pontuacao_efetiva'] != 0)].copy()
+
+        # --- MODIFICAÇÃO APLICADA AQUI ---
+        # Adicionado (acoes_com_nomes_df['status'] != 'Arquivado') para remover os arquivados da lista de destaques.
+        df_filtrado = acoes_com_nomes_df[
+            (acoes_com_nomes_df['data'].dt.date >= data_limite) &
+            (acoes_com_nomes_df['pontuacao_efetiva'] != 0) &
+            (acoes_com_nomes_df['status'] != 'Arquivado')
+        ].copy()
+        
         df_filtrado = df_filtrado.sort_values(by="data", ascending=False)
         df_positivos = df_filtrado[df_filtrado['pontuacao_efetiva'] > 0]
         df_negativos = df_filtrado[df_filtrado['pontuacao_efetiva'] < 0]
 
+        # --- SEÇÃO DE DESTAQUES (sem alterações na exibição) ---
         st.header("Destaques dos Últimos 3 Dias")
         col_pos, col_neg = st.columns(2)
         def render_highlights_column_collapsible(dataframe, is_first_day_expanded=True):
