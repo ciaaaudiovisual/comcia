@@ -441,4 +441,5 @@ def show_alunos():
         with col_page:
             st.write(f"Página **{st.session_state.page_num} de {total_pages}**")
         with col_next:
-            if st
+            if st.button("Próxima ➡️", use_container_width=True, disabled=(st.session_state.page_num >= total_pages)):
+                st.session_state.page_num += 1; st.rerun()
