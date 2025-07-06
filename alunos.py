@@ -137,21 +137,29 @@ def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
         if st.form_submit_button("Registrar"):
             if not tipo_selecionado_str or tipo_selecionado_str.startswith("---"):
                 st.warning("Por favor, selecione um tipo de ação válido."); return
+            
+            # --- INÍCIO DA CORREÇÃO ---
             try:
-                acoes_df = load_data("Acoes")
                 tipo_info = tipos_opcoes_map[tipo_selecionado_str]
-                ids = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
-                novo_id = int(ids.max()) + 1 if not ids.empty else 1
+                
+                # A lógica de calcular o ID manualmente foi REMOVIDA daqui.
+                
+                # O campo 'id' foi REMOVIDO do dicionário. 
+                # O banco de dados irá gerá-lo automaticamente.
                 nova_acao = {
-                    'id': str(novo_id), 'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_info['id']),
-                    'tipo': tipo_info['nome'], 'descricao': descricao, 'data': data.strftime('%Y-%m-%d'),
-                    'usuario': st.session_state.username, 'status': 'Pendente'
+                    'aluno_id': str(aluno_id), 
+                    'tipo_acao_id': str(tipo_info['id']), 
+                    'tipo': tipo_info['nome'], 
+                    'descricao': descricao, 
+                    'data': data.strftime('%Y-%m-%d'), 
+                    'usuario': st.session_state.username, 
+                    'status': 'Pendente'
                 }
                 supabase.table("Acoes").insert(nova_acao).execute()
                 st.success("Ação registrada com sucesso!"); load_data.clear(); st.rerun()
             except Exception as e:
                 st.error(f"Falha ao registrar a ação: {e}")
-
+                
 @st.dialog("Histórico de Ações")
 def historico_dialog(aluno, acoes_df, tipos_acao_df, config_df):
     st.header(f"Histórico de: {aluno.get('nome_guerra', 'N/A')}")
