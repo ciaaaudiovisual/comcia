@@ -66,10 +66,14 @@ def render_export_section(df_acoes_geral, alunos_df, pelotao_selecionado, aluno_
         st.subheader("📥 Exportar Relatórios FAIA")
         if aluno_selecionado != "Nenhum":
             st.info(f"Pré-visualize e exporte o relatório individual para {aluno_selecionado}. Serão incluídas apenas as ações com status 'Lançado'.")
-            aluno_info = alunos_df[alunos_df['nome_guerra'] == aluno_selecionado].iloc[0]
-            acoes_do_aluno = df_acoes_geral[df_acoes_geral['aluno_id'] == aluno_info['id']]
-            if st.button(f"👁️ Pré-visualizar e Exportar FAIA de {aluno_selecionado}"):
-                preview_faia_dialog(aluno_info, acoes_do_aluno)
+            aluno_info_df = alunos_df[alunos_df['nome_guerra'] == aluno_selecionado]
+            if not aluno_info_df.empty:
+                aluno_info = aluno_info_df.iloc[0]
+                acoes_do_aluno = df_acoes_geral[df_acoes_geral['aluno_id'] == str(aluno_info['id'])]
+                if st.button(f"👁️ Pré-visualizar e Exportar FAIA de {aluno_selecionado}"):
+                    preview_faia_dialog(aluno_info, acoes_do_aluno)
+            else:
+                st.warning(f"Aluno '{aluno_selecionado}' não encontrado.")
         elif pelotao_selecionado != "Todos":
             st.info(f"A exportação gerará um arquivo .ZIP com os relatórios de todos os alunos do pelotão '{pelotao_selecionado}'. Serão incluídas apenas as ações com status 'Lançado'.")
             alunos_do_pelotao = alunos_df[alunos_df['pelotao'] == pelotao_selecionado]
@@ -81,7 +85,7 @@ def render_export_section(df_acoes_geral, alunos_df, pelotao_selecionado, aluno_
                     zip_buffer = BytesIO()
                     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
                         for _, aluno_info in alunos_do_pelotao.iterrows():
-                            acoes_do_aluno = df_acoes_geral[df_acoes_geral['aluno_id'] == aluno_info['id']]
+                            acoes_do_aluno = df_acoes_geral[df_acoes_geral['aluno_id'] == str(aluno_info['id'])]
                             conteudo_txt = formatar_relatorio_individual_txt(aluno_info, acoes_do_aluno)
                             nome_arquivo = f"FAIA_{aluno_info.get('numero_interno','SN')}_{aluno_info.get('nome_guerra','S-N')}.txt"
                             zip_file.writestr(nome_arquivo, conteudo_txt)
@@ -97,9 +101,8 @@ def bulk_update_status(ids_to_update, new_status, supabase):
     try:
         supabase.table("Acoes").update({'status': new_status}).in_('id', ids_to_update).execute()
         st.toast(f"{len(ids_to_update)} ações foram atualizadas para '{new_status}' com sucesso!", icon="✅")
-        # Limpa a seleção após a ação
         st.session_state.action_selection = {}
-        st.session_state.select_all_toggle = False # Desmarca o checkbox geral
+        st.session_state.select_all_toggle = False
         load_data.clear()
     except Exception as e:
         st.error(f"Erro ao atualizar ações em massa: {e}")
@@ -168,8 +171,7 @@ def show_gestao_acoes():
                 data = c2.date_input("Data e Hora da Ação", datetime.now())
                 descricao = st.text_area("Descrição/Justificativa (Opcional)")
 
-                # Lógica para mostrar campos de saúde condicionalmente
-                tipos_de_saude = ["Enfermaria", "Hospital", "NAS"]
+                tipos_de_saude = ["ENFERMARIA", "HOSPITAL", "NAS", "DISPENSA MÉDICA", "SAÚDE"]
                 nome_acao_selecionada = ""
                 if tipo_selecionado_str and not tipo_selecionado_str.startswith("---"):
                     nome_acao_selecionada = tipos_opcoes_map[tipo_selecionado_str]['nome']
@@ -192,23 +194,16 @@ def show_gestao_acoes():
                     elif not confirmacao_registro: st.warning("Por favor, confirme que os dados estão corretos.")
                     else:
                         try:
-                            response = supabase.table("Acoes").select("id", count='exact').execute()
-                            ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
-                            novo_id = max(ids_existentes) + 1 if ids_existentes else 1
-                            
                             tipo_info = tipos_opcoes_map[tipo_selecionado_str]
-                            
                             nova_acao = {
-                                'id': str(novo_id), 
                                 'aluno_id': str(st.session_state.selected_student_id_gestao), 
-                                'tipo_acao_id': str(tipo_info['id']), 
+                                'tipo_acao_id': str(tipo_info['id']),
                                 'tipo': tipo_info['nome'], 
                                 'descricao': descricao, 
                                 'data': data.isoformat(), 
                                 'usuario': st.session_state.username, 
                                 'status': 'Pendente'
                             }
-
                             if nome_acao_selecionada in tipos_de_saude and dispensado:
                                 nova_acao['esta_dispensado'] = True
                                 nova_acao['periodo_dispensa_inicio'] = data_inicio_dispensa.isoformat()
@@ -219,10 +214,10 @@ def show_gestao_acoes():
                                 nova_acao['periodo_dispensa_inicio'] = None
                                 nova_acao['periodo_dispensa_fim'] = None
                                 nova_acao['tipo_dispensa'] = None
-
                             supabase.table("Acoes").insert(nova_acao).execute()
                             st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!"); load_data.clear(); st.rerun()
-                        except Exception as e: st.error(f"Erro ao registrar ação: {e}")
+                        except Exception as e: 
+                            st.error(f"Erro ao registrar ação: {e}")
         else:
             st.info("⬅️ Busque e selecione um aluno acima para registrar uma nova ação.")
     
@@ -248,21 +243,44 @@ def show_gestao_acoes():
 
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
     df_display = pd.DataFrame()
-    if not acoes_com_pontos.empty:
+
+    if not acoes_com_pontos.empty and not alunos_df.empty:
+        acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
+        alunos_df['id'] = alunos_df['id'].astype(str)
         df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'numero_interno', 'nome_guerra', 'pelotao', 'nome_completo']], left_on='aluno_id', right_on='id', how='left')
-    
+        df_display['nome_guerra'].fillna('N/A (Aluno Apagado)', inplace=True)
+
+    # --- BLOCO DE DIAGNÓSTICO TEMPORÁRIO ---
+    st.warning("DIAGNÓSTICO FINAL (pode remover depois)")
+    st.write(f"Tabela combinada (df_display) criada com {len(df_display)} linhas.")
+    if not df_display.empty:
+        st.write("Contagem de cada status encontrado na lista:")
+        status_counts = df_display['status'].value_counts(dropna=False)
+        st.dataframe(status_counts)
+        st.write("Amostra dos 5 primeiros registros para análise completa:")
+        st.dataframe(df_display.head())
+    st.warning("FIM DO DIAGNÓSTICO")
+
     df_filtrado_final = df_display.copy()
     if not df_filtrado_final.empty:
-        if filtro_pelotao != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['pelotao'] == filtro_pelotao]
+        if filtro_pelotao != "Todos":
+            df_filtrado_final = df_filtrado_final[df_filtrado_final['pelotao'].fillna('') == filtro_pelotao]
         if filtro_aluno != "Nenhum":
-            aluno_id_filtrado = alunos_df[alunos_df['nome_guerra'] == filtro_aluno].iloc[0]['id']
-            df_filtrado_final = df_filtrado_final[df_filtrado_final['aluno_id'] == aluno_id_filtrado]
-        if filtro_status != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['status'] == filtro_status]
-        if filtro_tipo_acao != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['nome'] == filtro_tipo_acao]
+            aluno_id_filtrado_df = alunos_df[alunos_df['nome_guerra'] == filtro_aluno]
+            if not aluno_id_filtrado_df.empty:
+                aluno_id_filtrado = str(aluno_id_filtrado_df['id'].iloc[0])
+                df_filtrado_final = df_filtrado_final[df_filtrado_final['aluno_id'] == aluno_id_filtrado]
+        if filtro_status != "Todos":
+            df_filtrado_final = df_filtrado_final[df_filtrado_final['status'].fillna('') == filtro_status]
+        if filtro_tipo_acao != "Todos":
+            df_filtrado_final = df_filtrado_final[df_filtrado_final['nome'].fillna('') == filtro_tipo_acao]
         
-        if ordenar_por == "Mais Antigos": df_filtrado_final = df_filtrado_final.sort_values(by="data", ascending=True)
-        elif ordenar_por == "Aluno (A-Z)": df_filtrado_final = df_filtrado_final.sort_values(by="nome_guerra", ascending=True)
-        else: df_filtrado_final = df_filtrado_final.sort_values(by="data", ascending=False) 
+        if ordenar_por == "Mais Antigos":
+            df_filtrado_final = df_filtrado_final.sort_values(by="data", ascending=True)
+        elif ordenar_por == "Aluno (A-Z)":
+            df_filtrado_final = df_filtrado_final.sort_values(by="nome_guerra", ascending=True)
+        else:
+            df_filtrado_final = df_filtrado_final.sort_values(by="data", ascending=False)
 
     st.divider()
 
@@ -274,7 +292,8 @@ def show_gestao_acoes():
         with st.container(border=True):
             col_botoes1, col_botoes2, col_check = st.columns([2, 2, 3])
             
-            selected_ids = [acao_id for acao_id, is_selected in st.session_state.action_selection.items() if is_selected]
+            ids_visiveis = df_filtrado_final['id_x'].dropna().tolist()
+            selected_ids = [acao_id for acao_id, is_selected in st.session_state.action_selection.items() if is_selected and acao_id in ids_visiveis]
             
             with col_botoes1:
                 st.button(f"🚀 Lançar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Lançado', supabase), disabled=not selected_ids, use_container_width=True)
@@ -283,7 +302,7 @@ def show_gestao_acoes():
 
             def toggle_all_visible():
                 new_state = st.session_state.get('select_all_toggle', False)
-                for acao_id in df_filtrado_final['id_x']:
+                for acao_id in ids_visiveis:
                     st.session_state.action_selection[acao_id] = new_state
             
             with col_check:
@@ -298,19 +317,14 @@ def show_gestao_acoes():
                 col_check_ind, col_info, col_actions = st.columns([1, 6, 3])
                 
                 with col_check_ind:
-                    st.session_state.action_selection[acao_id] = st.checkbox(
-                        " ", 
-                        value=st.session_state.action_selection.get(acao_id, False), 
-                        key=f"select_{acao_id}",
-                        label_visibility="collapsed"
-                    )
+                    st.session_state.action_selection[acao_id] = st.checkbox(" ", value=st.session_state.action_selection.get(acao_id, False), key=f"select_{acao_id}", label_visibility="collapsed")
 
                 with col_info:
-                    cor = "green" if acao['pontuacao_efetiva'] > 0 else "red" if acao['pontuacao_efetiva'] < 0 else "gray"
+                    cor = "green" if acao.get('pontuacao_efetiva', 0) > 0 else "red" if acao.get('pontuacao_efetiva', 0) < 0 else "gray"
                     data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y %H:%M')
-                    st.markdown(f"**{acao.get('numero_interno', 'S/N')} - {acao.get('nome_guerra', 'N/A')}** em {data_formatada}")
-                    st.markdown(f"**Ação:** {acao['nome']} <span style='color:{cor}; font-weight:bold;'>({acao['pontuacao_efetiva']:+.1f} pts)</span>", unsafe_allow_html=True)
-                    st.caption(f"Descrição: {acao['descricao']}" if acao['descricao'] else "Sem descrição.")
+                    st.markdown(f"**{acao.get('numero_interno', 'S/N')} - {acao.get('nome_guerra', 'N/A (Aluno Apagado)')}** em {data_formatada}")
+                    st.markdown(f"**Ação:** {acao.get('nome','N/A')} <span style='color:{cor}; font-weight:bold;'>({acao.get('pontuacao_efetiva', 0):+.1f} pts)</span>", unsafe_allow_html=True)
+                    st.caption(f"Descrição: {acao.get('descricao')}" if pd.notna(acao.get('descricao')) else "Sem descrição.")
                 
                 with col_actions:
                     status_atual = acao.get('status', 'Pendente')
