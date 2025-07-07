@@ -374,7 +374,7 @@ def show_alunos():
             if uploaded_file is not None:
                 try:
                     new_alunos_df = pd.read_csv(uploaded_file, sep=';', dtype=str).fillna('')
-                    required_columns = ['numero_interno', 'nome_guerra', 'pelotao']
+                    required_columns = ['numero_interno']
                     if not all(col in new_alunos_df.columns for col in required_columns):
                         st.error(f"Erro: O ficheiro CSV deve conter as colunas obrigatórias: {', '.join(required_columns)}")
                     else:
