@@ -151,69 +151,75 @@ def show_gestao_acoes():
         
         if st.session_state.selected_student_id_gestao:
             st.divider()
-            aluno_selecionado = alunos_df[alunos_df['id'] == st.session_state.selected_student_id_gestao].iloc[0]
-            st.subheader(f"Passo 2: Registrar Ação para {aluno_selecionado['nome_guerra']}")
             
-            with st.form("form_nova_acao"):
-                c1, c2 = st.columns(2)
-                tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
-                positivas_df, neutras_df, negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome'), tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome'), tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
-                opcoes_finais, tipos_opcoes_map = [], {}
-                if not positivas_df.empty:
-                    opcoes_finais.append("--- AÇÕES POSITIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in positivas_df.iterrows()]
-                if not neutras_df.empty:
-                    opcoes_finais.append("--- AÇÕES NEUTRAS ---"); [opcoes_finais.append(f"{r['nome']} (0.0 pts)") or tipos_opcoes_map.update({f"{r['nome']} (0.0 pts)": r}) for _, r in neutras_df.iterrows()]
-                if not negativas_df.empty:
-                    opcoes_finais.append("--- AÇÕES NEGATIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in negativas_df.iterrows()]
+            # --- CORREÇÃO DO INDEXERROR ---
+            # Garante que a coluna 'id' seja do tipo texto para a comparação
+            alunos_df['id'] = alunos_df['id'].astype(str)
+            aluno_selecionado_df = alunos_df[alunos_df['id'] == st.session_state.selected_student_id_gestao]
+            
+            # Verifica se o dataframe resultante não está vazio antes de tentar acessá-lo
+            if not aluno_selecionado_df.empty:
+                aluno_selecionado = aluno_selecionado_df.iloc[0]
+                st.subheader(f"Passo 2: Registrar Ação para {aluno_selecionado['nome_guerra']}")
                 
-                tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_finais)
-                data = c2.date_input("Data e Hora da Ação", datetime.now())
-                descricao = st.text_area("Descrição/Justificativa (Opcional)")
+                with st.form("form_nova_acao"):
+                    c1, c2 = st.columns(2)
+                    tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
+                    positivas_df, neutras_df, negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome'), tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome'), tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
+                    opcoes_finais, tipos_opcoes_map = [], {}
+                    if not positivas_df.empty:
+                        opcoes_finais.append("--- AÇÕES POSITIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in positivas_df.iterrows()]
+                    if not neutras_df.empty:
+                        opcoes_finais.append("--- AÇÕES NEUTRAS ---"); [opcoes_finais.append(f"{r['nome']} (0.0 pts)") or tipos_opcoes_map.update({f"{r['nome']} (0.0 pts)": r}) for _, r in neutras_df.iterrows()]
+                    if not negativas_df.empty:
+                        opcoes_finais.append("--- AÇÕES NEGATIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in negativas_df.iterrows()]
+                    
+                    tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_finais)
+                    data = c2.date_input("Data e Hora da Ação", datetime.now())
+                    descricao = st.text_area("Descrição/Justificativa (Opcional)")
 
-                tipos_de_saude = ["ENFERMARIA", "HOSPITAL", "NAS", "DISPENSA MÉDICA", "SAÚDE"]
-                nome_acao_selecionada = ""
-                if tipo_selecionado_str and not tipo_selecionado_str.startswith("---"):
-                    nome_acao_selecionada = tipos_opcoes_map[tipo_selecionado_str]['nome']
-                
-                dispensado = False
-                if nome_acao_selecionada in tipos_de_saude:
-                    st.divider()
-                    st.markdown("##### Controle de Dispensa Médica")
-                    dispensado = st.toggle("Gerou dispensa médica?")
-                    if dispensado:
-                        col_d1, col_d2 = st.columns(2)
-                        data_inicio_dispensa = col_d1.date_input("Início da Dispensa", value=datetime.now().date())
-                        data_fim_dispensa = col_d2.date_input("Fim da Dispensa", value=datetime.now().date())
-                        tipo_dispensa = st.selectbox("Tipo de Dispensa", ["", "Total", "Parcial", "Para Esforço Físico", "Outro"])
-                
-                confirmacao_registro = st.checkbox("Confirmo que os dados estão corretos para o registo.")
+                    tipos_de_saude = ["ENFERMARIA", "HOSPITAL", "NAS", "DISPENSA MÉDICA", "SAÚDE"]
+                    nome_acao_selecionada = ""
+                    if tipo_selecionado_str and not tipo_selecionado_str.startswith("---"):
+                        nome_acao_selecionada = tipos_opcoes_map[tipo_selecionado_str]['nome']
+                    
+                    dispensado = False
+                    if nome_acao_selecionada in tipos_de_saude:
+                        st.divider()
+                        st.markdown("##### Controle de Dispensa Médica")
+                        dispensado = st.toggle("Gerou dispensa médica?")
+                        if dispensado:
+                            col_d1, col_d2 = st.columns(2)
+                            data_inicio_dispensa = col_d1.date_input("Início da Dispensa", value=datetime.now().date())
+                            data_fim_dispensa = col_d2.date_input("Fim da Dispensa", value=datetime.now().date())
+                            tipo_dispensa = st.selectbox("Tipo de Dispensa", ["", "Total", "Parcial", "Para Esforço Físico", "Outro"])
+                    
+                    confirmacao_registro = st.checkbox("Confirmo que os dados estão corretos para o registo.")
 
-                if st.form_submit_button("Registrar Ação"):
-                    if tipo_selecionado_str.startswith("---"): st.warning("Por favor, selecione um tipo de ação válido.")
-                    elif not confirmacao_registro: st.warning("Por favor, confirme que os dados estão corretos.")
-                    else:
-                        try:
-                            tipo_info = tipos_opcoes_map[tipo_selecionado_str]
-                            nova_acao = {
-                                'aluno_id': str(st.session_state.selected_student_id_gestao), 
-                                'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 
-                                'descricao': descricao, 'data': data.isoformat(), 
-                                'usuario': st.session_state.username, 'status': 'Pendente'
-                            }
-                            if nome_acao_selecionada in tipos_de_saude and dispensado:
-                                nova_acao['esta_dispensado'] = True
-                                nova_acao['periodo_dispensa_inicio'] = data_inicio_dispensa.isoformat()
-                                nova_acao['periodo_dispensa_fim'] = data_fim_dispensa.isoformat()
-                                nova_acao['tipo_dispensa'] = tipo_dispensa
-                            else:
-                                nova_acao['esta_dispensado'] = False
-                                nova_acao['periodo_dispensa_inicio'] = None
-                                nova_acao['periodo_dispensa_fim'] = None
-                                nova_acao['tipo_dispensa'] = None
-                            supabase.table("Acoes").insert(nova_acao).execute()
-                            st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!"); load_data.clear(); st.rerun()
-                        except Exception as e: 
-                            st.error(f"Erro ao registrar ação: {e}")
+                    if st.form_submit_button("Registrar Ação"):
+                        if tipo_selecionado_str.startswith("---"): st.warning("Por favor, selecione um tipo de ação válido.")
+                        elif not confirmacao_registro: st.warning("Por favor, confirme que os dados estão corretos.")
+                        else:
+                            try:
+                                tipo_info = tipos_opcoes_map[tipo_selecionado_str]
+                                nova_acao = {'aluno_id': str(st.session_state.selected_student_id_gestao), 'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 'descricao': descricao, 'data': data.isoformat(), 'usuario': st.session_state.username, 'status': 'Pendente'}
+                                if nome_acao_selecionada in tipos_de_saude and dispensado:
+                                    nova_acao['esta_dispensado'] = True
+                                    nova_acao['periodo_dispensa_inicio'] = data_inicio_dispensa.isoformat()
+                                    nova_acao['periodo_dispensa_fim'] = data_fim_dispensa.isoformat()
+                                    nova_acao['tipo_dispensa'] = tipo_dispensa
+                                else:
+                                    nova_acao['esta_dispensado'] = False
+                                    nova_acao['periodo_dispensa_inicio'] = None
+                                    nova_acao['periodo_dispensa_fim'] = None
+                                    nova_acao['tipo_dispensa'] = None
+                                supabase.table("Acoes").insert(nova_acao).execute()
+                                st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!"); load_data.clear(); st.rerun()
+                            except Exception as e: 
+                                st.error(f"Erro ao registrar ação: {e}")
+            else:
+                st.error("O aluno selecionado não foi encontrado. Por favor, realize a busca novamente.")
+                st.session_state.selected_student_id_gestao = None
         else:
             st.info("⬅️ Busque e selecione um aluno acima para registrar uma nova ação.")
     
@@ -245,7 +251,7 @@ def show_gestao_acoes():
         alunos_df['id'] = alunos_df['id'].astype(str)
         df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'numero_interno', 'nome_guerra', 'pelotao', 'nome_completo']], left_on='aluno_id', right_on='id', how='left')
         df_display['nome_guerra'].fillna('N/A (Aluno Apagado)', inplace=True)
-
+    
     df_filtrado_final = df_display.copy()
     if not df_filtrado_final.empty:
         if filtro_pelotao != "Todos":
