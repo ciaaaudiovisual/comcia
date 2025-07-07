@@ -286,6 +286,11 @@ def show_alunos():
             soma_pontos_por_aluno.rename(columns={'pontuacao_efetiva': 'soma_pontos_acoes'}, inplace=True)
 
     if not soma_pontos_por_aluno.empty:
+        # --- CORREÇÃO APLICADA AQUI ---
+        # Garante que as colunas de junção tenham o mesmo tipo (string) para evitar o ValueError.
+        alunos_df['id'] = alunos_df['id'].astype(str)
+        soma_pontos_por_aluno['aluno_id'] = soma_pontos_por_aluno['aluno_id'].astype(str)
+
         alunos_df = pd.merge(alunos_df, soma_pontos_por_aluno, left_on='id', right_on='aluno_id', how='left')
     else:
         alunos_df['soma_pontos_acoes'] = 0
