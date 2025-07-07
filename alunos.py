@@ -278,11 +278,12 @@ def show_alunos():
 
     config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
     
-       if not acoes_df.empty:
+    if not acoes_df.empty:
         acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
         soma_pontos_por_aluno = acoes_com_pontos.groupby('aluno_id')['pontuacao_efetiva'].sum()
         
         # CORREÇÃO: Garante que ambas as chaves são do tipo string ANTES do mapeamento
+        # Isso protege o código independentemente do tipo de dado que vem do BD.
         alunos_df['id'] = alunos_df['id'].astype(str)
         soma_pontos_por_aluno.index = soma_pontos_por_aluno.index.astype(str)
         
