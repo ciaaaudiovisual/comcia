@@ -287,10 +287,8 @@ def show_alunos():
 
     if not soma_pontos_por_aluno.empty:
         # --- CORREÇÃO APLICADA AQUI ---
-        # Garante que as colunas de junção tenham o mesmo tipo (string) para evitar o ValueError.
         alunos_df['id'] = alunos_df['id'].astype(str)
         soma_pontos_por_aluno['aluno_id'] = soma_pontos_por_aluno['aluno_id'].astype(str)
-
         alunos_df = pd.merge(alunos_df, soma_pontos_por_aluno, left_on='id', right_on='aluno_id', how='left')
     else:
         alunos_df['soma_pontos_acoes'] = 0
@@ -379,9 +377,11 @@ def show_alunos():
             if uploaded_file is not None:
                 try:
                     new_alunos_df = pd.read_csv(uploaded_file, sep=';', dtype=str).fillna('')
+                    
                     required_columns = ['numero_interno']
+                    
                     if not all(col in new_alunos_df.columns for col in required_columns):
-                        st.error(f"Erro: O ficheiro CSV deve conter as colunas obrigatórias: {', '.join(required_columns)}")
+                        st.error(f"Erro: O ficheiro CSV deve conter pelo menos a coluna obrigatória: {', '.join(required_columns)}")
                     else:
                         records_to_upsert = new_alunos_df.to_dict(orient='records')
                         with st.spinner("A processar e importar alunos..."):
