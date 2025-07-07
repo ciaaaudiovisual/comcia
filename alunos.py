@@ -278,19 +278,20 @@ def show_alunos():
 
     config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
     
+    soma_pontos_por_aluno = pd.DataFrame()
     if not acoes_df.empty:
         acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
-        soma_pontos_por_aluno = acoes_com_pontos.groupby('aluno_id')['pontuacao_efetiva'].sum()
-        
-        alunos_df['id'] = alunos_df['id'].astype(str)
-        soma_pontos_por_aluno.index = soma_pontos_por_aluno.index.astype(str)
-        
-        alunos_df['soma_pontos_acoes'] = alunos_df['id'].map(soma_pontos_por_aluno)
+        if not acoes_com_pontos.empty:
+            soma_pontos_por_aluno = acoes_com_pontos.groupby('aluno_id')['pontuacao_efetiva'].sum().reset_index()
+            soma_pontos_por_aluno.rename(columns={'pontuacao_efetiva': 'soma_pontos_acoes'}, inplace=True)
+
+    if not soma_pontos_por_aluno.empty:
+        alunos_df = pd.merge(alunos_df, soma_pontos_por_aluno, left_on='id', right_on='aluno_id', how='left')
     else:
         alunos_df['soma_pontos_acoes'] = 0
-
-    alunos_df['soma_pontos_acoes'] = alunos_df['soma_pontos_acoes'].fillna(0)
     
+    alunos_df['soma_pontos_acoes'] = alunos_df['soma_pontos_acoes'].fillna(0)
+
     alunos_df['conceito_final_calculado'] = alunos_df.apply(
         lambda row: calcular_conceito_final(
             row['soma_pontos_acoes'],
@@ -372,21 +373,10 @@ def show_alunos():
             uploaded_file = st.file_uploader("Escolha um ficheiro CSV", type="csv")
             if uploaded_file is not None:
                 try:
-                    new_alunos_df = pd.read_csv(uploaded_file, sep=';', dtype=str)
-
-                    if 'data_nascimento' in new_alunos_df.columns:
-                        new_alunos_df['data_nascimento'] = pd.to_datetime(
-                            new_alunos_df['data_nascimento'], 
-                            format='%d/%m/%y', 
-                            errors='coerce'
-                        ).dt.strftime('%Y-%m-%d')
-                    
-                    new_alunos_df.fillna('', inplace=True)
-                    
-                    required_columns = ['numero_interno']
-                    
+                    new_alunos_df = pd.read_csv(uploaded_file, sep=';', dtype=str).fillna('')
+                    required_columns = ['numero_interno', 'nome_guerra', 'pelotao']
                     if not all(col in new_alunos_df.columns for col in required_columns):
-                        st.error(f"Erro: O ficheiro CSV deve conter pelo menos a coluna obrigatória: {', '.join(required_columns)}")
+                        st.error(f"Erro: O ficheiro CSV deve conter as colunas obrigatórias: {', '.join(required_columns)}")
                     else:
                         records_to_upsert = new_alunos_df.to_dict(orient='records')
                         with st.spinner("A processar e importar alunos..."):
