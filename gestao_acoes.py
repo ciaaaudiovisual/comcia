@@ -225,7 +225,7 @@ def show_gestao_acoes():
     
     st.divider()
     
-    st.subheader("Filtros de Visualização")
+st.subheader("Filtros de Visualização")
     
     col_filtros1, col_filtros2 = st.columns(2)
     with col_filtros1:
@@ -275,7 +275,7 @@ def show_gestao_acoes():
 
     st.divider()
 
-    st.subheader("Fila de Revisão e Ações")
+st.subheader("Fila de Revisão e Ações")
 
     if df_filtrado_final.empty:
         st.info("Nenhuma ação encontrada para os filtros selecionados.")
@@ -337,6 +337,3 @@ def show_gestao_acoes():
                             if st.form_submit_button("🗑️ Arquivar", use_container_width=True):
                                 supabase.table("Acoes").update({'status': 'Arquivado'}).eq('id', acao_id).execute()
                                 load_data.clear(); st.rerun()
-
-    st.divider()
-    render_export_section(acoes_com_pontos, alunos_df, filtro_pelotao, filtro_aluno)
