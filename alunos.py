@@ -251,6 +251,9 @@ def informacoes_dialog(aluno, supabase):
             else:
                 st.warning("Você não tem permissão para editar dados.")
 
+# ==============================================================================
+# PÁGINA PRINCIPAL
+# ==============================================================================
 def show_alunos():
     st.title("Gestão de Alunos")
     supabase = init_supabase_client()
@@ -275,45 +278,19 @@ def show_alunos():
 
     config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
     
-    soma_pontos_por_aluno = pd.DataFrame()
     if not acoes_df.empty:
         acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
-        if not acoes_com_pontos.empty:
-            soma_pontos_por_aluno = acoes_com_pontos.groupby('aluno_id')['pontuacao_efetiva'].sum().reset_index()
-            soma_pontos_por_aluno.rename(columns={'pontuacao_efetiva': 'soma_pontos_acoes'}, inplace=True)
-
-    if not soma_pontos_por_aluno.empty:
-        # ======================================================================
-        # --- INÍCIO DA CORREÇÃO ROBUSTA ---
-        # ======================================================================
-
-        # 1. Limpeza rigorosa da tabela de Alunos
-        # Remove linhas onde o 'id' é nulo ou não pode ser convertido para número
-        alunos_df.dropna(subset=['id'], inplace=True)
-        alunos_df['id'] = pd.to_numeric(alunos_df['id'], errors='coerce')
-        alunos_df.dropna(subset=['id'], inplace=True)
-
-        # 2. Limpeza rigorosa da tabela de soma de pontos
-        # Remove linhas onde o 'aluno_id' é nulo ou não pode ser convertido para número
-        soma_pontos_por_aluno.dropna(subset=['aluno_id'], inplace=True)
-        soma_pontos_por_aluno['aluno_id'] = pd.to_numeric(soma_pontos_por_aluno['aluno_id'], errors='coerce')
-        soma_pontos_por_aluno.dropna(subset=['aluno_id'], inplace=True)
-
-        # 3. Garante que as colunas de junção tenham o mesmo tipo (texto) para a junção.
-        alunos_df['id'] = alunos_df['id'].astype(int).astype(str)
-        soma_pontos_por_aluno['aluno_id'] = soma_pontos_por_aluno['aluno_id'].astype(int).astype(str)
+        soma_pontos_por_aluno = acoes_com_pontos.groupby('aluno_id')['pontuacao_efetiva'].sum()
         
-        # 4. Realiza o merge com os dados já limpos e com tipos garantidamente compatíveis
-        alunos_df = pd.merge(alunos_df, soma_pontos_por_aluno, left_on='id', right_on='aluno_id', how='left')
+        alunos_df['id'] = alunos_df['id'].astype(str)
+        soma_pontos_por_aluno.index = soma_pontos_por_aluno.index.astype(str)
         
-        # ======================================================================
-        # --- FIM DA CORREÇÃO ---
-        # ======================================================================
+        alunos_df['soma_pontos_acoes'] = alunos_df['id'].map(soma_pontos_por_aluno)
     else:
         alunos_df['soma_pontos_acoes'] = 0
-    
-    alunos_df['soma_pontos_acoes'] = alunos_df['soma_pontos_acoes'].fillna(0)
 
+    alunos_df['soma_pontos_acoes'] = alunos_df['soma_pontos_acoes'].fillna(0)
+    
     alunos_df['conceito_final_calculado'] = alunos_df.apply(
         lambda row: calcular_conceito_final(
             row['soma_pontos_acoes'],
@@ -395,7 +372,16 @@ def show_alunos():
             uploaded_file = st.file_uploader("Escolha um ficheiro CSV", type="csv")
             if uploaded_file is not None:
                 try:
-                    new_alunos_df = pd.read_csv(uploaded_file, sep=';', dtype=str).fillna('')
+                    new_alunos_df = pd.read_csv(uploaded_file, sep=';', dtype=str)
+
+                    if 'data_nascimento' in new_alunos_df.columns:
+                        new_alunos_df['data_nascimento'] = pd.to_datetime(
+                            new_alunos_df['data_nascimento'], 
+                            format='%d/%m/%y', 
+                            errors='coerce'
+                        ).dt.strftime('%Y-%m-%d')
+                    
+                    new_alunos_df.fillna('', inplace=True)
                     
                     required_columns = ['numero_interno']
                     
