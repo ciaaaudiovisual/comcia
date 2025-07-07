@@ -254,6 +254,64 @@ def informacoes_dialog(aluno, supabase):
 # ==============================================================================
 # PÁGINA PRINCIPAL
 # ==============================================================================
+Olá. O erro ValueError persistindo na mesma linha de merge indica que há um problema mais sutil com os dados nas colunas de ID que a simples conversão de tipo não está resolvendo.
+
+A causa mais provável é que existem registros na sua tabela Acoes onde o campo aluno_id é nulo (vazio). Quando o código tenta agrupar e juntar esses dados, o valor nulo causa uma incompatibilidade que gera o ValueError.
+
+A Solução
+
+A solução é remover essas ações "órfãs" (sem aluno) da análise antes de tentar fazer a junção. Vamos adicionar uma linha para limpar esses dados inválidos.
+
+Abaixo está o código completo do arquivo alunos.py. A correção foi feita dentro da função show_alunos.
+
+Arquivo: alunos.py (Versão Corrigida)
+
+Python
+
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+from database import load_data, init_supabase_client
+from auth import check_permission
+import math
+import re 
+
+# ==============================================================================
+# FUNÇÕES DE APOIO E CÁLCULO (Sem alterações)
+# ==============================================================================
+def create_csv_template():
+    # ... (código sem alterações)
+    pass
+
+def calcular_pontuacao_efetiva(acoes_df: pd.DataFrame, tipos_acao_df: pd.DataFrame, config_df: pd.DataFrame) -> pd.DataFrame:
+    # ... (código sem alterações)
+    pass
+
+def calcular_conceito_final(soma_pontos_acoes: float, media_academica_aluno: float, todos_alunos_df: pd.DataFrame, config_dict: dict) -> float:
+    # ... (código sem alterações)
+    pass
+
+# ==============================================================================
+# DIÁLOGOS (Sem alterações)
+# ==============================================================================
+@st.dialog("Registrar Nova Ação")
+def registrar_acao_dialog(aluno_id, aluno_nome, supabase):
+    # ... (código sem alterações)
+    pass
+
+@st.dialog("Histórico de Ações")
+def historico_dialog(aluno, acoes_df, tipos_acao_df, config_df):
+    # ... (código sem alterações)
+    pass
+
+@st.dialog("Informações do Aluno")
+def informacoes_dialog(aluno, supabase):
+    # ... (código sem alterações)
+    pass
+
+# ==============================================================================
+# PÁGINA PRINCIPAL (Com a correção aplicada)
+# ==============================================================================
 def show_alunos():
     st.title("Gestão de Alunos")
     supabase = init_supabase_client()
@@ -287,8 +345,14 @@ def show_alunos():
 
     if not soma_pontos_por_aluno.empty:
         # --- CORREÇÃO APLICADA AQUI ---
+        # 1. Remove quaisquer ações que tenham um aluno_id nulo ou inválido.
+        soma_pontos_por_aluno.dropna(subset=['aluno_id'], inplace=True)
+
+        # 2. Garante que as colunas de junção tenham o mesmo tipo (string).
         alunos_df['id'] = alunos_df['id'].astype(str)
         soma_pontos_por_aluno['aluno_id'] = soma_pontos_por_aluno['aluno_id'].astype(str)
+        
+        # 3. Realiza o merge com os dados já limpos.
         alunos_df = pd.merge(alunos_df, soma_pontos_por_aluno, left_on='id', right_on='aluno_id', how='left')
     else:
         alunos_df['soma_pontos_acoes'] = 0
