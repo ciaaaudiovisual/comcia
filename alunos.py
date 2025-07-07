@@ -278,20 +278,20 @@ def show_alunos():
 
     config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
     
-    soma_pontos_por_aluno = pd.DataFrame()
+    # --- LÓGICA CORRIGIDA COM O MÉTODO .map() ---
     if not acoes_df.empty:
         acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
-        if not acoes_com_pontos.empty:
-            soma_pontos_por_aluno = acoes_com_pontos.groupby('aluno_id')['pontuacao_efetiva'].sum().reset_index()
-            soma_pontos_por_aluno.rename(columns={'pontuacao_efetiva': 'soma_pontos_acoes'}, inplace=True)
-
-    if not soma_pontos_por_aluno.empty:
-        alunos_df = pd.merge(alunos_df, soma_pontos_por_aluno, left_on='id', right_on='aluno_id', how='left')
+        soma_pontos_por_aluno = acoes_com_pontos.groupby('aluno_id')['pontuacao_efetiva'].sum()
+        
+        alunos_df['id'] = alunos_df['id'].astype(str)
+        soma_pontos_por_aluno.index = soma_pontos_por_aluno.index.astype(str)
+        
+        alunos_df['soma_pontos_acoes'] = alunos_df['id'].map(soma_pontos_por_aluno)
     else:
         alunos_df['soma_pontos_acoes'] = 0
-    
-    alunos_df['soma_pontos_acoes'] = alunos_df['soma_pontos_acoes'].fillna(0)
 
+    alunos_df['soma_pontos_acoes'] = alunos_df['soma_pontos_acoes'].fillna(0)
+    
     alunos_df['conceito_final_calculado'] = alunos_df.apply(
         lambda row: calcular_conceito_final(
             row['soma_pontos_acoes'],
