@@ -367,45 +367,30 @@ def show_alunos():
             
             st.divider()
         
+  
             st.subheader("Importar Alunos em Massa (CSV)")
+            st.info("Use o modelo para garantir a formatação correta. A importação irá ATUALIZAR alunos existentes (pelo Nº Interno) e ADICIONAR novos.")
+            csv_template = create_csv_template()
+            st.download_button(label="Baixar Modelo CSV", data=csv_template, file_name="modelo_alunos.csv", mime="text/csv")
             uploaded_file = st.file_uploader("Escolha um ficheiro CSV", type="csv")
             if uploaded_file is not None:
                 try:
-                    # Lê o CSV e verifica o delimitador
-                    df_import = pd.read_csv(uploaded_file, sep=';')
+                    new_alunos_df = pd.read_csv(uploaded_file, sep=';', dtype=str).fillna('')
                     
-                    # --- LÓGICA DE VALIDAÇÃO REFORMULADA ---
-                    colunas_obrigatorias_criacao = {'numero_interno'}
-                    colunas_presentes = set(df_import.columns)
-
-                    # Verifica se é uma operação de criação válida
-                    is_criacao_valida = colunas_obrigatorias_criacao.issubset(colunas_presentes)
-                    
-                    # Verifica se é uma operação de atualização válida (tem um identificador + pelo menos 1 outro campo)
-                    tem_id = 'id' in colunas_presentes or 'numero_interno' in colunas_presentes
-                    tem_dados_para_atualizar = len(colunas_presentes) > 1
-                    is_atualizacao_valida = tem_id and tem_dados_para_atualizar
-
-                    if not is_criacao_valida and not is_atualizacao_valida:
-                        st.error("Erro: O ficheiro CSV é inválido. Para criar novos alunos, ele deve conter as colunas: `numero_interno`, `nome_guerra`, `pelotao`. Para atualizar, deve conter `id` ou `numero_interno` e os campos a serem alterados.")
+                    # Verifica apenas se o ficheiro tem colunas, sem exigir nomes específicos
+                    if new_alunos_df.empty or len(new_alunos_df.columns) == 0:
+                        st.error("Erro: O ficheiro CSV está vazio ou formatado incorretamente.")
                     else:
-                        # Converte todas as colunas para string para evitar erros de tipo, exceto as que devem ser numéricas
-                        for col in df_import.columns:
-                            if col not in ['id']: # Adicione outras colunas numéricas se houver
-                                df_import[col] = df_import[col].astype(str)
-
-                        records_to_upsert = df_import.to_dict('records')
-                        
-                        # Define a chave de conflito com base nas colunas presentes
-                        conflict_key = 'id' if 'id' in colunas_presentes else 'numero_interno'
-
-                        supabase.table("Alunos").upsert(records_to_upsert, on_conflict=conflict_key).execute()
-                        st.success("Dados importados com sucesso!")
+                        records_to_upsert = new_alunos_df.to_dict(orient='records')
+                        with st.spinner("A processar e importar alunos..."):
+                            # A chave 'numero_interno' é mantida pois é a regra de negócio da aplicação
+                            supabase.table("Alunos").upsert(records_to_upsert, on_conflict='numero_interno').execute()
+                        st.success(f"Importação concluída! {len(records_to_upsert)} registos foram processados.")
                         load_data.clear()
                         st.rerun()
-
                 except Exception as e:
-                    st.error(f"Falha ao importar dados: {e}")
+                    st.error(f"Ocorreu um erro ao processar o ficheiro: {e}")
+                    st.warning("Verifique se o seu ficheiro CSV usa o separador ';' e a codificação UTF-8.")
     st.divider()
     
     ITEMS_PER_PAGE = 30
