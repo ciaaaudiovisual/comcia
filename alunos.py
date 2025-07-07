@@ -375,7 +375,7 @@ def show_alunos():
                     df_import = pd.read_csv(uploaded_file, sep=';')
                     
                     # --- LÓGICA DE VALIDAÇÃO REFORMULADA ---
-                    colunas_obrigatorias_criacao = {'numero_interno', 'nome_guerra', 'pelotao'}
+                    colunas_obrigatorias_criacao = {'numero_interno'}
                     colunas_presentes = set(df_import.columns)
 
                     # Verifica se é uma operação de criação válida
