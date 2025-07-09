@@ -14,10 +14,17 @@ def processar_texto_com_regras(texto: str, alunos_df: pd.DataFrame, tipos_acao_d
     nomes_alunos_map = pd.Series(alunos_df.id.values, index=alunos_df.nome_guerra).to_dict()
     
     gatilhos_acoes = {
-        'Atraso na Formação': ['atraso', 'atrasado', 'chegou tarde'],
-        'Uniforme Incompleto': ['uniforme incompleto', 'sem cobertura', 'não uniformizado'],
-        'Elogio Individual': ['elogio', 'parabéns', 'destacou-se', 'excelente'],
-        'Atitude Positiva': ['ajudou', 'voluntariou-se', 'proativo', 'iniciativa']
+        'Atraso na Formação': ['atraso', 'atrasado', 'tarde', 'apresentou-se', 'formatura'],
+        'Dispensa Médica': ['dispensa', 'médica', 'dispensado', 'atestado', 'licença', 'nas'],
+        'Elogio Individual': ['elogio', 'parabéns', 'destacou-se', 'excelente', 'desempenho'],
+        'Falta': ['falta', 'faltou', 'ausente', 'não compareceu', 'ausência'],
+        'Falta de Punição': ['punição', 'falta', 'não cumpriu', 'advertência', 'repreensão'],
+        'Formato de Presença': ['presença', 'instrução', 'verificação', 'formatura', 'atividade'],
+        'Não Tirou Serviço': ['serviço', 'não tirou', 'faltou ao serviço', 'escala'],
+        'Punição de Advertência': ['advertência', 'advertido', 'repreensão', 'punição'],
+        'Punição de Repreensão': ['repreensão', 'repreendido', 'punição'],
+        'Serviço de Dia': ['serviço', 'escala', 'guarnição', 'dia'],
+        'Uniforme Incompleto': ['uniforme', 'incompleto', 'cobertura', 'coturno', 'farda']
     }
 
     for sentenca in sentencas:
