@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 from database import load_data, init_supabase_client
 from auth import check_permission
-from alunos import calcular_pontuacao_efetiva
+from acoes import calcular_pontuacao_efetiva
 from io import BytesIO
 import zipfile
 
@@ -152,12 +152,9 @@ def show_gestao_acoes():
         if st.session_state.selected_student_id_gestao:
             st.divider()
             
-            # --- CORREÇÃO DO INDEXERROR ---
-            # Garante que a coluna 'id' seja do tipo texto para a comparação
             alunos_df['id'] = alunos_df['id'].astype(str)
             aluno_selecionado_df = alunos_df[alunos_df['id'] == st.session_state.selected_student_id_gestao]
             
-            # Verifica se o dataframe resultante não está vazio antes de tentar acessá-lo
             if not aluno_selecionado_df.empty:
                 aluno_selecionado = aluno_selecionado_df.iloc[0]
                 st.subheader(f"Passo 2: Registrar Ação para {aluno_selecionado['nome_guerra']}")
@@ -225,7 +222,7 @@ def show_gestao_acoes():
     
     st.divider()
     
-st.subheader("Filtros de Visualização")
+    st.subheader("Filtros de Visualização")
     
     col_filtros1, col_filtros2 = st.columns(2)
     with col_filtros1:
@@ -275,7 +272,7 @@ st.subheader("Filtros de Visualização")
 
     st.divider()
 
-st.subheader("Fila de Revisão e Ações")
+    st.subheader("Fila de Revisão e Ações")
 
     if df_filtrado_final.empty:
         st.info("Nenhuma ação encontrada para os filtros selecionados.")
@@ -337,3 +334,6 @@ st.subheader("Fila de Revisão e Ações")
                             if st.form_submit_button("🗑️ Arquivar", use_container_width=True):
                                 supabase.table("Acoes").update({'status': 'Arquivado'}).eq('id', acao_id).execute()
                                 load_data.clear(); st.rerun()
+
+    st.divider()
+    render_export_section(acoes_com_pontos, alunos_df, filtro_pelotao, filtro_aluno)
