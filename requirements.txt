@@ -11,3 +11,5 @@ openpyxl
 opencv-python 
 pyzbar
 supabase
+gTTS              
+streamlit-webrtc
