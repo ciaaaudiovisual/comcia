@@ -1,5 +1,5 @@
 streamlit
-pandas==2.2.0
+pandas
 numpy
 gspread
 google-auth-oauthlib
