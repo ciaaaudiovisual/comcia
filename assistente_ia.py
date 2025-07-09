@@ -6,71 +6,69 @@ from st_audiorec import st_audiorec
 import os
 import time
 
-
-def show_assistente_ia():
-    st.success("Arquivo importado com sucesso!")
 # ==============================================================================
 # "IA" A CUSTO ZERO: FUNÇÕES DE PROCESSAMENTO DE TEXTO
 # ==============================================================================
 
 def processar_texto_com_regras(texto: str, alunos_df: pd.DataFrame, tipos_acao_df: pd.DataFrame) -> list:
-    """
-    Processa um texto usando regras e palavras-chave para extrair ações e IDs.
-    """
-    sugestoes = []
-    sentencas = texto.split('.')
-    
-    nomes_alunos_map = pd.Series(alunos_df.id.values, index=alunos_df.nome_guerra).to_dict()
-    
-    gatilhos_acoes = {
-        'Atraso na Formação': ['atraso', 'atrasado', 'tarde', 'apresentou-se', 'formatura'],
-        'Dispensa Médica': ['dispensa', 'médica', 'dispensado', 'atestado', 'licença', 'nas'],
-        'Elogio Individual': ['elogio', 'parabéns', 'destacou-se', 'excelente', 'desempenho'],
-        'Falta': ['falta', 'faltou', 'ausente', 'não compareceu', 'ausência'],
-        'Falta de Punição': ['punição', 'falta', 'não cumpriu', 'advertência', 'repreensão'],
-        'Formato de Presença': ['presença', 'instrução', 'verificação', 'formatura', 'atividade'],
-        'Não Tirou Serviço': ['serviço', 'não tirou', 'faltou ao serviço', 'escala'],
-        'Punição de Advertência': ['advertência', 'advertido', 'repreensão', 'punição'],
-        'Punição de Repreensão': ['repreensão', 'repreendido', 'punição'],
-        'Serviço de Dia': ['serviço', 'escala', 'guarnição', 'dia'],
-        'Uniforme Incompleto': ['uniforme', 'incompleto', 'cobertura', 'coturno', 'farda']
-    }
+	"""
+	Processa um texto usando regras e palavras-chave para extrair ações e IDs.
+	"""
+	sugestoes = []
+	sentencas = texto.split('.')
+	
+	nomes_alunos_map = pd.Series(alunos_df.id.values, index=alunos_df.nome_guerra).to_dict()
+	
+	gatilhos_acoes = {
+		'Atraso na Formação': ['atraso', 'atrasado', 'tarde', 'apresentou-se', 'formatura'],
+		'Dispensa Médica': ['dispensa', 'médica', 'dispensado', 'atestado', 'licença', 'nas'],
+		'Elogio Individual': ['elogio', 'parabéns', 'destacou-se', 'excelente', 'desempenho'],
+		'Falta': ['falta', 'faltou', 'ausente', 'não compareceu', 'ausência'],
+		'Falta de Punição': ['punição', 'falta', 'não cumpriu', 'advertência', 'repreensão'],
+		'Formato de Presença': ['presença', 'instrução', 'verificação', 'formatura', 'atividade'],
+		'Não Tirou Serviço': ['serviço', 'não tirou', 'faltou ao serviço', 'escala'],
+		'Punição de Advertência': ['advertência', 'advertido', 'repreensão', 'punição'],
+		'Punição de Repreensão': ['repreensão', 'repreendido', 'punição'],
+		'Serviço de Dia': ['serviço', 'escala', 'guarnição', 'dia'],
+		'Uniforme Incompleto': ['uniforme', 'incompleto', 'cobertura', 'coturno', 'farda']
+	}
 
-    for sentenca in sentencas:
-        if not sentenca.strip():
-            continue
+	for sentenca in sentencas:
+		if not sentenca.strip():
+			continue
 
-        aluno_encontrado_id = None
-        aluno_encontrado_nome = None
-        acao_encontrada = None
+		aluno_encontrado_id = None
+		aluno_encontrado_nome = None
+		acao_encontrada = None
 
-        for nome, aluno_id in nomes_alunos_map.items():
-            if nome.lower() in sentenca.lower():
-                aluno_encontrado_id = aluno_id
-                aluno_encontrado_nome = nome
-                break
-        
-        if aluno_encontrado_id:
-            for tipo_acao, gatilhos in gatilhos_acoes.items():
-                for gatilho in gatilhos:
-                    if gatilho in sentenca.lower():
-                        acao_encontrada = tipo_acao
-                        break
-                if acao_encontrada:
-                    break
-        
-        if aluno_encontrado_id and acao_encontrada:
-            sugestao = {
-                'aluno_id': str(aluno_encontrado_id),
-                'nome_guerra': aluno_encontrado_nome,
-                'tipo_acao': acao_encontrada,
-                'descricao': sentenca.strip() + '.',
-                'data': datetime.now().date()
-            }
-            sugestoes.append(sugestao)
-            
-    return sugestoes
+		for nome, aluno_id in nomes_alunos_map.items():
+			if nome.lower() in sentenca.lower():
+				aluno_encontrado_id = aluno_id
+				aluno_encontrado_nome = nome
+				break
+		
+		if aluno_encontrado_id:
+			for tipo_acao, gatilhos in gatilhos_acoes.items():
+				for gatilho in gatilhos:
+					if gatilho in sentenca.lower():
+						acao_encontrada = tipo_acao
+						break
+				if acao_encontrada:
+					break
+		
+		if aluno_encontrado_id and acao_encontrada:
+			sugestao = {
+				'aluno_id': str(aluno_encontrado_id),
+				'nome_guerra': aluno_encontrado_nome,
+				'tipo_acao': acao_encontrada,
+				'descricao': sentenca.strip() + '.',
+				'data': datetime.now().date()
+			}
+			sugestoes.append(sugestao)
+			
+	return sugestoes
 
+# <<< MUDANÇA: A função agora recebe o CAMINHO DO ARQUIVO
 def transcrever_audio_para_texto(caminho_do_arquivo: str) -> str:
     """
     SIMULAÇÃO: Numa implementação real, esta função usaria um modelo de Speech-to-Text 
@@ -91,7 +89,7 @@ def transcrever_audio_para_texto(caminho_do_arquivo: str) -> str:
     st.toast("Áudio transcrito com sucesso!", icon="✅")
     return "O aluno GIDEÃO apresentou-se com o uniforme incompleto. Elogio o aluno PEREIRA pela sua atitude proativa."
 
-# ==============================================================================
+# ==============================================================
 # PÁGINA PRINCIPAL DA ABA DE IA (VERSÃO ROBUSTA COM ARQUIVO)
 # ==============================================================================
 def show_assistente_ia():
@@ -115,7 +113,7 @@ def show_assistente_ia():
     # --- PASSO 1: GRAVAÇÃO E ARMAZENAMENTO DO ÁUDIO ---
     st.subheader("Passo 1: Grave o Relato de Voz")
 
-    # Uso do st_audiorec
+    # <<< MUDANÇA PRINCIPAL: Uso do st_audiorec
     # Este componente renderiza um gravador de áudio e retorna os bytes do arquivo .wav
     audio_bytes = st_audiorec()
 
@@ -167,6 +165,7 @@ def show_assistente_ia():
                     st.warning("Nenhuma ação ou aluno conhecido foi identificado no texto.")
         else:
             st.warning("Não há texto para ser analisado.")
+
 
     st.divider()
 
