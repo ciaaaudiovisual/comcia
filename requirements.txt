@@ -4,13 +4,13 @@ gspread
 google-auth-oauthlib
 plotly
 google-api-python-client
-blinker==1.9.0
+blinker
 tenacity
 xlsxwriter
 openpyxl
-opencv-python 
+opencv-python
 pyzbar
 supabase
-gTTS              
+gTTS
 streamlit-webrtc
 st_audiorec
