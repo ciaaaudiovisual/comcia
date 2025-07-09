@@ -3,193 +3,146 @@ import pandas as pd
 from datetime import datetime
 from database import load_data, init_supabase_client
 from st_audiorec import st_audiorec
-import os
-import time
+import requests
+import google.generativeai as genai
+import json
+
+# URL da API do modelo Whisper no Hugging Face
+WHISPER_API_URL = "https://api-inference.huggingface.co/models/openai/whisper-large-v3"
 
 # ==============================================================================
-# "IA" A CUSTO ZERO: FUNÇÕES DE PROCESSAMENTO DE TEXTO
+# "IA" A CUSTO ZERO: FUNÇÕES DE PROCESSAMENTO
 # ==============================================================================
 
-def processar_texto_com_regras(texto: str, alunos_df: pd.DataFrame, tipos_acao_df: pd.DataFrame) -> list:
-	"""
-	Processa um texto usando regras e palavras-chave para extrair ações e IDs.
-	"""
-	sugestoes = []
-	sentencas = texto.split('.')
-	
-	nomes_alunos_map = pd.Series(alunos_df.id.values, index=alunos_df.nome_guerra).to_dict()
-	
-	gatilhos_acoes = {
-		'Atraso na Formação': ['atraso', 'atrasado', 'tarde', 'apresentou-se', 'formatura'],
-		'Dispensa Médica': ['dispensa', 'médica', 'dispensado', 'atestado', 'licença', 'nas'],
-		'Elogio Individual': ['elogio', 'parabéns', 'destacou-se', 'excelente', 'desempenho'],
-		'Falta': ['falta', 'faltou', 'ausente', 'não compareceu', 'ausência'],
-		'Falta de Punição': ['punição', 'falta', 'não cumpriu', 'advertência', 'repreensão'],
-		'Formato de Presença': ['presença', 'instrução', 'verificação', 'formatura', 'atividade'],
-		'Não Tirou Serviço': ['serviço', 'não tirou', 'faltou ao serviço', 'escala'],
-		'Punição de Advertência': ['advertência', 'advertido', 'repreensão', 'punição'],
-		'Punição de Repreensão': ['repreensão', 'repreendido', 'punição'],
-		'Serviço de Dia': ['serviço', 'escala', 'guarnição', 'dia'],
-		'Uniforme Incompleto': ['uniforme', 'incompleto', 'cobertura', 'coturno', 'farda']
-	}
-
-	for sentenca in sentencas:
-		if not sentenca.strip():
-			continue
-
-		aluno_encontrado_id = None
-		aluno_encontrado_nome = None
-		acao_encontrada = None
-
-		for nome, aluno_id in nomes_alunos_map.items():
-			if nome.lower() in sentenca.lower():
-				aluno_encontrado_id = aluno_id
-				aluno_encontrado_nome = nome
-				break
-		
-		if aluno_encontrado_id:
-			for tipo_acao, gatilhos in gatilhos_acoes.items():
-				for gatilho in gatilhos:
-					if gatilho in sentenca.lower():
-						acao_encontrada = tipo_acao
-						break
-				if acao_encontrada:
-					break
-		
-		if aluno_encontrado_id and acao_encontrada:
-			sugestao = {
-				'aluno_id': str(aluno_encontrado_id),
-				'nome_guerra': aluno_encontrado_nome,
-				'tipo_acao': acao_encontrada,
-				'descricao': sentenca.strip() + '.',
-				'data': datetime.now().date()
-			}
-			sugestoes.append(sugestao)
-			
-	return sugestoes
-
-# <<< MUDANÇA: A função agora recebe o CAMINHO DO ARQUIVO
-def transcrever_audio_para_texto(caminho_do_arquivo: str) -> str:
+def transcrever_audio_para_texto(audio_bytes: bytes) -> str:
     """
-    SIMULAÇÃO: Numa implementação real, esta função usaria um modelo de Speech-to-Text 
-    (como o Whisper) para processar o ARQUIVO DE ÁUDIO.
+    Envia os bytes de áudio para a API do Whisper no Hugging Face e retorna o texto.
     """
-    if not os.path.exists(caminho_do_arquivo):
-        st.error("Arquivo de áudio não encontrado.")
-        return ""
+    try:
+        api_key = st.secrets["huggingface"]["api_key"]
+        headers = {"Authorization": f"Bearer {api_key}"}
         
-    st.toast("Arquivo de áudio recebido. Iniciando transcrição...", icon="📂")
-    
-    # Simula o tempo de processamento da IA lendo o arquivo
-    with open(caminho_do_arquivo, 'rb') as f:
-        # Em um caso real, você passaria `f` ou o caminho do arquivo para o modelo de IA
-        audio_data = f.read()
+        response = requests.post(WHISPER_API_URL, headers=headers, data=audio_bytes)
+        
+        if response.status_code == 200:
+            resultado = response.json()
+            texto_transcrito = resultado.get("text", "")
+            st.toast("Áudio transcrito com sucesso pela IA!", icon="🎤")
+            return texto_transcrito.strip()
+        else:
+            st.error(f"Erro na API de transcrição (Whisper): {response.status_code} - {response.text}")
+            return ""
+    except Exception as e:
+        st.error(f"Ocorreu um erro ao conectar com a API de transcrição: {e}")
+        return ""
 
-    time.sleep(2) 
-    st.toast("Áudio transcrito com sucesso!", icon="✅")
-    return "O aluno GIDEÃO apresentou-se com o uniforme incompleto. Elogio o aluno PEREIRA pela sua atitude proativa."
+def analisar_relato_com_gemini(texto: str, alunos_df: pd.DataFrame, tipos_acao_df: pd.DataFrame) -> list:
+    """
+    Envia o texto para a API do Gemini e pede para extrair as ações em formato JSON.
+    """
+    try:
+        api_key = st.secrets["google_ai"]["api_key"]
+        genai.configure(api_key=api_key)
+    except Exception as e:
+        st.error(f"Erro ao configurar a API do Gemini. Verifique seus segredos. Detalhe: {e}")
+        return []
 
-# ==============================================================
-# PÁGINA PRINCIPAL DA ABA DE IA (VERSÃO ROBUSTA COM ARQUIVO)
+    lista_nomes_alunos = ", ".join(alunos_df['nome_guerra'].unique().tolist())
+    lista_tipos_acao = ", ".join(tipos_acao_df['nome'].unique().tolist())
+    data_de_hoje = datetime.now().strftime('%Y-%m-%d')
+
+    prompt = f"""
+    Você é um assistente para um sistema de gestão de alunos militares. Sua tarefa é analisar o relato de um supervisor e extrair as ações disciplinares ou elogios em um formato JSON.
+
+    - A data de hoje é {data_de_hoje}. Use esta data para todas as ações, a menos que outra seja especificada no texto.
+    - A lista de alunos válidos é: [{lista_nomes_alunos}]. Corresponda os nomes do texto a esta lista. Ignore nomes que não estão na lista.
+    - A lista de tipos de ação válidos é: [{lista_tipos_acao}]. Associe as ocorrências do texto ao tipo de ação mais apropriado desta lista.
+    - Para cada ação encontrada, crie um objeto com os campos "nome_guerra", "tipo_acao", e "descricao". A descrição deve ser a sentença completa onde a ação foi encontrada.
+    - Retorne um objeto JSON que contenha uma chave "acoes", cujo valor é uma lista destes objetos.
+    - Se não encontrar nenhuma ação válida, retorne uma lista de ações vazia.
+
+    Texto para análise: "{texto}"
+    """
+
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        response = model.generate_content(prompt)
+        
+        json_response_text = response.text.strip().replace("```json", "").replace("```", "")
+        sugestoes_dict = json.loads(json_response_text)
+        
+        # Garante que sempre retornamos a lista de dentro do objeto JSON
+        sugestoes = sugestoes_dict.get('acoes', [])
+        
+        # Adiciona o ID do aluno a cada sugestão encontrada
+        nomes_para_ids = pd.Series(alunos_df.id.values, index=alunos_df.nome_guerra).to_dict()
+        for sugestao in sugestoes:
+            sugestao['aluno_id'] = nomes_para_ids.get(sugestao['nome_guerra'])
+            sugestao['data'] = datetime.strptime(data_de_hoje, '%Y-%m-%d').date()
+
+        return sugestoes
+
+    except Exception as e:
+        st.error(f"A IA (Gemini) não conseguiu processar o texto. Detalhe do erro: {e}")
+        return []
+
+# ==============================================================================
+# PÁGINA PRINCIPAL DA ABA DE IA
 # ==============================================================================
 def show_assistente_ia():
     st.title("🤖 Assistente IA para Lançamentos")
-    st.caption("Use o microfone para gravar um relato por voz. O áudio será salvo e processado.")
+    st.caption("Grave um relato por voz ou digite diretamente na caixa de texto abaixo.")
 
     supabase = init_supabase_client()
     
-    # Inicializa o estado da sessão
-    if 'sugestoes_ia' not in st.session_state:
-        st.session_state.sugestoes_ia = []
-    if 'texto_transcrito' not in st.session_state:
-        st.session_state.texto_transcrito = ""
-    if 'caminho_audio' not in st.session_state:
-        st.session_state.caminho_audio = ""
+    if 'sugestoes_ia' not in st.session_state: st.session_state.sugestoes_ia = []
+    if 'texto_analise' not in st.session_state: st.session_state.texto_analise = ""
 
     alunos_df = load_data("Alunos")
     tipos_acao_df = load_data("Tipos_Acao")
     opcoes_tipo_acao = sorted(tipos_acao_df['nome'].unique().tolist())
 
-    if st.button("Analisar Texto", type="primary"):
+    st.subheader("Passo 1: Forneça o Relato")
+
+    audio_bytes = st_audiorec()
+
+    if audio_bytes:
+        with st.spinner("A transcrever o áudio com a IA (Whisper)..."):
+            texto_transcrito = transcrever_audio_para_texto(audio_bytes)
+            st.session_state.texto_analise = texto_transcrito
+    
+    texto_do_dia = st.text_area(
+        "Relato para análise:", 
+        height=150, 
+        value=st.session_state.texto_analise,
+        key="text_area_analise"
+    )
+
+    if st.button("Analisar Texto com Gemini", type="primary"):
         texto_para_analisar = st.session_state.text_area_analise
         if texto_para_analisar:
             with st.spinner("A IA do Gemini está a analisar o texto..."):
-                # ALTERE AQUI: Chama a nova função do Gemini em vez da antiga
                 sugestoes = analisar_relato_com_gemini(texto_para_analisar, alunos_df, tipos_acao_df)
-                
                 st.session_state.sugestoes_ia = sugestoes
                 if not sugestoes:
                     st.warning("Nenhuma ação ou aluno conhecido foi identificado no texto pela IA.")
         else:
             st.warning("Por favor, insira ou grave um texto para ser analisado.")
-		
-    # --- PASSO 1: GRAVAÇÃO E ARMAZENAMENTO DO ÁUDIO ---
-    st.subheader("Passo 1: Grave o Relato de Voz")
-
-    # <<< MUDANÇA PRINCIPAL: Uso do st_audiorec
-    # Este componente renderiza um gravador de áudio e retorna os bytes do arquivo .wav
-    audio_bytes = st_audiorec()
-
-    if audio_bytes:
-        st.info("Áudio gravado! Processando o ficheiro...")
-        
-        # Define um diretório para salvar as gravações
-        pasta_gravacoes = "gravacoes"
-        if not os.path.exists(pasta_gravacoes):
-            os.makedirs(pasta_gravacoes)
-
-        # Cria um nome de arquivo único com timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        caminho_do_arquivo = os.path.join(pasta_gravacoes, f"relato_{timestamp}.wav")
-
-        # Salva o arquivo de áudio no servidor
-        with open(caminho_do_arquivo, "wb") as f:
-            f.write(audio_bytes)
-        
-        st.session_state.caminho_audio = caminho_do_arquivo
-
-        # Mostra o player de áudio para o usuário ouvir o que gravou
-        st.audio(audio_bytes, format='audio/wav')
-        
-        # Inicia a transcrição automaticamente
-        with st.spinner("A IA está a transcrever o áudio... (simulação)"):
-            texto_resultante = transcrever_audio_para_texto(st.session_state.caminho_audio)
-            st.session_state.texto_transcrito = texto_resultante
-        
-        # Força um rerun para atualizar a área de texto com a transcrição
-        st.rerun()
-
-    # --- PASSO 2: ANÁLISE DO TEXTO TRANSCRITO ---
-    st.subheader("Passo 2: Analise o Texto")
-    
-    texto_do_dia = st.text_area(
-        "Texto transcrito (pode editar antes de analisar):", 
-        height=150, 
-        value=st.session_state.texto_transcrito,
-        placeholder="O texto gravado aparecerá aqui."
-    )
-
-    if st.button("Analisar Texto", type="primary"):
-        if texto_do_dia:
-            with st.spinner("A IA está a analisar o texto..."):
-                sugestoes = processar_texto_com_regras(texto_do_dia, alunos_df, tipos_acao_df)
-                st.session_state.sugestoes_ia = sugestoes
-                if not sugestoes:
-                    st.warning("Nenhuma ação ou aluno conhecido foi identificado no texto.")
-        else:
-            st.warning("Não há texto para ser analisado.")
-
 
     st.divider()
 
-    # --- PASSO 3: REVISÃO E LANÇAMENTO ---
     if st.session_state.sugestoes_ia:
-        st.subheader("Passo 3: Revise e Lance as Ações Sugeridas")
-        
+        st.subheader("Passo 2: Revise e Lance as Ações Sugeridas")
+        st.info("Verifique e edite os dados abaixo antes de lançar cada ação individualmente.")
+
         for i, sugestao in enumerate(list(st.session_state.sugestoes_ia)):
             with st.form(key=f"form_sugestao_{i}", border=True):
                 st.markdown(f"**Sugestão de Lançamento #{i+1}**")
-
+                
+                if not sugestao.get('aluno_id'):
+                    st.error(f"Erro: Não foi possível encontrar o ID do aluno '{sugestao.get('nome_guerra')}'. Esta ação não pode ser lançada.")
+                    continue
+                
                 try:
                     index_acao = opcoes_tipo_acao.index(sugestao['tipo_acao'])
                 except ValueError:
@@ -203,21 +156,20 @@ def show_assistente_ia():
                 if st.form_submit_button("✅ Lançar Esta Ação"):
                     try:
                         tipo_acao_info = tipos_acao_df[tipos_acao_df['nome'] == tipo_acao_selecionada].iloc[0]
-                        
                         nova_acao = {
-                            'aluno_id': sugestao['aluno_id'],
+                            'aluno_id': sugestao['aluno_id'], 
                             'tipo_acao_id': str(tipo_acao_info['id']),
-                            'tipo': tipo_acao_selecionada,
+                            'tipo': tipo_acao_selecionada, 
                             'descricao': descricao_acao,
-                            'data': data_acao.strftime('%Y-%m-%d'),
+                            'data': data_acao.strftime('%Y-%m-%d'), 
                             'usuario': st.session_state['username'],
                             'status': 'Pendente'
                         }
                         supabase.table("Acoes").insert(nova_acao).execute()
                         st.success(f"Ação '{tipo_acao_selecionada}' lançada para {aluno_nome}!")
-
+                        
                         st.session_state.sugestoes_ia.pop(i)
                         st.rerun()
-
+                        
                     except Exception as e:
                         st.error(f"Ocorreu um erro ao lançar a ação: {e}")
