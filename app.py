@@ -16,7 +16,7 @@ if not check_authentication():
     st.stop()
 
 st.set_page_config(
-    page_title="Sistema de Gestão de Alunos",
+    page_title="SisCOMCA",
     page_icon="🎖️",  # Você pode usar um emoji, o URL de uma imagem ou o caminho de um ficheiro local
     layout="wide"  # Opcional: define o layout da página como "largo" por padrão
 )
