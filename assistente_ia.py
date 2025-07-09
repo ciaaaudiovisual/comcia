@@ -9,6 +9,7 @@ import time
 
 # ==============================================================================
 # "IA" A CUSTO ZERO: FUNÇÕES DE PROCESSAMENTO DE TEXTO
+# (Mantive suas funções originais aqui, sem alterações)
 # ==============================================================================
 
 def processar_texto_com_regras(texto: str, alunos_df: pd.DataFrame, tipos_acao_df: pd.DataFrame) -> list:
@@ -74,12 +75,16 @@ def transcrever_audio_para_texto(audio_bytes: bytes) -> str:
     SIMULAÇÃO: Numa implementação real, esta função enviaria os bytes de áudio 
     para um modelo de Speech-to-Text (como o Whisper) e retornaria o texto.
     """
+    # Se não houver bytes de áudio, não faz nada
+    if not audio_bytes:
+        return ""
+    st.toast("Iniciando transcrição...", icon="🎤")
     time.sleep(2) # Simula o tempo de processamento da IA
     st.toast("Áudio transcrito com sucesso!", icon="✅")
     return "O aluno GIDEÃO apresentou-se com o uniforme incompleto. Elogio o aluno PEREIRA pela sua atitude proativa."
 
 # ==============================================================================
-# PÁGINA PRINCIPAL DA ABA DE IA
+# PÁGINA PRINCIPAL DA ABA DE IA (VERSÃO CORRIGIDA)
 # ==============================================================================
 def show_assistente_ia():
     st.title("🤖 Assistente IA para Lançamentos")
@@ -87,13 +92,16 @@ def show_assistente_ia():
 
     supabase = init_supabase_client()
     
-    # Inicializa o estado da sessão
+    # Inicializa o estado da sessão de forma robusta
     if 'sugestoes_ia' not in st.session_state:
         st.session_state.sugestoes_ia = []
     if 'texto_transcrito' not in st.session_state:
         st.session_state.texto_transcrito = ""
     if 'gravando' not in st.session_state:
         st.session_state.gravando = False
+    # <--- MUDANÇA 1: Inicializa um buffer de áudio no session_state
+    if "audio_buffer" not in st.session_state:
+        st.session_state.audio_buffer = []
 
     alunos_df = load_data("Alunos")
     tipos_acao_df = load_data("Tipos_Acao")
@@ -101,51 +109,52 @@ def show_assistente_ia():
 
     st.subheader("Passo 1: Forneça o Relato")
 
-    # --- NOVA LÓGICA DE CONTROLO DE ESTADO VISUAL ---
-    # Placeholder para o nosso indicador de gravação
     status_indicator = st.empty()
 
-    class AudioProcessor(AudioProcessorBase):
-        def __init__(self):
-            self._audio_buffer = io.BytesIO()
-
+    # <--- MUDANÇA 2: Simplificamos o AudioProcessor para apenas guardar os frames no session_state
+    class AudioFrameHandler(AudioProcessorBase):
         def recv(self, frame: np.ndarray, format: str) -> np.ndarray:
-            self._audio_buffer.write(frame.tobytes())
+            # Armazena cada frame de áudio como bytes na lista do session_state
+            st.session_state.audio_buffer.append(frame.tobytes())
             return frame
-
-        def get_audio_bytes(self):
-            return self._audio_buffer.getvalue()
 
     webrtc_ctx = webrtc_streamer(
         key="audio-recorder",
         mode=WebRtcMode.SENDONLY,
-        audio_processor_factory=AudioProcessor,
+        audio_processor_factory=AudioFrameHandler, # <--- Usando o novo processador
         media_stream_constraints={"audio": True, "video": False},
     )
     
-    # Atualiza o estado visual com base na interação do utilizador
+    # <--- MUDANÇA 3: Lógica de controle e processamento centralizada
     if webrtc_ctx.state.playing and not st.session_state.gravando:
+        # O usuário clicou em "start"
         st.session_state.gravando = True
-        st.rerun()
-    elif not webrtc_ctx.state.playing and st.session_state.gravando:
-        st.session_state.gravando = False
+        # Limpa o buffer de gravações anteriores
+        st.session_state.audio_buffer = [] 
         st.rerun()
 
-    if st.session_state.gravando:
-        status_indicator.info("🔴 Gravando... Clique em 'stop' acima para parar.")
-    
-    # Processa o áudio quando a gravação para
-    if not st.session_state.gravando and webrtc_ctx.audio_processor:
-        audio_bytes = webrtc_ctx.audio_processor.get_audio_bytes()
-        if audio_bytes:
-            status_indicator.info("Áudio capturado. Processando...")
+    elif not webrtc_ctx.state.playing and st.session_state.gravando:
+        # O usuário clicou em "stop"
+        status_indicator.info("Áudio capturado. Processando...")
+        
+        # Junta todos os pedaços de áudio do buffer
+        if st.session_state.audio_buffer:
+            audio_bytes = b"".join(st.session_state.audio_buffer)
+            
             with st.spinner("A transcrever o áudio... (simulação)"):
                 texto_resultante = transcrever_audio_para_texto(audio_bytes)
                 st.session_state.texto_transcrito = texto_resultante
-                # Limpa o processador para não reprocessar o mesmo áudio
-                webrtc_ctx.audio_processor = None 
-                st.rerun()
+        
+        # Reseta os estados para a próxima gravação
+        st.session_state.gravando = False
+        st.session_state.audio_buffer = [] # Limpa o buffer após o uso
+        st.rerun()
 
+    # Atualiza a mensagem de status com base no estado
+    if st.session_state.gravando:
+        status_indicator.info("🔴 Gravando... Clique no botão 'stop' acima para parar.")
+    
+    # O resto do código permanece o mesmo...
     texto_do_dia = st.text_area(
         "Relato para análise:", 
         height=150, 
