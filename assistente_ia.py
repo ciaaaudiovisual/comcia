@@ -2,14 +2,12 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from database import load_data, init_supabase_client
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase
-import numpy as np
-import io
+from st_audiorec import st_audiorec
+import os
 import time
 
 # ==============================================================================
 # "IA" A CUSTO ZERO: FUNÇÕES DE PROCESSAMENTO DE TEXTO
-# (Mantive suas funções originais aqui, sem alterações)
 # ==============================================================================
 
 def processar_texto_com_regras(texto: str, alunos_df: pd.DataFrame, tipos_acao_df: pd.DataFrame) -> list:
@@ -70,96 +68,91 @@ def processar_texto_com_regras(texto: str, alunos_df: pd.DataFrame, tipos_acao_d
             
     return sugestoes
 
-def transcrever_audio_para_texto(audio_bytes: bytes) -> str:
+def transcrever_audio_para_texto(caminho_do_arquivo: str) -> str:
     """
-    SIMULAÇÃO: Numa implementação real, esta função enviaria os bytes de áudio 
-    para um modelo de Speech-to-Text (como o Whisper) e retornaria o texto.
+    SIMULAÇÃO: Numa implementação real, esta função usaria um modelo de Speech-to-Text 
+    (como o Whisper) para processar o ARQUIVO DE ÁUDIO.
     """
-    # Se não houver bytes de áudio, não faz nada
-    if not audio_bytes:
+    if not os.path.exists(caminho_do_arquivo):
+        st.error("Arquivo de áudio não encontrado.")
         return ""
-    st.toast("Iniciando transcrição...", icon="🎤")
-    time.sleep(2) # Simula o tempo de processamento da IA
+        
+    st.toast("Arquivo de áudio recebido. Iniciando transcrição...", icon="📂")
+    
+    # Simula o tempo de processamento da IA lendo o arquivo
+    with open(caminho_do_arquivo, 'rb') as f:
+        # Em um caso real, você passaria `f` ou o caminho do arquivo para o modelo de IA
+        audio_data = f.read()
+
+    time.sleep(2) 
     st.toast("Áudio transcrito com sucesso!", icon="✅")
     return "O aluno GIDEÃO apresentou-se com o uniforme incompleto. Elogio o aluno PEREIRA pela sua atitude proativa."
 
 # ==============================================================================
-# PÁGINA PRINCIPAL DA ABA DE IA (VERSÃO CORRIGIDA)
+# PÁGINA PRINCIPAL DA ABA DE IA (VERSÃO ROBUSTA COM ARQUIVO)
 # ==============================================================================
 def show_assistente_ia():
     st.title("🤖 Assistente IA para Lançamentos")
-    st.caption("Descreva as ocorrências em texto ou use o microfone para gravar um relato por voz.")
+    st.caption("Use o microfone para gravar um relato por voz. O áudio será salvo e processado.")
 
     supabase = init_supabase_client()
     
-    # Inicializa o estado da sessão de forma robusta
+    # Inicializa o estado da sessão
     if 'sugestoes_ia' not in st.session_state:
         st.session_state.sugestoes_ia = []
     if 'texto_transcrito' not in st.session_state:
         st.session_state.texto_transcrito = ""
-    if 'gravando' not in st.session_state:
-        st.session_state.gravando = False
-    # <--- MUDANÇA 1: Inicializa um buffer de áudio no session_state
-    if "audio_buffer" not in st.session_state:
-        st.session_state.audio_buffer = []
+    if 'caminho_audio' not in st.session_state:
+        st.session_state.caminho_audio = ""
 
     alunos_df = load_data("Alunos")
     tipos_acao_df = load_data("Tipos_Acao")
     opcoes_tipo_acao = sorted(tipos_acao_df['nome'].unique().tolist())
 
-    st.subheader("Passo 1: Forneça o Relato")
+    # --- PASSO 1: GRAVAÇÃO E ARMAZENAMENTO DO ÁUDIO ---
+    st.subheader("Passo 1: Grave o Relato de Voz")
 
-    status_indicator = st.empty()
+    # Uso do st_audiorec
+    # Este componente renderiza um gravador de áudio e retorna os bytes do arquivo .wav
+    audio_bytes = st_audiorec()
 
-    # <--- MUDANÇA 2: Simplificamos o AudioProcessor para apenas guardar os frames no session_state
-    class AudioFrameHandler(AudioProcessorBase):
-        def recv(self, frame: np.ndarray, format: str) -> np.ndarray:
-            # Armazena cada frame de áudio como bytes na lista do session_state
-            st.session_state.audio_buffer.append(frame.tobytes())
-            return frame
+    if audio_bytes:
+        st.info("Áudio gravado! Processando o ficheiro...")
+        
+        # Define um diretório para salvar as gravações
+        pasta_gravacoes = "gravacoes"
+        if not os.path.exists(pasta_gravacoes):
+            os.makedirs(pasta_gravacoes)
 
-    webrtc_ctx = webrtc_streamer(
-        key="audio-recorder",
-        mode=WebRtcMode.SENDONLY,
-        audio_processor_factory=AudioFrameHandler, # <--- Usando o novo processador
-        media_stream_constraints={"audio": True, "video": False},
-    )
-    
-    # <--- MUDANÇA 3: Lógica de controle e processamento centralizada
-    if webrtc_ctx.state.playing and not st.session_state.gravando:
-        # O usuário clicou em "start"
-        st.session_state.gravando = True
-        # Limpa o buffer de gravações anteriores
-        st.session_state.audio_buffer = [] 
+        # Cria um nome de arquivo único com timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        caminho_do_arquivo = os.path.join(pasta_gravacoes, f"relato_{timestamp}.wav")
+
+        # Salva o arquivo de áudio no servidor
+        with open(caminho_do_arquivo, "wb") as f:
+            f.write(audio_bytes)
+        
+        st.session_state.caminho_audio = caminho_do_arquivo
+
+        # Mostra o player de áudio para o usuário ouvir o que gravou
+        st.audio(audio_bytes, format='audio/wav')
+        
+        # Inicia a transcrição automaticamente
+        with st.spinner("A IA está a transcrever o áudio... (simulação)"):
+            texto_resultante = transcrever_audio_para_texto(st.session_state.caminho_audio)
+            st.session_state.texto_transcrito = texto_resultante
+        
+        # Força um rerun para atualizar a área de texto com a transcrição
         st.rerun()
 
-    elif not webrtc_ctx.state.playing and st.session_state.gravando:
-        # O usuário clicou em "stop"
-        status_indicator.info("Áudio capturado. Processando...")
-        
-        # Junta todos os pedaços de áudio do buffer
-        if st.session_state.audio_buffer:
-            audio_bytes = b"".join(st.session_state.audio_buffer)
-            
-            with st.spinner("A transcrever o áudio... (simulação)"):
-                texto_resultante = transcrever_audio_para_texto(audio_bytes)
-                st.session_state.texto_transcrito = texto_resultante
-        
-        # Reseta os estados para a próxima gravação
-        st.session_state.gravando = False
-        st.session_state.audio_buffer = [] # Limpa o buffer após o uso
-        st.rerun()
-
-    # Atualiza a mensagem de status com base no estado
-    if st.session_state.gravando:
-        status_indicator.info("🔴 Gravando... Clique no botão 'stop' acima para parar.")
+    # --- PASSO 2: ANÁLISE DO TEXTO TRANSCRITO ---
+    st.subheader("Passo 2: Analise o Texto")
     
-    # O resto do código permanece o mesmo...
     texto_do_dia = st.text_area(
-        "Relato para análise:", 
+        "Texto transcrito (pode editar antes de analisar):", 
         height=150, 
         value=st.session_state.texto_transcrito,
-        placeholder="O texto gravado aparecerá aqui, ou pode digitar diretamente."
+        placeholder="O texto gravado aparecerá aqui."
     )
 
     if st.button("Analisar Texto", type="primary"):
@@ -167,18 +160,17 @@ def show_assistente_ia():
             with st.spinner("A IA está a analisar o texto..."):
                 sugestoes = processar_texto_com_regras(texto_do_dia, alunos_df, tipos_acao_df)
                 st.session_state.sugestoes_ia = sugestoes
-                st.session_state.texto_transcrito = texto_do_dia
                 if not sugestoes:
                     st.warning("Nenhuma ação ou aluno conhecido foi identificado no texto.")
         else:
-            st.warning("Por favor, insira um texto para ser analisado.")
+            st.warning("Não há texto para ser analisado.")
 
     st.divider()
 
+    # --- PASSO 3: REVISÃO E LANÇAMENTO ---
     if st.session_state.sugestoes_ia:
-        st.subheader("Passo 2: Revise e Lance as Ações Sugeridas")
-        st.info("Verifique e edite os dados abaixo antes de lançar cada ação individualmente.")
-
+        st.subheader("Passo 3: Revise e Lance as Ações Sugeridas")
+        
         for i, sugestao in enumerate(list(st.session_state.sugestoes_ia)):
             with st.form(key=f"form_sugestao_{i}", border=True):
                 st.markdown(f"**Sugestão de Lançamento #{i+1}**")
