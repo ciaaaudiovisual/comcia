@@ -10,7 +10,7 @@ from config import show_config
 from admin_panel import show_admin_panel
 from gestao_acoes import show_gestao_acoes
 from saude import show_saude
-#from assistente_ia import show_assistente_ia
+from assistente_ia import show_assistente_ia
 
 if not check_authentication():
     st.stop()
