@@ -15,6 +15,13 @@ from assistente_ia import show_assistente_ia
 if not check_authentication():
     st.stop()
 
+st.set_page_config(
+    page_title="Sistema de Gestão de Alunos",
+    page_icon="🎖️",  # Você pode usar um emoji, o URL de uma imagem ou o caminho de um ficheiro local
+    layout="wide"  # Opcional: define o layout da página como "largo" por padrão
+)
+
+
 st.sidebar.title("Sistema de Gestão de Alunos")
 user_display_name = st.session_state.get('full_name', st.session_state.get('username', ''))
 st.sidebar.markdown(f"Usuário: **{user_display_name}**")
