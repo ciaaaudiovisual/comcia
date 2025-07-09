@@ -15,4 +15,4 @@ pyzbar
 supabase
 gTTS==2.3.2
 streamlit-webrtc
-st_audiorec
+#st_audiorec
