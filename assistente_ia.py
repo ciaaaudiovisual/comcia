@@ -8,7 +8,7 @@ import google.generativeai as genai
 import json
 
 # URL da API do modelo Whisper no Hugging Face
-WHISPER_API_URL = "https://api-inference.huggingface.co/models/openai/whisper-large-v3"
+API_URL = "https://api-inference.huggingface.co/models/openai/whisper-large-v3"
 
 # ==============================================================================
 # "IA" A CUSTO ZERO: FUNÇÕES DE PROCESSAMENTO
@@ -20,19 +20,18 @@ def transcrever_audio_para_texto(audio_bytes: bytes) -> str:
     """
     try:
         api_key = st.secrets["huggingface"]["api_key"]
-        # ADICIONA O CABEÇALHO "CONTENT-TYPE"
         headers = {
             "Authorization": f"Bearer {api_key}",
-            "Content-Type": "audio/wav" 
+            "Content-Type": "audio/wav"
         }
         
-        # Faz a chamada para a API
+        # Usa a variável API_URL que foi definida no topo do ficheiro
         response = requests.post(API_URL, headers=headers, data=audio_bytes)
         
         if response.status_code == 200:
             resultado = response.json()
             texto_transcrito = resultado.get("text", "")
-            st.toast("Áudio transcrito com sucesso pela IA!", icon="🎤")
+            st.toast("Áudio transcrito com sucesso pela IA!", icon="🤖")
             return texto_transcrito.strip()
         else:
             st.error(f"Erro na API de transcrição (Whisper): {response.status_code} - {response.text}")
@@ -76,10 +75,8 @@ def analisar_relato_com_gemini(texto: str, alunos_df: pd.DataFrame, tipos_acao_d
         json_response_text = response.text.strip().replace("```json", "").replace("```", "")
         sugestoes_dict = json.loads(json_response_text)
         
-        # Garante que sempre retornamos a lista de dentro do objeto JSON
         sugestoes = sugestoes_dict.get('acoes', [])
         
-        # Adiciona o ID do aluno a cada sugestão encontrada
         nomes_para_ids = pd.Series(alunos_df.id.values, index=alunos_df.nome_guerra).to_dict()
         for sugestao in sugestoes:
             sugestao['aluno_id'] = nomes_para_ids.get(sugestao['nome_guerra'])
