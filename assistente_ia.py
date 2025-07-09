@@ -110,6 +110,19 @@ def show_assistente_ia():
     tipos_acao_df = load_data("Tipos_Acao")
     opcoes_tipo_acao = sorted(tipos_acao_df['nome'].unique().tolist())
 
+    if st.button("Analisar Texto", type="primary"):
+        texto_para_analisar = st.session_state.text_area_analise
+        if texto_para_analisar:
+            with st.spinner("A IA do Gemini está a analisar o texto..."):
+                # ALTERE AQUI: Chama a nova função do Gemini em vez da antiga
+                sugestoes = analisar_relato_com_gemini(texto_para_analisar, alunos_df, tipos_acao_df)
+                
+                st.session_state.sugestoes_ia = sugestoes
+                if not sugestoes:
+                    st.warning("Nenhuma ação ou aluno conhecido foi identificado no texto pela IA.")
+        else:
+            st.warning("Por favor, insira ou grave um texto para ser analisado.")
+		
     # --- PASSO 1: GRAVAÇÃO E ARMAZENAMENTO DO ÁUDIO ---
     st.subheader("Passo 1: Grave o Relato de Voz")
 
