@@ -12,6 +12,6 @@ openpyxl
 opencv-python
 pyzbar
 supabase
-gTTS
+gTTS==2.3.2
 streamlit-webrtc
 st_audiorec
