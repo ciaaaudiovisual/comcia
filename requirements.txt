@@ -16,3 +16,4 @@ supabase
 gTTS==2.3.2
 streamlit-webrtc
 streamlit-audiorec
+google-generativeai
