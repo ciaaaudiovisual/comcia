@@ -1,4 +1,4 @@
-libzbar0
 ffmpeg
+libzbar0
 libsm6
 libxext6
