@@ -6,6 +6,9 @@ from st_audiorec import st_audiorec
 import os
 import time
 
+
+def show_assistente_ia():
+    st.success("Arquivo importado com sucesso!")
 # ==============================================================================
 # "IA" A CUSTO ZERO: FUNÇÕES DE PROCESSAMENTO DE TEXTO
 # ==============================================================================
