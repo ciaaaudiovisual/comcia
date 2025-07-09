@@ -10,6 +10,7 @@ from config import show_config
 from admin_panel import show_admin_panel
 from gestao_acoes import show_gestao_acoes
 from saude import show_saude
+from assistente_ia import show_assistente_ia
 
 if not check_authentication():
     st.stop()
@@ -30,6 +31,7 @@ if st.sidebar.button("🔄 Recarregar Dados"):
 
 menu_options = {
     "Dashboard": show_dashboard,
+    "Assistente IA": show_assistente_ia, # <-- ADICIONE ESTA LINHA
     "Programação": show_programacao,
     "Cadastro de Alunos": show_alunos,
     "Lançamento de Ações": show_gestao_acoes,
