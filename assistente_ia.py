@@ -20,9 +20,14 @@ def transcrever_audio_para_texto(audio_bytes: bytes) -> str:
     """
     try:
         api_key = st.secrets["huggingface"]["api_key"]
-        headers = {"Authorization": f"Bearer {api_key}"}
-        
-        response = requests.post(WHISPER_API_URL, headers=headers, data=audio_bytes)
+                # ADICIONA O CABEÇALHO "CONTENT-TYPE"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "audio/wav" 
+                }
+                
+                # Faz a chamada para a API
+                response = requests.post(API_URL, headers=headers, data=audio_bytes)
         
         if response.status_code == 200:
             resultado = response.json()
