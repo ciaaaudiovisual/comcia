@@ -5,6 +5,7 @@ from database import load_data, init_supabase_client
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase
 import numpy as np
 import io
+import time
 
 # ==============================================================================
 # "IA" A CUSTO ZERO: FUNÇÕES DE PROCESSAMENTO DE TEXTO
@@ -19,7 +20,6 @@ def processar_texto_com_regras(texto: str, alunos_df: pd.DataFrame, tipos_acao_d
     
     nomes_alunos_map = pd.Series(alunos_df.id.values, index=alunos_df.nome_guerra).to_dict()
     
-    # Dicionário de gatilhos melhorado, baseado na análise de dados reais
     gatilhos_acoes = {
         'Atraso na Formação': ['atraso', 'atrasado', 'tarde', 'apresentou-se', 'formatura'],
         'Dispensa Médica': ['dispensa', 'médica', 'dispensado', 'atestado', 'licença', 'nas'],
@@ -69,14 +69,13 @@ def processar_texto_com_regras(texto: str, alunos_df: pd.DataFrame, tipos_acao_d
             
     return sugestoes
 
-# Placeholder para a função de transcrição de áudio
 def transcrever_audio_para_texto(audio_bytes: bytes) -> str:
     """
     SIMULAÇÃO: Numa implementação real, esta função enviaria os bytes de áudio 
     para um modelo de Speech-to-Text (como o Whisper) e retornaria o texto.
     """
-    st.info("Simulação: O áudio foi capturado e seria transcrito aqui.")
-    # Retornamos um texto fixo para fins de demonstração do fluxo
+    time.sleep(2) # Simula o tempo de processamento da IA
+    st.toast("Áudio transcrito com sucesso!", icon="✅")
     return "O aluno GIDEÃO apresentou-se com o uniforme incompleto. Elogio o aluno PEREIRA pela sua atitude proativa."
 
 # ==============================================================================
@@ -93,16 +92,19 @@ def show_assistente_ia():
         st.session_state.sugestoes_ia = []
     if 'texto_transcrito' not in st.session_state:
         st.session_state.texto_transcrito = ""
+    if 'gravando' not in st.session_state:
+        st.session_state.gravando = False
 
-    # Carrega dados essenciais
     alunos_df = load_data("Alunos")
     tipos_acao_df = load_data("Tipos_Acao")
     opcoes_tipo_acao = sorted(tipos_acao_df['nome'].unique().tolist())
 
-    # --- Interface de Entrada com Opção de Voz ---
     st.subheader("Passo 1: Forneça o Relato")
 
-    # Classe para processar o stream de áudio do componente webrtc
+    # --- NOVA LÓGICA DE CONTROLO DE ESTADO VISUAL ---
+    # Placeholder para o nosso indicador de gravação
+    status_indicator = st.empty()
+
     class AudioProcessor(AudioProcessorBase):
         def __init__(self):
             self._audio_buffer = io.BytesIO()
@@ -114,31 +116,41 @@ def show_assistente_ia():
         def get_audio_bytes(self):
             return self._audio_buffer.getvalue()
 
-    # Widget do webrtc para gravar áudio
     webrtc_ctx = webrtc_streamer(
         key="audio-recorder",
-        mode=WebRtcMode.SENDONLY, # <--- CORREÇÃO DEFINITIVA
+        mode=WebRtcMode.SENDONLY,
         audio_processor_factory=AudioProcessor,
         media_stream_constraints={"audio": True, "video": False},
     )
+    
+    # Atualiza o estado visual com base na interação do utilizador
+    if webrtc_ctx.state.playing and not st.session_state.gravando:
+        st.session_state.gravando = True
+        st.rerun()
+    elif not webrtc_ctx.state.playing and st.session_state.gravando:
+        st.session_state.gravando = False
+        st.rerun()
 
-    st.write("Clique em 'start' para gravar, e 'stop' para parar e transcrever.")
-
-    # Lógica para processar o áudio quando a gravação para
-    if not webrtc_ctx.state.playing and webrtc_ctx.audio_processor:
+    if st.session_state.gravando:
+        status_indicator.info("🔴 Gravando... Clique em 'stop' acima para parar.")
+    
+    # Processa o áudio quando a gravação para
+    if not st.session_state.gravando and webrtc_ctx.audio_processor:
         audio_bytes = webrtc_ctx.audio_processor.get_audio_bytes()
         if audio_bytes:
+            status_indicator.info("Áudio capturado. Processando...")
             with st.spinner("A transcrever o áudio... (simulação)"):
                 texto_resultante = transcrever_audio_para_texto(audio_bytes)
                 st.session_state.texto_transcrito = texto_resultante
+                # Limpa o processador para não reprocessar o mesmo áudio
+                webrtc_ctx.audio_processor = None 
                 st.rerun()
 
-    # Área de texto, pré-preenchida com a transcrição se houver
     texto_do_dia = st.text_area(
         "Relato para análise:", 
         height=150, 
         value=st.session_state.texto_transcrito,
-        placeholder="Ex: O aluno GIDEÃO chegou atrasado na formatura..."
+        placeholder="O texto gravado aparecerá aqui, ou pode digitar diretamente."
     )
 
     if st.button("Analisar Texto", type="primary"):
@@ -146,7 +158,7 @@ def show_assistente_ia():
             with st.spinner("A IA está a analisar o texto..."):
                 sugestoes = processar_texto_com_regras(texto_do_dia, alunos_df, tipos_acao_df)
                 st.session_state.sugestoes_ia = sugestoes
-                st.session_state.texto_transcrito = texto_do_dia # Mantém o texto na caixa
+                st.session_state.texto_transcrito = texto_do_dia
                 if not sugestoes:
                     st.warning("Nenhuma ação ou aluno conhecido foi identificado no texto.")
         else:
@@ -154,7 +166,6 @@ def show_assistente_ia():
 
     st.divider()
 
-    # --- Interface de Saída (Formulários de Confirmação e Edição) ---
     if st.session_state.sugestoes_ia:
         st.subheader("Passo 2: Revise e Lance as Ações Sugeridas")
         st.info("Verifique e edite os dados abaixo antes de lançar cada ação individualmente.")
@@ -168,7 +179,6 @@ def show_assistente_ia():
                 except ValueError:
                     index_acao = 0
 
-                # Campos editáveis pré-preenchidos pela IA
                 aluno_nome = st.text_input("Aluno", value=sugestao['nome_guerra'], disabled=True)
                 tipo_acao_selecionada = st.selectbox("Tipo de Ação", options=opcoes_tipo_acao, index=index_acao)
                 data_acao = st.date_input("Data da Ação", value=sugestao['data'])
