@@ -117,7 +117,7 @@ def show_assistente_ia():
     # Widget do webrtc para gravar áudio
     webrtc_ctx = webrtc_streamer(
         key="audio-recorder",
-        mode=WebRtcMode.AUDIO_ONLY,
+        mode="AUDIO_ONLY", # <--- CORREÇÃO: Usando texto simples
         audio_processor_factory=AudioProcessor,
         media_stream_constraints={"audio": True, "video": False},
     )
