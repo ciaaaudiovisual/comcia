@@ -8,6 +8,7 @@ from pyzbar.pyzbar import decode
 import plotly.express as px
 from alunos import calcular_pontuacao_efetiva
 from auth import check_permission
+import pytz
 
 # --- FUNÇÕES AUXILIARES ---
 def decodificar_codigo_de_barras(upload_de_imagem):
@@ -259,11 +260,18 @@ def show_dashboard():
                 fig = px.bar(df_melted, x='pelotao', y='Quantidade', color='Tipo de Anotação', barmode='group', title='Quantidade de Anotações por Pelotão', labels={'pelotao': 'Pelotão', 'Quantidade': 'Nº de Anotações'}, color_discrete_map={'Positivas': 'green', 'Negativas': 'red'}, text_auto=True)
                 st.plotly_chart(fig, use_container_width=True)
 
+
         st.subheader("🎂 Aniversariantes (Próximos 7 dias)")
         if not alunos_df.empty and 'data_nascimento' in alunos_df.columns:
             alunos_df['data_nascimento'] = pd.to_datetime(alunos_df['data_nascimento'], errors='coerce')
             alunos_nasc_validos = alunos_df.dropna(subset=['data_nascimento'])
-            hoje = datetime.now().date()
+            
+            # --- CORREÇÃO DE FUSO HORÁRIO ---
+            # Define o fuso horário do Brasil
+            fuso_horario_brasil = pytz.timezone("America/Sao_Paulo")
+            # Obtém a data atual NESSE fuso horário
+            hoje = datetime.now(fuso_horario_brasil).date()
+
             periodo_de_dias = [hoje + timedelta(days=i) for i in range(7)]
             aniversarios_no_periodo = [d.strftime('%m-%d') for d in periodo_de_dias]
             
