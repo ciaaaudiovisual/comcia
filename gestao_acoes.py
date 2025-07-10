@@ -356,7 +356,7 @@ def show_gestao_acoes():
                     
                     # ALTERAÇÃO 4: Botões com texto e dispostos verticalmente
                     if status_atual == 'Pendente' and can_launch:
-                        if st.button("Lançar", key=f"launch_{acao_id}", use_container_width=True, type="primary"):
+                        if st.button("🚀 Lançar", key=f"launch_{acao_id}", use_container_width=True, type="primary"):
                              supabase.table("Acoes").update({'status': 'Lançado'}).eq('id', acao_id).execute()
                              load_data.clear(); st.rerun()
                     
