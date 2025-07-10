@@ -3,53 +3,59 @@ import pandas as pd
 from datetime import datetime
 from database import load_data, init_supabase_client
 from st_audiorec import st_audiorec
-import requests
 import google.generativeai as genai
 import json
 
-API_URL = "https://api-inference.huggingface.co/models/openai/whisper-base"
-
 # ==============================================================================
-# FUNÇÕES DAS IAs (Sem alterações)
+# NOVA FUNÇÃO DE IA "TUDO EM UM" COM GEMINI 1.5
 # ==============================================================================
-def transcrever_audio_para_texto(audio_bytes: bytes) -> str:
-    try:
-        api_key = st.secrets["huggingface"]["api_key"]
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "audio/wav"}
-        response = requests.post(API_URL, headers=headers, data=audio_bytes)
-        if response.status_code == 200:
-            resultado = response.json()
-            return resultado.get("text", "").strip()
-        else:
-            st.error(f"Erro na API de transcrição: {response.status_code} - {response.text}")
-            return ""
-    except Exception as e:
-        st.error(f"Erro na API de transcrição: {e}")
-        return ""
-
-def analisar_relato_com_gemini(texto: str, alunos_df: pd.DataFrame, tipos_acao_df: pd.DataFrame) -> list:
+def analisar_audio_com_gemini(audio_bytes: bytes, alunos_df: pd.DataFrame, tipos_acao_df: pd.DataFrame) -> list:
+    """
+    Envia o ÁUDIO diretamente para a API do Gemini e pede para transcrever e 
+    extrair as ações em um único passo.
+    """
     try:
         api_key = st.secrets["google_ai"]["api_key"]
         genai.configure(api_key=api_key)
     except Exception as e:
-        st.error(f"Erro ao configurar a API do Gemini: {e}")
+        st.error(f"Erro ao configurar a API do Gemini. Verifique seus segredos. Detalhe: {e}")
         return []
 
+    # Prepara o áudio para envio
+    audio_file = genai.upload_file(contents=audio_bytes, mime_type="audio/wav")
+
+    # Prepara o contexto para a IA
     nomes_validos = [str(nome) for nome in alunos_df['nome_guerra'].dropna().unique()]
     lista_nomes_alunos = ", ".join(nomes_validos)
     lista_tipos_acao = ", ".join(tipos_acao_df['nome'].unique().tolist())
     data_de_hoje = datetime.now().strftime('%Y-%m-%d')
 
+    # Prompt instruindo a IA a analisar o ÁUDIO fornecido
     prompt = f"""
-    Sua tarefa é analisar o relato de um supervisor e extrair ações em um formato JSON.
-    Contexto: Data de hoje é {data_de_hoje}. Alunos válidos: [{lista_nomes_alunos}]. Ações válidas: [{lista_tipos_acao}].
-    Regras: Ignore nomes ou ações fora das listas. Sua resposta deve ser APENAS um objeto JSON com uma chave "acoes", contendo uma lista de objetos.
-    Exemplo de Saída: {{"acoes": [{{"nome_guerra": "NOME", "tipo_acao": "TIPO", "descricao": "SENTENÇA"}}]}}
-    Relato para Análise: "{texto}"
+    Você é um assistente para um sistema de gestão de alunos militares. Sua tarefa é analisar o RELATO EM ÁUDIO de um supervisor, transcrevê-lo, identificar os alunos e as ações (positivas ou negativas) e estruturar essa informação em um formato JSON.
+
+    **Instruções Críticas:**
+    1.  **Contexto:** A data de hoje é {data_de_hoje}. A lista oficial de alunos é: [{lista_nomes_alunos}]. A lista oficial de tipos de ação é: [{lista_tipos_acao}].
+    2.  **Extração:** Ouça o áudio, identifique o "nome_guerra" do aluno, o "tipo_acao" mais apropriado da lista oficial, e a "descricao" (a sentença completa onde a ocorrência foi mencionada).
+    3.  **Formato de Saída:** Sua resposta deve ser **APENAS** um objeto JSON com uma chave "acoes", contendo uma lista de objetos. Cada objeto deve ter os campos "nome_guerra", "tipo_acao", e "descricao".
+
+    **Exemplo de Saída JSON Esperada para um áudio contendo "elogio o aluno PEREIRA":**
+    {{
+      "acoes": [
+        {{
+          "nome_guerra": "PEREIRA",
+          "tipo_acao": "Elogio Individual",
+          "descricao": "Elogio o aluno PEREIRA."
+        }}
+      ]
+    }}
     """
+
     try:
         model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        response = model.generate_content(prompt)
+        # Envia o prompt de texto E o ficheiro de áudio juntos
+        response = model.generate_content([prompt, audio_file])
+        
         json_response_text = response.text.strip().replace("```json", "").replace("```", "")
         sugestoes_dict = json.loads(json_response_text)
         sugestoes = sugestoes_dict.get('acoes', [])
@@ -58,50 +64,50 @@ def analisar_relato_com_gemini(texto: str, alunos_df: pd.DataFrame, tipos_acao_d
         for sugestao in sugestoes:
             sugestao['aluno_id'] = nomes_para_ids.get(sugestao['nome_guerra'])
             sugestao['data'] = datetime.strptime(data_de_hoje, '%Y-%m-%d').date()
+        
+        st.toast("Relato em áudio analisado com sucesso!", icon="✨")
         return sugestoes
+
     except Exception as e:
-        st.error(f"A IA (Gemini) não conseguiu processar o texto: {e}")
+        st.error(f"A IA (Gemini) não conseguiu processar o áudio. Detalhe do erro: {e}")
         return []
 
 # ==============================================================================
-# PÁGINA PRINCIPAL DA ABA DE IA (LÓGICA REFORMULADA)
+# PÁGINA PRINCIPAL DA ABA DE IA (LÓGICA SIMPLIFICADA)
 # ==============================================================================
 def show_assistente_ia():
-    st.title("🤖 Assistente IA para Lançamentos")
+    st.title("🤖 Assistente IA (Gemini 1.5)")
     
-    # --- NOVO: Botão de Limpeza com Lógica Aprimorada ---
-    if st.button("🧹 Iniciar Novo Relato (Limpar Tudo)"):
-        st.session_state.messages = [{"role": "assistant", "content": "Olá! Como posso ajudar a registar as ocorrências de hoje?"}]
+    if st.button("🧹 Iniciar Novo Relato"):
         st.session_state.sugestoes_ativas = []
         st.rerun()
 
     supabase = init_supabase_client()
 
-    # Inicializa os estados da sessão
-    if "messages" not in st.session_state:
-        st.session_state.messages = [{"role": "assistant", "content": "Olá! Como posso ajudar a registar as ocorrências de hoje?"}]
     if "sugestoes_ativas" not in st.session_state:
         st.session_state.sugestoes_ativas = []
 
-    # Carrega dados essenciais
     alunos_df = load_data("Alunos")
     tipos_acao_df = load_data("Tipos_Acao")
     opcoes_tipo_acao = sorted(tipos_acao_df['nome'].unique().tolist())
-
-    # --- Container para o Histórico do Chat ---
-    chat_container = st.container(height=300, border=True)
-    with chat_container:
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
     
+    st.info("Grave um relato de voz. A IA irá transcrever e analisar as ações automaticamente.")
+    
+    # --- ÁREA DE ENTRADA DE VOZ ---
+    audio_bytes = st_audiorec()
+
+    # Processamento automático e direto do áudio
+    if audio_bytes:
+        with st.spinner("Gemini está a ouvir e a analisar o seu relato..."):
+            sugestoes = analisar_audio_com_gemini(audio_bytes, alunos_df, tipos_acao_df)
+            st.session_state.sugestoes_ativas.extend(sugestoes)
+        st.rerun()
+
     # --- ÁREA DE TRABALHO: Formulários para ações ativas ---
     if st.session_state.sugestoes_ativas:
         st.markdown("---")
         st.subheader("Ações Sugeridas para Revisão")
-        st.info("Verifique e edite os dados abaixo antes de lançar cada ação individualmente.")
 
-        # Itera sobre uma cópia para poder remover itens da lista original
         for i, sugestao in enumerate(list(st.session_state.sugestoes_ativas)):
             chave_unica = f"form_{sugestao.get('aluno_id')}_{sugestao.get('tipo_acao').replace(' ', '_')}_{i}"
             with st.form(key=chave_unica, border=True):
@@ -128,32 +134,5 @@ def show_assistente_ia():
                     supabase.table("Acoes").insert(nova_acao).execute()
                     st.toast(f"Ação para {sugestao['nome_guerra']} lançada!", icon="🎉")
                     
-                    # CORREÇÃO: Remove o item da lista de sugestões ativas
                     st.session_state.sugestoes_ativas.pop(i)
                     st.rerun()
-
-    # --- ÁREA DE ENTRADA (VOZ E TEXTO) ---
-    st.markdown("---")
-    audio_bytes = st_audiorec()
-
-    # Processamento automático do áudio
-    if audio_bytes:
-        with st.spinner("Ouvindo e transcrevendo (Whisper)..."):
-            texto = transcrever_audio_para_texto(audio_bytes)
-            if texto:
-                st.session_state.messages.append({"role": "user", "content": f"(Relato por voz) {texto}"})
-                with st.spinner("Gemini está a analisar..."):
-                    sugestoes = analisar_relato_com_gemini(texto, alunos_df, tipos_acao_df)
-                    st.session_state.sugestoes_ativas.extend(sugestoes) # Adiciona às sugestões ativas
-                    st.session_state.messages.append({"role": "assistant", "content": f"Análise concluída. Encontrei {len(sugestoes)} nova(s) sugestão(ões)."})
-                st.rerun()
-
-    # Processamento do texto do chat_input
-    prompt_texto = st.chat_input("Digite ou grave seu relato aqui...")
-    if prompt_texto:
-        st.session_state.messages.append({"role": "user", "content": prompt_texto})
-        with st.spinner("Gemini está a analisar..."):
-            sugestoes = analisar_relato_com_gemini(prompt_texto, alunos_df, tipos_acao_df)
-            st.session_state.sugestoes_ativas.extend(sugestoes) # Adiciona às sugestões ativas
-            st.session_state.messages.append({"role": "assistant", "content": f"Análise concluída. Encontrei {len(sugestoes)} nova(s) sugestão(ões)."})
-        st.rerun()
