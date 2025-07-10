@@ -2,11 +2,13 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from database import load_data, init_supabase_client
+from st_audiorec import st_audiorec
 import google.generativeai as genai
 import json
+import time # <-- Importa a biblioteca de tempo
 
 # ==============================================================================
-# FUNÇÃO DA IA (GEMINI) - Analisa apenas texto
+# FUNÇÃO DA IA (GEMINI) - COM MELHORIAS DE DIAGNÓSTICO
 # ==============================================================================
 def analisar_relato_com_gemini(texto: str, alunos_df: pd.DataFrame, tipos_acao_df: pd.DataFrame) -> list:
     """
@@ -19,29 +21,41 @@ def analisar_relato_com_gemini(texto: str, alunos_df: pd.DataFrame, tipos_acao_d
         st.error(f"Erro ao configurar a API do Gemini. Verifique seus segredos. Detalhe: {e}")
         return []
 
-    # Prepara o contexto para a IA
     nomes_validos = [str(nome) for nome in alunos_df['nome_guerra'].dropna().unique()]
     lista_nomes_alunos = ", ".join(nomes_validos)
     lista_tipos_acao = ", ".join(tipos_acao_df['nome'].unique().tolist())
     data_de_hoje = datetime.now().strftime('%Y-%m-%d')
 
-    # Prompt focado em analisar o TEXTO fornecido
+    # --- PROMPT MELHORADO ---
     prompt = f"""
-    Você é um assistente para um sistema de gestão de alunos militares. Sua função é analisar relatos textuais de supervisores, identificar os alunos e as ações (positivas ou negativas) e estruturar essa informação em um formato JSON.
+    Sua função é analisar relatos de supervisores e extrair ações em formato JSON.
 
-    **Instruções Críticas:**
-    1.  **Contexto:** A data de hoje é {data_de_hoje}. A lista oficial de alunos é: [{lista_nomes_alunos}]. A lista oficial de tipos de ação é: [{lista_tipos_acao}].
-    2.  **Extração:** Leia o texto, identifique o "nome_guerra" do aluno, o "tipo_acao" mais apropriado da lista oficial, e a "descricao" (a sentença completa onde a ocorrência foi mencionada).
-    3.  **Formato de Saída:** Sua resposta deve ser **APENAS** um objeto JSON com uma chave "acoes", contendo uma lista de objetos.
+    **Contexto Fixo:**
+    - Data de hoje: {data_de_hoje} (use para todas as ações).
+    - Alunos Válidos: [{lista_nomes_alunos}].
+    - Tipos de Ação Válidos: [{lista_tipos_acao}].
 
-    **Relato Real para Análise:**
-    "{texto}"
+    **Regras Estritas:**
+    1.  Analise o "Relato para Análise" abaixo.
+    2.  Identifique o "nome_guerra" (deve estar na lista de Alunos Válidos), o "tipo_acao" (deve ser um da lista de Tipos de Ação Válidos) e a "descricao" (a sentença completa).
+    3.  Sua resposta DEVE ser APENAS um objeto JSON com uma chave "acoes".
+    4.  Se o relato não contiver nenhuma ocorrência válida ou nenhum aluno reconhecido, retorne uma lista de "acoes" vazia.
+
+    **Relato para Análise:** "{texto}"
     """
+
+    # --- FERRAMENTA DE DIAGNÓSTICO 1: VER O PROMPT ---
+    with st.expander("👁️ Ver Prompt Enviado para a IA"):
+        st.text(prompt)
 
     try:
         model = genai.GenerativeModel('gemini-1.5-flash-latest')
         response = model.generate_content(prompt)
         
+        # --- FERRAMENTA DE DIAGNÓSTICO 2: VER A RESPOSTA BRUTA ---
+        with st.expander("📄 Ver Resposta Bruta da IA"):
+            st.write(response)
+
         json_response_text = response.text.strip().replace("```json", "").replace("```", "")
         sugestoes_dict = json.loads(json_response_text)
         sugestoes = sugestoes_dict.get('acoes', [])
@@ -56,10 +70,12 @@ def analisar_relato_com_gemini(texto: str, alunos_df: pd.DataFrame, tipos_acao_d
 
     except Exception as e:
         st.error(f"A IA (Gemini) não conseguiu processar o texto. Detalhe do erro: {e}")
+        # --- CORREÇÃO: PAUSA PARA LER O ERRO ---
+        time.sleep(5) 
         return []
 
 # ==============================================================================
-# PÁGINA PRINCIPAL DA ABA DE IA (INTERFACE DE TEXTO)
+# PÁGINA PRINCIPAL DA ABA DE IA (Sem alterações na interface)
 # ==============================================================================
 def show_assistente_ia():
     st.title("🤖 Assistente IA para Lançamentos")
@@ -71,25 +87,21 @@ def show_assistente_ia():
 
     supabase = init_supabase_client()
 
-    # Inicializa os estados da sessão
     if "messages" not in st.session_state:
         st.session_state.messages = [{"role": "assistant", "content": "Olá! Digite um relato para eu analisar."}]
     if "sugestoes_ativas" not in st.session_state:
         st.session_state.sugestoes_ativas = []
 
-    # Carrega dados essenciais
     alunos_df = load_data("Alunos")
     tipos_acao_df = load_data("Tipos_Acao")
     opcoes_tipo_acao = sorted(tipos_acao_df['nome'].unique().tolist())
 
-    # --- Container para o Histórico do Chat ---
     chat_container = st.container(height=300, border=True)
     with chat_container:
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
     
-    # --- ÁREA DE TRABALHO: Formulários para ações ativas ---
     if st.session_state.sugestoes_ativas:
         st.markdown("---")
         st.subheader("Ações Sugeridas para Revisão")
@@ -137,8 +149,8 @@ def show_assistente_ia():
                         st.session_state.sugestoes_ativas.pop(i)
                         st.rerun()
 
-    # --- ÁREA DE ENTRADA (Apenas Texto) ---
     st.markdown("---")
+    
     prompt_texto = st.chat_input("Digite o relato aqui e pressione Enter...")
     if prompt_texto:
         st.session_state.messages.append({"role": "user", "content": prompt_texto})
