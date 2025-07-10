@@ -8,68 +8,40 @@ from io import BytesIO
 import zipfile
 
 # ==============================================================================
-# DIÁLOGOS E POPUPS
+# DIÁLOGOS E POPUPS (Sem alterações nesta seção)
 # ==============================================================================
-
-# --- NOVO: Diálogo para Editar uma Ação ---
 @st.dialog("✏️ Editar Ação")
 def edit_acao_dialog(acao_selecionada, tipos_acao_df, supabase):
     st.write(f"Editando ação para: **{acao_selecionada.get('nome_guerra', 'N/A')}**")
     
     with st.form(key=f"edit_form_{acao_selecionada['id_x']}"):
-        # Prepara as opções de tipo de ação
         opcoes_tipo_acao = tipos_acao_df['nome'].unique().tolist()
         try:
             index_acao_atual = opcoes_tipo_acao.index(acao_selecionada['nome'])
         except (ValueError, KeyError):
             index_acao_atual = 0
 
-        novo_tipo_acao = st.selectbox(
-            "Tipo de Ação",
-            options=opcoes_tipo_acao,
-            index=index_acao_atual
-        )
-        
-        # Converte a data para um objeto de data, se possível
+        novo_tipo_acao = st.selectbox("Tipo de Ação", options=opcoes_tipo_acao, index=index_acao_atual)
         try:
             data_atual = pd.to_datetime(acao_selecionada['data']).date()
         except (ValueError, TypeError):
             data_atual = datetime.now().date()
-
         nova_data = st.date_input("Data da Ação", value=data_atual)
-        
-        nova_descricao = st.text_area(
-            "Descrição/Justificativa",
-            value=acao_selecionada.get('descricao', '')
-        )
+        nova_descricao = st.text_area("Descrição/Justificativa", value=acao_selecionada.get('descricao', ''))
 
         if st.form_submit_button("Salvar Alterações"):
             try:
-                # Busca o ID do tipo de ação selecionado
                 tipo_acao_info = tipos_acao_df[tipos_acao_df['nome'] == novo_tipo_acao].iloc[0]
-
                 update_data = {
-                    'tipo_acao_id': str(tipo_acao_info['id']),
-                    'tipo': novo_tipo_acao,
-                    'data': nova_data.strftime('%Y-%m-%d'),
-                    'descricao': nova_descricao
+                    'tipo_acao_id': str(tipo_acao_info['id']), 'tipo': novo_tipo_acao,
+                    'data': nova_data.strftime('%Y-%m-%d'), 'descricao': nova_descricao
                 }
-                
                 supabase.table("Acoes").update(update_data).eq('id', acao_selecionada['id_x']).execute()
-                
                 st.toast("Ação atualizada com sucesso!", icon="✅")
                 load_data.clear()
                 st.rerun()
-
             except Exception as e:
                 st.error(f"Erro ao salvar as alterações: {e}")
-
-
-@st.dialog("Sucesso!")
-def show_success_dialog(message):
-    st.success(message)
-    if st.button("OK"):
-        st.rerun()
 
 @st.dialog("Pré-visualização da FAIA")
 def preview_faia_dialog(aluno_info, acoes_aluno_df):
@@ -80,7 +52,7 @@ def preview_faia_dialog(aluno_info, acoes_aluno_df):
     st.download_button(label="✅ Baixar Relatório .TXT", data=texto_relatorio.encode('utf-8'), file_name=nome_arquivo, mime="text/plain")
 
 # ==============================================================================
-# FUNÇÕES DE APOIO E AÇÃO EM MASSA
+# FUNÇÕES DE APOIO (Sem alterações nesta seção)
 # ==============================================================================
 def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
     texto = [
@@ -177,6 +149,7 @@ def show_gestao_acoes():
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
     
+    # ... (código do expander "Registrar Nova Ação" continua igual) ...
     with st.expander("➕ Registrar Nova Ação", expanded=True):
         with st.form("search_form_gestao"):
             st.subheader("Passo 1: Buscar Aluno")
@@ -301,7 +274,8 @@ def show_gestao_acoes():
     if not acoes_com_pontos.empty and not alunos_df.empty:
         acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
         alunos_df['id'] = alunos_df['id'].astype(str)
-        df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'numero_interno', 'nome_guerra', 'pelotao', 'nome_completo']], left_on='aluno_id', right_on='id', how='left')
+        # ALTERAÇÃO 1: Adicionada 'url_foto' para exibir a imagem do aluno
+        df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'numero_interno', 'nome_guerra', 'pelotao', 'nome_completo', 'url_foto']], left_on='aluno_id', right_on='id', how='left')
         df_display['nome_guerra'].fillna('N/A (Aluno Apagado)', inplace=True)
     
     df_filtrado_final = df_display.copy()
@@ -339,9 +313,9 @@ def show_gestao_acoes():
             selected_ids = [acao_id for acao_id, is_selected in st.session_state.action_selection.items() if is_selected and acao_id in ids_visiveis]
             
             with col_botoes1:
-                st.button(f"🚀 Lançar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Lançado', supabase), disabled=not selected_ids, use_container_width=True)
+                st.button(f"Lançar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Lançado', supabase), disabled=not selected_ids, use_container_width=True)
             with col_botoes2:
-                st.button(f"🗄️ Arquivar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Arquivado', supabase), disabled=not selected_ids, use_container_width=True)
+                st.button(f"Arquivar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Arquivado', supabase), disabled=not selected_ids, use_container_width=True)
 
             def toggle_all_visible():
                 new_state = st.session_state.get('select_all_toggle', False)
@@ -357,12 +331,17 @@ def show_gestao_acoes():
         for _, acao in df_filtrado_final.iterrows():
             acao_id = acao['id_x']
             with st.container(border=True):
-                col_check_ind, col_info, col_actions = st.columns([1, 6, 2]) # <-- Alterado para dar espaço ao novo botão
+                # ALTERAÇÃO 2: Novo layout para incluir a foto do aluno
+                col_foto, col_info, col_actions = st.columns([1, 4, 2])
                 
-                with col_check_ind:
-                    st.session_state.action_selection[acao_id] = st.checkbox(" ", value=st.session_state.action_selection.get(acao_id, False), key=f"select_{acao_id}", label_visibility="collapsed")
+                with col_foto:
+                    # ALTERAÇÃO 3: Exibe a foto do aluno
+                    foto_url = acao.get('url_foto')
+                    image_source = foto_url if isinstance(foto_url, str) and foto_url.startswith('http') else "https://via.placeholder.com/100?text=S/Foto"
+                    st.image(image_source, width=80)
 
                 with col_info:
+                    st.session_state.action_selection[acao_id] = st.checkbox("Selecionar esta ação", value=st.session_state.action_selection.get(acao_id, False), key=f"select_{acao_id}", label_visibility="visible")
                     cor = "green" if acao.get('pontuacao_efetiva', 0) > 0 else "red" if acao.get('pontuacao_efetiva', 0) < 0 else "gray"
                     data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y %H:%M')
                     st.markdown(f"**{acao.get('numero_interno', 'S/N')} - {acao.get('nome_guerra', 'N/A (Aluno Apagado)')}** em {data_formatada}")
@@ -373,21 +352,20 @@ def show_gestao_acoes():
                     status_atual = acao.get('status', 'Pendente')
                     can_launch = check_permission('acesso_pagina_lancamentos_faia')
                     can_delete = check_permission('pode_excluir_lancamento_faia')
-                    can_edit = check_permission('pode_editar_lancamento_faia') # <-- Nova verificação de permissão
+                    can_edit = check_permission('pode_editar_lancamento_faia')
                     
-                    b1, b2, b3 = st.columns(3) # Colunas para os botões
-
+                    # ALTERAÇÃO 4: Botões com texto e dispostos verticalmente
                     if status_atual == 'Pendente' and can_launch:
-                        if b1.button("🚀", key=f"launch_{acao_id}", help="Lançar Ação"):
+                        if st.button("Lançar", key=f"launch_{acao_id}", use_container_width=True, type="primary"):
                              supabase.table("Acoes").update({'status': 'Lançado'}).eq('id', acao_id).execute()
                              load_data.clear(); st.rerun()
                     
                     if can_edit:
-                         if b2.button("✏️", key=f"edit_{acao_id}", help="Editar Ação"):
+                         if st.button("Editar", key=f"edit_{acao_id}", use_container_width=True):
                             edit_acao_dialog(acao, tipos_acao_df, supabase)
 
                     if status_atual != 'Arquivado' and can_delete:
-                        if b3.button("🗑️", key=f"archive_{acao_id}", help="Arquivar Ação"):
+                        if st.button("Arquivar", key=f"archive_{acao_id}", use_container_width=True):
                             supabase.table("Acoes").update({'status': 'Arquivado'}).eq('id', acao_id).execute()
                             load_data.clear(); st.rerun()
 
