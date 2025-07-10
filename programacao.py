@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import time # <-- Importado para o delay
 from database import load_data, init_supabase_client
 from auth import check_permission
-import time
 from io import BytesIO
 import xlsxwriter
 
@@ -53,7 +53,6 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
     if tipos_acao_df.empty:
         st.error("Nenhum tipo de ação cadastrado."); return
 
-    # Filtra apenas ações neutras (pontuação 0)
     tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
     acoes_neutras_df = tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome')
     
@@ -63,7 +62,6 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
     tipos_opcoes = {f"{tipo['nome']}": tipo for _, tipo in acoes_neutras_df.iterrows()}
     opcoes_labels = list(tipos_opcoes.keys())
 
-    # Procura por uma opção que contenha "presença em instrução" para ser o padrão
     default_index = 0
     try:
         default_option = next(s for s in opcoes_labels if "presença em instrução" in s.lower())
@@ -84,8 +82,10 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
                 update_data = {"status": 'Concluído', "concluido_por": st.session_state.username, "data_conclusao": datetime.now().strftime('%d/%m/%Y %H:%M')}
                 supabase.table("Programacao").update(update_data).eq("id", evento['id']).execute()
                 st.toast("Evento finalizado com sucesso!"); load_data.clear()
+                time.sleep(2) # <-- PAUSA ADICIONADA
             except Exception as e:
                 st.error(f"Falha ao finalizar o evento: {e}")
+                time.sleep(2) # <-- PAUSA ADICIONADA
             st.rerun()
             
     with col2:
@@ -98,14 +98,9 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
                 supabase.table("Programacao").update(update_data).eq("id", evento['id']).execute()
 
                 alunos_df = load_data("Alunos")
-                acoes_df = load_data("Acoes")
                 alunos_para_registrar = alunos_df[alunos_df['pelotao'].isin(turmas_concluidas)]
                 
                 if not alunos_para_registrar.empty:
-                    response = supabase.table("Acoes").select("id", count='exact').execute()
-                    ids_existentes = [int(item['id']) for item in response.data if str(item.get('id')).isdigit()]
-                    id_atual = max(ids_existentes) if ids_existentes else 0
-                    
                     tipo_info = tipos_opcoes[tipo_selecionado_str]
                     tipo_acao_id = tipo_info['id']
                     tipo_acao_nome = tipo_info['nome']
@@ -115,16 +110,10 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
 
                     novas_acoes = []
                     for _, aluno in alunos_para_registrar.iterrows():
-                        id_atual += 1
                         nova_acao = {
-                            'id': str(id_atual), 
-                            'aluno_id': str(aluno['id']), 
-                            'tipo_acao_id': str(tipo_acao_id), 
-                            'tipo': tipo_acao_nome, 
-                            'descricao': descricao_acao, 
-                            'data': data_acao, 
-                            'usuario': st.session_state.username, 
-                            'status': 'Lançado' # Define o status como Lançado diretamente
+                            'aluno_id': str(aluno['id']), 'tipo_acao_id': str(tipo_acao_id), 
+                            'tipo': tipo_acao_nome, 'descricao': descricao_acao, 'data': data_acao, 
+                            'usuario': st.session_state.username, 'status': 'Lançado'
                         }
                         novas_acoes.append(nova_acao)
                                         
@@ -133,13 +122,13 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
                             supabase.table("Acoes").insert(novas_acoes).execute()
                             st.success(f"Ação '{tipo_acao_nome}' registrada para {len(novas_acoes)} alunos!")
                             load_data.clear()
-                            time.sleep(2)
+                            time.sleep(2) # <-- PAUSA ADICIONADA
                         except Exception as e:
                             st.error(f"Falha ao salvar os registros na FAIA: {e}")
-                            time.sleep(2)
+                            time.sleep(2) # <-- PAUSA ADICIONADA
                 else:
                     st.warning("Nenhum aluno encontrado nas turmas selecionadas para lançar na FAIA.")
-                    time.sleep(2)
+                    time.sleep(2) # <-- PAUSA ADICIONADA
             st.rerun()
 
 @st.dialog("Gerenciar Status Parcial do Evento")
@@ -174,6 +163,7 @@ def gerenciar_status_dialog(evento, supabase):
                     st.session_state['turmas_para_logar'] = turmas_recem_concluidas
                 st.toast("Status do evento atualizado!")
                 load_data.clear()
+                st.rerun() # <-- CORREÇÃO PARA EVITAR DIÁLOGO DUPLO
             except Exception as e:
                 st.error(f"Falha ao salvar o status: {e}")
 
@@ -245,11 +235,8 @@ def show_programacao():
                         destinatarios_str = ", ".join(destinatarios_selecionados) 
                         if "Todos" in destinatarios_str: destinatarios_str = "Todos"
                         
-                        ids_numericos = pd.to_numeric(programacao_df['id'], errors='coerce').dropna()
-                        novo_id = int(ids_numericos.max()) + 1 if not ids_numericos.empty else 1
-                        
                         novo_evento = {
-                            'id': str(novo_id), 'data': nova_data.strftime('%Y-%m-%d'), 
+                            'data': nova_data.strftime('%Y-%m-%d'), 
                             'horario': novo_horario_str, 'descricao': nova_descricao, 
                             'local': novo_local, 'responsavel': novo_responsavel, 
                             'obs': nova_obs, 'destinatarios': destinatarios_str, 
@@ -284,9 +271,6 @@ def show_programacao():
                             programacao_atual['horario'] = programacao_atual['horario'].astype(str).str.strip()
                             programacao_atual['descricao'] = programacao_atual['descricao'].astype(str).str.strip()
                             
-                            ids_existentes = pd.to_numeric(programacao_atual['id'], errors='coerce').dropna()
-                            id_atual = int(ids_existentes.max()) if not ids_existentes.empty else 0
-
                             for _, row in df_import.iterrows():
                                 try:
                                     row_data = pd.to_datetime(row['data']).date()
@@ -302,22 +286,24 @@ def show_programacao():
                                     (programacao_atual['descricao'] == row_descricao)
                                 ]
                                 
+                                registro = row.to_dict()
                                 if not match.empty:
-                                    id_evento = match.iloc[0]['id']
-                                    registro = row.to_dict()
-                                    registro['id'] = id_evento
+                                    registro['id'] = match.iloc[0]['id']
                                 else:
-                                    id_atual += 1
-                                    registro = row.to_dict()
-                                    registro['id'] = str(id_atual)
-                                    registro['status'] = 'A Realizar'
-                                    registro['pelotoes_concluidos'] = ''
+                                    # Para novos itens, o ID será gerado pelo Supabase
+                                    if 'id' in registro:
+                                        del registro['id']
                                 
                                 registro['data'] = row_data.strftime('%Y-%m-%d')
+                                # Garante que colunas extras não causem erro
+                                for k in list(registro.keys()):
+                                    if k not in ['id', 'data', 'horario', 'descricao', 'local', 'responsavel', 'obs', 'destinatarios']:
+                                        del registro[k]
+
                                 registros_para_upsert.append(registro)
 
                             if registros_para_upsert:
-                                supabase.table("Programacao").upsert(registros_para_upsert, on_conflict='id').execute()
+                                supabase.table("Programacao").upsert(registros_para_upsert).execute()
                                 st.success(f"Importação concluída! {len(registros_para_upsert)} eventos foram processados.")
                                 load_data.clear(); st.rerun()
                 except Exception as e:
