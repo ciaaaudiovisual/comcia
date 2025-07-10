@@ -39,7 +39,9 @@ def analisar_relato_com_gemini(texto: str, alunos_df: pd.DataFrame, tipos_acao_d
         st.error(f"Erro ao configurar a API do Gemini. Verifique seus segredos. Detalhe: {e}")
         return []
 
-    lista_nomes_alunos = ", ".join(alunos_df['nome_guerra'].unique().tolist())
+# Remove valores nulos, pega os nomes únicos e garante que todos são texto
+    nomes_validos = [str(nome) for nome in alunos_df['nome_guerra'].dropna().unique()]
+    lista_nomes_alunos = ", ".join(nomes_validos)
     lista_tipos_acao = ", ".join(tipos_acao_df['nome'].unique().tolist())
     data_de_hoje = datetime.now().strftime('%Y-%m-%d')
 
