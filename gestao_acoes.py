@@ -10,6 +10,61 @@ import zipfile
 # ==============================================================================
 # DIÁLOGOS E POPUPS
 # ==============================================================================
+
+# --- NOVO: Diálogo para Editar uma Ação ---
+@st.dialog("✏️ Editar Ação")
+def edit_acao_dialog(acao_selecionada, tipos_acao_df, supabase):
+    st.write(f"Editando ação para: **{acao_selecionada.get('nome_guerra', 'N/A')}**")
+    
+    with st.form(key=f"edit_form_{acao_selecionada['id_x']}"):
+        # Prepara as opções de tipo de ação
+        opcoes_tipo_acao = tipos_acao_df['nome'].unique().tolist()
+        try:
+            index_acao_atual = opcoes_tipo_acao.index(acao_selecionada['nome'])
+        except (ValueError, KeyError):
+            index_acao_atual = 0
+
+        novo_tipo_acao = st.selectbox(
+            "Tipo de Ação",
+            options=opcoes_tipo_acao,
+            index=index_acao_atual
+        )
+        
+        # Converte a data para um objeto de data, se possível
+        try:
+            data_atual = pd.to_datetime(acao_selecionada['data']).date()
+        except (ValueError, TypeError):
+            data_atual = datetime.now().date()
+
+        nova_data = st.date_input("Data da Ação", value=data_atual)
+        
+        nova_descricao = st.text_area(
+            "Descrição/Justificativa",
+            value=acao_selecionada.get('descricao', '')
+        )
+
+        if st.form_submit_button("Salvar Alterações"):
+            try:
+                # Busca o ID do tipo de ação selecionado
+                tipo_acao_info = tipos_acao_df[tipos_acao_df['nome'] == novo_tipo_acao].iloc[0]
+
+                update_data = {
+                    'tipo_acao_id': str(tipo_acao_info['id']),
+                    'tipo': novo_tipo_acao,
+                    'data': nova_data.strftime('%Y-%m-%d'),
+                    'descricao': nova_descricao
+                }
+                
+                supabase.table("Acoes").update(update_data).eq('id', acao_selecionada['id_x']).execute()
+                
+                st.toast("Ação atualizada com sucesso!", icon="✅")
+                load_data.clear()
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"Erro ao salvar as alterações: {e}")
+
+
 @st.dialog("Sucesso!")
 def show_success_dialog(message):
     st.success(message)
@@ -302,7 +357,7 @@ def show_gestao_acoes():
         for _, acao in df_filtrado_final.iterrows():
             acao_id = acao['id_x']
             with st.container(border=True):
-                col_check_ind, col_info, col_actions = st.columns([1, 6, 3])
+                col_check_ind, col_info, col_actions = st.columns([1, 6, 2]) # <-- Alterado para dar espaço ao novo botão
                 
                 with col_check_ind:
                     st.session_state.action_selection[acao_id] = st.checkbox(" ", value=st.session_state.action_selection.get(acao_id, False), key=f"select_{acao_id}", label_visibility="collapsed")
@@ -318,22 +373,29 @@ def show_gestao_acoes():
                     status_atual = acao.get('status', 'Pendente')
                     can_launch = check_permission('acesso_pagina_lancamentos_faia')
                     can_delete = check_permission('pode_excluir_lancamento_faia')
+                    can_edit = check_permission('pode_editar_lancamento_faia') # <-- Nova verificação de permissão
+                    
+                    b1, b2, b3 = st.columns(3) # Colunas para os botões
+
+                    if status_atual == 'Pendente' and can_launch:
+                        if b1.button("🚀", key=f"launch_{acao_id}", help="Lançar Ação"):
+                             supabase.table("Acoes").update({'status': 'Lançado'}).eq('id', acao_id).execute()
+                             load_data.clear(); st.rerun()
+                    
+                    if can_edit:
+                         if b2.button("✏️", key=f"edit_{acao_id}", help="Editar Ação"):
+                            edit_acao_dialog(acao, tipos_acao_df, supabase)
+
+                    if status_atual != 'Arquivado' and can_delete:
+                        if b3.button("🗑️", key=f"archive_{acao_id}", help="Arquivar Ação"):
+                            supabase.table("Acoes").update({'status': 'Arquivado'}).eq('id', acao_id).execute()
+                            load_data.clear(); st.rerun()
 
                     if status_atual == 'Lançado':
                         st.success("✅ Lançado")
                     elif status_atual == 'Arquivado':
                         st.warning("🗄️ Arquivado")
-                    elif status_atual == 'Pendente' and can_launch:
-                        with st.form(f"launch_form_{acao_id}"):
-                            if st.form_submit_button("🚀 Lançar", use_container_width=True):
-                                supabase.table("Acoes").update({'status': 'Lançado'}).eq('id', acao_id).execute()
-                                load_data.clear(); st.rerun()
-                    
-                    if status_atual != 'Arquivado' and can_delete:
-                        with st.form(f"archive_form_{acao_id}"):
-                            if st.form_submit_button("🗑️ Arquivar", use_container_width=True):
-                                supabase.table("Acoes").update({'status': 'Arquivado'}).eq('id', acao_id).execute()
-                                load_data.clear(); st.rerun()
+
 
     st.divider()
     render_export_section(acoes_com_pontos, alunos_df, filtro_pelotao, filtro_aluno)
