@@ -313,9 +313,9 @@ def show_gestao_acoes():
             selected_ids = [acao_id for acao_id, is_selected in st.session_state.action_selection.items() if is_selected and acao_id in ids_visiveis]
             
             with col_botoes1:
-                st.button(f"Lançar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Lançado', supabase), disabled=not selected_ids, use_container_width=True)
+                st.button(f"🚀 Lançar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Lançado', supabase), disabled=not selected_ids, use_container_width=True)
             with col_botoes2:
-                st.button(f"Arquivar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Arquivado', supabase), disabled=not selected_ids, use_container_width=True)
+                st.button(f"🗑️ Arquivar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Arquivado', supabase), disabled=not selected_ids, use_container_width=True)
 
             def toggle_all_visible():
                 new_state = st.session_state.get('select_all_toggle', False)
@@ -361,11 +361,11 @@ def show_gestao_acoes():
                              load_data.clear(); st.rerun()
                     
                     if can_edit:
-                         if st.button("Editar", key=f"edit_{acao_id}", use_container_width=True):
+                         if st.button("✏️ Editar", key=f"edit_{acao_id}", use_container_width=True):
                             edit_acao_dialog(acao, tipos_acao_df, supabase)
 
                     if status_atual != 'Arquivado' and can_delete:
-                        if st.button("Arquivar", key=f"archive_{acao_id}", use_container_width=True):
+                        if st.button("🗑️ Arquivar", key=f"archive_{acao_id}", use_container_width=True):
                             supabase.table("Acoes").update({'status': 'Arquivado'}).eq('id', acao_id).execute()
                             load_data.clear(); st.rerun()
 
