@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime
 from database import load_data, init_supabase_client
 from auth import check_permission
+import time
 from io import BytesIO
 import xlsxwriter
 
@@ -132,10 +133,13 @@ def registrar_faia_dialog(evento, turmas_concluidas, supabase):
                             supabase.table("Acoes").insert(novas_acoes).execute()
                             st.success(f"Ação '{tipo_acao_nome}' registrada para {len(novas_acoes)} alunos!")
                             load_data.clear()
+                            time.sleep(2)
                         except Exception as e:
                             st.error(f"Falha ao salvar os registros na FAIA: {e}")
+                            time.sleep(2)
                 else:
                     st.warning("Nenhum aluno encontrado nas turmas selecionadas para lançar na FAIA.")
+                    time.sleep(2)
             st.rerun()
 
 @st.dialog("Gerenciar Status Parcial do Evento")
