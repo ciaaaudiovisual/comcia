@@ -267,27 +267,13 @@ def show_dashboard():
             alunos_nasc_validos = alunos_df.dropna(subset=['data_nascimento'])
             hoje = datetime.now().date()
             
-            # --- LÓGICA DA SEMANA PASSADA E SEMANA ATUAL ---
-            # Calcula o início do período: Domingo da semana anterior à anterior
-            # Ex: Se hoje é Quinta (dia da semana 3, sendo Segunda 0), `hoje.weekday()` é 3.
-            # 3 + 7 = 10. timedelta(days=10) nos leva 10 dias para trás (até a segunda da semana anterior)
-            # Para chegar no domingo da semana anterior à anterior, precisamos ajustar isso.
-            # A lógica `hoje.weekday() + 7` de fato busca o início da semana anterior.
-            # Para "semana passada e semana atual", seria do domingo da semana passada até o próximo sábado.
-            
-            # Ajuste mais preciso para "semana passada (domingo a sábado) E semana atual (domingo a sábado)"
-            # Dia da semana de hoje (0=segunda, 6=domingo)
             dia_da_semana_hoje = hoje.weekday() 
 
-            # Calcula o domingo da semana atual (ou hoje, se já for domingo)
-            # `timedelta(days=dia_da_semana_hoje)` subtrai os dias para chegar na segunda
-            # Para domingo, subtrair `dia_da_semana_hoje + 1` e adicionar 7 (para cair no domingo anterior)
-            domingo_semana_atual = hoje - timedelta(days=dia_da_semana_hoje) + timedelta(days=6) # Sábado da semana atual
+            domingo_semana_atual = hoje - timedelta(days=dia_da_semana_hoje) + timedelta(days=6)
+            
+            inicio_do_periodo_de_busca = domingo_semana_atual - timedelta(days=13) 
 
-            # Início do período: 14 dias antes do próximo sábado (para pegar a semana passada completa)
-            inicio_do_periodo_de_busca = domingo_semana_atual - timedelta(days=13) # Domingo de 2 semanas atrás
-
-            periodo_de_dias = [inicio_do_periodo_de_busca + timedelta(days=i) for i in range(14)] # 14 dias no total
+            periodo_de_dias = [inicio_do_periodo_de_busca + timedelta(days=i) for i in range(14)]
 
             aniversarios_no_periodo = [d.strftime('%m-%d') for d in periodo_de_dias]
             aniversariantes_df = alunos_nasc_validos[alunos_nasc_validos['data_nascimento'].dt.strftime('%m-%d').isin(aniversarios_no_periodo)].copy()
@@ -296,7 +282,8 @@ def show_dashboard():
                 aniversariantes_df['dia_mes'] = aniversariantes_df['data_nascimento'].dt.strftime('%m-%d')
                 aniversariantes_df = aniversariantes_df.sort_values(by='dia_mes')
                 for _, aluno in aniversariantes_df.iterrows():
-                    st.success(f"**{aluno['nome_guerra']}** - {aluno['data_nascimento'].strftime('%d/%m')}")
+                    # ALTERAÇÃO AQUI: Incluindo numero_interno, nome_guerra e data
+                    st.success(f"**{aluno.get('numero_interno', 'N/A')}** - **{aluno['nome_guerra']}** - {aluno['data_nascimento'].strftime('%d/%m')}")
             else:
                 st.info("Nenhum aniversariante no período.")
 
