@@ -7,11 +7,11 @@ import requests
 import google.generativeai as genai
 import json
 
-# --- OTIMIZAÇÃO: Usando um modelo Whisper mais rápido ---
+# URL da API do modelo Whisper (versão mais rápida)
 API_URL = "https://api-inference.huggingface.co/models/openai/whisper-base"
 
 # ==============================================================================
-# FUNÇÕES DAS IAs
+# FUNÇÕES DAS IAs (Sem alterações)
 # ==============================================================================
 
 def transcrever_audio_para_texto(audio_bytes: bytes) -> str:
@@ -32,9 +32,6 @@ def transcrever_audio_para_texto(audio_bytes: bytes) -> str:
         return ""
 
 def analisar_relato_com_gemini(texto: str, alunos_df: pd.DataFrame, tipos_acao_df: pd.DataFrame) -> list:
-    """
-    Envia o texto para a API do Gemini e pede para extrair as ações em formato JSON.
-    """
     try:
         api_key = st.secrets["google_ai"]["api_key"]
         genai.configure(api_key=api_key)
@@ -48,7 +45,6 @@ def analisar_relato_com_gemini(texto: str, alunos_df: pd.DataFrame, tipos_acao_d
     lista_tipos_acao = ", ".join(tipos_acao_df['nome'].unique().tolist())
     data_de_hoje = datetime.now().strftime('%Y-%m-%d')
 
-    # --- PROMPT MELHORADO (FEW-SHOT PROMPTING) ---
     prompt = f"""
     Você é um assistente para um sistema de gestão de alunos militares. Sua função é analisar relatos textuais de supervisores, identificar os alunos e as ações (positivas ou negativas) e estruturar essa informação em um formato JSON.
 
@@ -121,7 +117,16 @@ def analisar_relato_com_gemini(texto: str, alunos_df: pd.DataFrame, tipos_acao_d
 # PÁGINA PRINCIPAL DA ABA DE IA
 # ==============================================================================
 def show_assistente_ia():
-    st.title("🤖 Assistente IA para Lançamentos")
+    # --- NOVO: Título e Botão de Limpeza no Topo ---
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.title("🤖 Assistente IA")
+    with col2:
+        if st.button("🧹 Limpar Histórico", use_container_width=True):
+            # Reinicia o estado do chat para o padrão
+            st.session_state.messages = [{"role": "assistant", "content": "Olá! Como posso ajudar a registar as ocorrências de hoje?"}]
+            st.rerun()
+
     st.caption("Envie um relato por texto ou voz e a IA irá preparar os rascunhos das ações para você.")
 
     supabase = init_supabase_client()
@@ -133,15 +138,13 @@ def show_assistente_ia():
     tipos_acao_df = load_data("Tipos_Acao")
     opcoes_tipo_acao = sorted(tipos_acao_df['nome'].unique().tolist())
 
+    # Exibe o histórico do chat
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             if isinstance(message["content"], list):
                 st.info("Encontrei as seguintes ações. Por favor, revise e lance individualmente.")
                 for i, sugestao in enumerate(message["content"]):
-                    
-                    # --- CORREÇÃO DA CHAVE DO FORMULÁRIO ---
                     chave_unica = f"form_{sugestao.get('aluno_id')}_{sugestao.get('tipo_acao').replace(' ', '_')}_{i}"
-                    
                     with st.form(key=chave_unica, border=True):
                         if not sugestao.get('aluno_id'):
                             st.error(f"Erro: Não foi possível encontrar o ID do aluno '{sugestao.get('nome_guerra')}'.")
@@ -167,10 +170,10 @@ def show_assistente_ia():
                             }
                             supabase.table("Acoes").insert(nova_acao).execute()
                             st.success(f"Ação para {sugestao['nome_guerra']} lançada!")
-                            # Futura melhoria: remover a sugestão da lista após o lançamento.
             else:
                 st.markdown(message["content"])
 
+    # --- ÁREA DE ENTRADA (VOZ E TEXTO) ---
     st.markdown("---")
     st.write("🎤 **Grave seu relato de voz:**")
     audio_bytes = st_audiorec()
