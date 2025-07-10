@@ -21,10 +21,6 @@ def analisar_audio_com_gemini(audio_bytes: bytes, alunos_df: pd.DataFrame, tipos
         st.error(f"Erro ao configurar a API do Gemini. Verifique seus segredos. Detalhe: {e}")
         return []
 
-    # Faz o upload do áudio para a API do Google. O Gemini irá processá-lo na nuvem.
-    # O st_audiorec grava em formato WAV, que é suportado.
-    audio_file = genai.upload_file(contents=audio_bytes, mime_type="audio/wav")
-
     # Prepara o contexto para a IA
     nomes_validos = [str(nome) for nome in alunos_df['nome_guerra'].dropna().unique()]
     lista_nomes_alunos = ", ".join(nomes_validos)
@@ -54,8 +50,16 @@ def analisar_audio_com_gemini(audio_bytes: bytes, alunos_df: pd.DataFrame, tipos
 
     try:
         model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        # Envia o prompt de texto E o ficheiro de áudio juntos na mesma requisição
-        response = model.generate_content([prompt, audio_file])
+
+        # --- CORREÇÃO APLICADA AQUI ---
+        # 1. Cria a "parte" de áudio como um dicionário, em vez de fazer upload
+        audio_part = {
+            "mime_type": "audio/wav",
+            "data": audio_bytes
+        }
+
+        # 2. Envia o prompt de texto E a parte de áudio diretamente para o modelo
+        response = model.generate_content([prompt, audio_part])
         
         json_response_text = response.text.strip().replace("```json", "").replace("```", "")
         sugestoes_dict = json.loads(json_response_text)
@@ -66,13 +70,12 @@ def analisar_audio_com_gemini(audio_bytes: bytes, alunos_df: pd.DataFrame, tipos
             sugestao['aluno_id'] = nomes_para_ids.get(sugestao['nome_guerra'])
             sugestao['data'] = datetime.strptime(data_de_hoje, '%Y-%m-%d').date()
         
-        st.toast("Relato em áudio analisado com sucesso pelo Gemini!", icon="✨")
+        st.toast("Relato em áudio analisado com sucesso!", icon="✨")
         return sugestoes
 
     except Exception as e:
         st.error(f"A IA (Gemini) não conseguiu processar o áudio. Detalhe do erro: {e}")
         return []
-
 # ==============================================================================
 # PÁGINA PRINCIPAL DA ABA DE IA (LÓGICA SIMPLIFICADA)
 # ==============================================================================
