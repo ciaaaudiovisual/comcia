@@ -208,9 +208,7 @@ def show_programacao():
         programacao_df['data'] = pd.to_datetime(programacao_df['data'], errors='coerce')
         programacao_df.dropna(subset=['data'], inplace=True)
 
- # --- LINHA ADICIONADA ---
     st.info("Presença Diária 6:30 | 7:00 Café | 12:00 Almoço | 17:40 Jantar | 21:00 Ceia")
-    # -------------------------
     
     st.subheader("Filtros")
     filtro_status = st.radio("Ver eventos:", ["A Realizar", "Em Andamento", "Concluído", "Todos"], horizontal=True, index=0)
@@ -260,69 +258,66 @@ def show_programacao():
                             st.error(f"Erro ao adicionar evento: {e}")
 
             st.divider()
-
+            
             st.subheader("Importar Eventos em Massa (XLSX)")
-                        st.info("O sistema irá atualizar eventos com mesma data, horário e descrição, ou adicionar novos.")
-                        excel_modelo_bytes = create_excel_modelo()
-                        st.download_button("Baixar Modelo XLSX", excel_modelo_bytes, "modelo_programacao.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                        
-                        uploaded_file = st.file_uploader("Escolha um arquivo XLSX", type="xlsx")
-                        if uploaded_file:
-                            try:
-                                with st.spinner("Processando o ficheiro..."):
-                                    df_import = pd.read_excel(uploaded_file)
-                                    required_cols = ['data', 'horario', 'descricao']
-                                    if not all(col in df_import.columns for col in required_cols):
-                                        st.error(f"O ficheiro deve conter as colunas obrigatórias: {', '.join(required_cols)}")
-                                    else:
-                                        registros_para_upsert = []
-                                        programacao_atual = load_data("Programacao")
-                                        
-                                        # --- CORREÇÃO: Padroniza os tipos de dados ANTES da comparação ---
-                                        programacao_atual['data'] = pd.to_datetime(programacao_atual['data'], errors='coerce')
-                                        programacao_atual['horario'] = programacao_atual['horario'].astype(str).str.strip()
-                                        programacao_atual['descricao'] = programacao_atual['descricao'].astype(str).str.strip()
-                                        
-                                        ids_existentes = pd.to_numeric(programacao_atual['id'], errors='coerce').dropna()
-                                        id_atual = int(ids_existentes.max()) if not ids_existentes.empty else 0
+            st.info("O sistema irá atualizar eventos com mesma data, horário e descrição, ou adicionar novos.")
+            excel_modelo_bytes = create_excel_modelo()
+            st.download_button("Baixar Modelo XLSX", excel_modelo_bytes, "modelo_programacao.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
-                                        for _, row in df_import.iterrows():
-                                            # Padroniza os dados da linha do Excel
-                                            try:
-                                                row_data = pd.to_datetime(row['data']).date()
-                                            except Exception:
-                                                continue # Pula a linha se a data for inválida
-                                                
-                                            row_horario = str(row.get('horario', '')).strip()
-                                            row_descricao = str(row.get('descricao', '')).strip()
-            
-                                            # A comparação agora é mais segura
-                                            match = programacao_atual[
-                                                (programacao_atual['data'].dt.date == row_data) &
-                                                (programacao_atual['horario'] == row_horario) &
-                                                (programacao_atual['descricao'] == row_descricao)
-                                            ]
-                                            
-                                            if not match.empty:
-                                                id_evento = match.iloc[0]['id']
-                                                registro = row.to_dict()
-                                                registro['id'] = id_evento
-                                            else:
-                                                id_atual += 1
-                                                registro = row.to_dict()
-                                                registro['id'] = str(id_atual)
-                                                registro['status'] = 'A Realizar'
-                                                registro['pelotoes_concluidos'] = ''
-                                            
-                                            registro['data'] = row_data.strftime('%Y-%m-%d')
-                                            registros_para_upsert.append(registro)
-            
-                                        if registros_para_upsert:
-                                            supabase.table("Programacao").upsert(registros_para_upsert, on_conflict='id').execute()
-                                            st.success(f"Importação concluída! {len(registros_para_upsert)} eventos foram processados.")
-                                            load_data.clear(); st.rerun()
-                            except Exception as e:
-                                st.error(f"Erro ao processar o ficheiro: {e}")
+            uploaded_file = st.file_uploader("Escolha um arquivo XLSX", type="xlsx")
+            if uploaded_file:
+                try:
+                    with st.spinner("Processando o ficheiro..."):
+                        df_import = pd.read_excel(uploaded_file)
+                        required_cols = ['data', 'horario', 'descricao']
+                        if not all(col in df_import.columns for col in required_cols):
+                            st.error(f"O ficheiro deve conter as colunas obrigatórias: {', '.join(required_cols)}")
+                        else:
+                            registros_para_upsert = []
+                            programacao_atual = load_data("Programacao")
+                            
+                            programacao_atual['data'] = pd.to_datetime(programacao_atual['data'], errors='coerce')
+                            programacao_atual['horario'] = programacao_atual['horario'].astype(str).str.strip()
+                            programacao_atual['descricao'] = programacao_atual['descricao'].astype(str).str.strip()
+                            
+                            ids_existentes = pd.to_numeric(programacao_atual['id'], errors='coerce').dropna()
+                            id_atual = int(ids_existentes.max()) if not ids_existentes.empty else 0
+
+                            for _, row in df_import.iterrows():
+                                try:
+                                    row_data = pd.to_datetime(row['data']).date()
+                                except Exception:
+                                    continue
+                                    
+                                row_horario = str(row.get('horario', '')).strip()
+                                row_descricao = str(row.get('descricao', '')).strip()
+
+                                match = programacao_atual[
+                                    (programacao_atual['data'].dt.date == row_data) &
+                                    (programacao_atual['horario'] == row_horario) &
+                                    (programacao_atual['descricao'] == row_descricao)
+                                ]
+                                
+                                if not match.empty:
+                                    id_evento = match.iloc[0]['id']
+                                    registro = row.to_dict()
+                                    registro['id'] = id_evento
+                                else:
+                                    id_atual += 1
+                                    registro = row.to_dict()
+                                    registro['id'] = str(id_atual)
+                                    registro['status'] = 'A Realizar'
+                                    registro['pelotoes_concluidos'] = ''
+                                
+                                registro['data'] = row_data.strftime('%Y-%m-%d')
+                                registros_para_upsert.append(registro)
+
+                            if registros_para_upsert:
+                                supabase.table("Programacao").upsert(registros_para_upsert, on_conflict='id').execute()
+                                st.success(f"Importação concluída! {len(registros_para_upsert)} eventos foram processados.")
+                                load_data.clear(); st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao processar o ficheiro: {e}")
             
     st.header("Agenda")
     
