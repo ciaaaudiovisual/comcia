@@ -19,6 +19,7 @@ FEATURES_LIST = [
     ('pode_finalizar_evento_programacao', 'Pode Finalizar Eventos (Status Concluído)', 'admin,comcia,supervisor'),
     ('pode_excluir_lancamento_faia', 'Pode Excluir Lançamentos na tela da FAIA', 'admin,supervisor'),
     ('pode_ver_conceito_final', 'Pode Visualizar o Conceito Final do Aluno', 'admin,supervisor,comcia'),
+    ('pode_editar_lancamento_faia', 'Pode Editar Lançamentos na Fila', 'admin,supervisor'),
 ]
 
 # ==============================================================================
