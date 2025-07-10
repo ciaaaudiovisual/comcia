@@ -21,7 +21,8 @@ def analisar_audio_com_gemini(audio_bytes: bytes, alunos_df: pd.DataFrame, tipos
         st.error(f"Erro ao configurar a API do Gemini. Verifique seus segredos. Detalhe: {e}")
         return []
 
-    # Prepara o áudio para envio
+    # Faz o upload do áudio para a API do Google. O Gemini irá processá-lo na nuvem.
+    # O st_audiorec grava em formato WAV, que é suportado.
     audio_file = genai.upload_file(contents=audio_bytes, mime_type="audio/wav")
 
     # Prepara o contexto para a IA
@@ -53,7 +54,7 @@ def analisar_audio_com_gemini(audio_bytes: bytes, alunos_df: pd.DataFrame, tipos
 
     try:
         model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        # Envia o prompt de texto E o ficheiro de áudio juntos
+        # Envia o prompt de texto E o ficheiro de áudio juntos na mesma requisição
         response = model.generate_content([prompt, audio_file])
         
         json_response_text = response.text.strip().replace("```json", "").replace("```", "")
@@ -65,7 +66,7 @@ def analisar_audio_com_gemini(audio_bytes: bytes, alunos_df: pd.DataFrame, tipos
             sugestao['aluno_id'] = nomes_para_ids.get(sugestao['nome_guerra'])
             sugestao['data'] = datetime.strptime(data_de_hoje, '%Y-%m-%d').date()
         
-        st.toast("Relato em áudio analisado com sucesso!", icon="✨")
+        st.toast("Relato em áudio analisado com sucesso pelo Gemini!", icon="✨")
         return sugestoes
 
     except Exception as e:
@@ -91,14 +92,14 @@ def show_assistente_ia():
     tipos_acao_df = load_data("Tipos_Acao")
     opcoes_tipo_acao = sorted(tipos_acao_df['nome'].unique().tolist())
     
-    st.info("Grave um relato de voz. A IA irá transcrever e analisar as ações automaticamente.")
+    st.info("Grave um relato de voz. O Gemini irá ouvir, transcrever e analisar as ações automaticamente.")
     
     # --- ÁREA DE ENTRADA DE VOZ ---
     audio_bytes = st_audiorec()
 
-    # Processamento automático e direto do áudio
+    # Processamento automático e direto do áudio com o Gemini
     if audio_bytes:
-        with st.spinner("Gemini está a ouvir e a analisar o seu relato..."):
+        with st.spinner("Gemini está a ouvir e a analisar o seu relato... (Isso pode levar alguns segundos)"):
             sugestoes = analisar_audio_com_gemini(audio_bytes, alunos_df, tipos_acao_df)
             st.session_state.sugestoes_ativas.extend(sugestoes)
         st.rerun()
