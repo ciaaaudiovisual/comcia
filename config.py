@@ -23,7 +23,7 @@ FEATURES_LIST = [
 ]
 
 # ==============================================================================
-# FUNÇÕES DE CALLBACK E DIÁLOGOS (Sem alterações)
+# FUNÇÕES DE CALLBACK E DIÁLOGOS
 # ==============================================================================
 
 def on_visibility_change(acao_id, supabase):
@@ -35,18 +35,34 @@ def on_visibility_change(acao_id, supabase):
     except Exception as e:
         st.error(f"Falha ao atualizar visibilidade: {e}")
 
+# --- CORREÇÃO: Adicionado campo de pontuação ao diálogo de edição ---
 @st.dialog("Editar Detalhes da Ação")
 def edit_tipo_acao_dialog(tipo_acao, supabase):
     st.write(f"Editando: **{tipo_acao['nome']}**")
     with st.form("edit_tipo_acao_form"):
         novo_nome = st.text_input("Nome da Ação*", value=tipo_acao.get('nome', ''))
+        
+        # NOVO CAMPO para editar a pontuação
+        nova_pontuacao = st.number_input(
+            "Pontuação", 
+            value=float(tipo_acao.get('pontuacao', 0.0)),
+            step=0.01,
+            format="%.2f"
+        )
+        
         nova_descricao = st.text_input("Descrição", value=tipo_acao.get('descricao', ''))
+        
         if st.form_submit_button("Salvar Alterações"):
             if not novo_nome:
                 st.warning("O nome da ação é obrigatório.")
                 return
             try:
-                supabase.table("Tipos_Acao").update({"nome": novo_nome, "descricao": nova_descricao}).eq("id", tipo_acao['id']).execute()
+                update_data = {
+                    "nome": novo_nome,
+                    "descricao": nova_descricao,
+                    "pontuacao": nova_pontuacao # Adiciona a nova pontuação ao update
+                }
+                supabase.table("Tipos_Acao").update(update_data).eq("id", tipo_acao['id']).execute()
                 st.success("Tipo de Ação atualizado!")
                 load_data.clear()
             except Exception as e:
@@ -78,7 +94,6 @@ def on_delete_user_click(user_to_delete, supabase):
     except Exception as e:
         st.error(f"Erro ao remover perfil: {e}")
 
-# --- NOVA FUNÇÃO AJUDANTE PARA RENDERIZAR UM ITEM DE AÇÃO ---
 def render_acao_item(row, supabase):
     """Função para renderizar um único item de tipo de ação, para evitar repetição de código."""
     with st.container(border=True):
@@ -101,16 +116,14 @@ def render_acao_item(row, supabase):
 
         with col_actions:
             sub_b1, sub_b2 = st.columns(2)
-            if sub_b1.button("✏️", key=f"e_{row['id']}", help="Editar nome/descrição", use_container_width=True):
+            if sub_b1.button("✏️", key=f"e_{row['id']}", help="Editar nome/descrição/pontuação", use_container_width=True):
                 edit_tipo_acao_dialog(row, supabase)
             sub_b2.button("🗑️", key=f"d_{row['id']}", help="Excluir", on_click=on_delete_tipo_acao_click, args=(row['id'], supabase), use_container_width=True)
 
 # ==============================================================================
-# RENDERIZAÇÃO DAS ABAS
+# RENDERIZAÇÃO DAS ABAS (Sem alterações)
 # ==============================================================================
-
 def show_config_gerais(supabase):
-    # (Esta função continua igual, sem alterações)
     st.subheader("Configurações Gerais")
     config_df = load_data("Config")
     
@@ -163,7 +176,6 @@ def show_config_gerais(supabase):
                 st.error(f"Falha ao salvar configurações: {e}")
 
 def show_config_usuarios(supabase):
-    # (Esta função continua igual, sem alterações)
     st.subheader("Gestão de Usuários")
     usuarios_df = load_data("Users")
 
@@ -209,7 +221,6 @@ def show_config_usuarios(supabase):
     else:
         st.info("Nenhum usuário cadastrado.")
 
-# --- FUNÇÃO PRINCIPAL DA ABA "TIPOS DE AÇÃO" REFEITA ---
 def show_config_tipos_acao(supabase):
     st.subheader("Gestão de Tipos de Ação")
     if not check_permission('pode_gerenciar_tipos_acao'):
@@ -236,12 +247,10 @@ def show_config_tipos_acao(supabase):
     st.divider()
     st.subheader("Tipos de Ação Cadastrados")
 
-    # Divide os tipos de ação em 3 categorias
     positivas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome')
     neutras_df = tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome')
     negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
 
-    # Cria 3 colunas para exibir as categorias
     col_pos, col_neu, col_neg = st.columns(3)
 
     with col_pos:
@@ -270,7 +279,6 @@ def show_config_tipos_acao(supabase):
 
 
 def show_config_permissoes(supabase):
-    # (Esta função continua igual, sem alterações)
     st.subheader("Gestão de Permissões por Perfil")
     st.info("O perfil 'admin' sempre tem acesso total e não pode ser editado aqui.")
     permissions_df = get_permissions_rules()
@@ -327,10 +335,8 @@ def show_config():
     if st.session_state.get('role') == 'admin':
         tab_list.append("🔒 Permissões")
     
-    # Reordenando para "Tipos de Ação" vir primeiro
     tabs = st.tabs(tab_list)
     
-    # O conteúdo agora está mapeado para os novos índices das abas
     tab_map = {
         "🏆 Tipos de Ação": show_config_tipos_acao,
         "⚙️ Gerais": show_config_gerais,
