@@ -26,7 +26,6 @@ FEATURES_LIST = [
 # FUNÇÕES DE CALLBACK E DIÁLOGOS
 # ==============================================================================
 
-# --- FUNÇÃO RENOMEADA PARA CORRIGIR O NameError ---
 def on_visibility_change(acao_id, supabase):
     """Atualiza a visibilidade da ação nos gráficos."""
     novo_status = st.session_state[f"visible_{acao_id}"]
@@ -59,9 +58,11 @@ def edit_tipo_acao_dialog(tipo_acao, supabase):
             except Exception as e:
                 st.error(f"Falha ao salvar as alterações: {e}")
 
+# --- CORREÇÃO 1: Alterando a lógica para 2 casas decimais ---
 def on_pontuacao_change(tipo_acao_id, pontuacao_atual, delta, supabase):
-    """Altera a pontuação de um tipo de ação em 0.1 para mais ou para menos."""
-    nova_pontuacao = round(pontuacao_atual + delta, 1)
+    """Altera a pontuação de um tipo de ação."""
+    # Arredonda o resultado para 2 casas decimais
+    nova_pontuacao = round(pontuacao_atual + delta, 2)
     try:
         supabase.table("Tipos_Acao").update({'pontuacao': nova_pontuacao}).eq('id', tipo_acao_id).execute()
         load_data.clear()
@@ -201,14 +202,12 @@ def show_config_tipos_acao(supabase):
         with st.form("novo_tipo_acao", clear_on_submit=True):
             nome = st.text_input("Nome da Ação*")
             descricao = st.text_input("Descrição")
-            pontuacao = st.number_input("Pontuação Inicial*", value=0.0, step=0.1, format="%.1f")
+            pontuacao = st.number_input("Pontuação Inicial*", value=0.00, step=0.01, format="%.2f")
             
             if st.form_submit_button("Adicionar Tipo"):
                 if not nome: st.warning("O nome da ação é obrigatório.")
                 else:
-                    ids = pd.to_numeric(tipos_acao_df['id'], errors='coerce').dropna()
-                    novo_id = int(ids.max()) + 1 if not ids.empty else 1
-                    novo_tipo = {'id': str(novo_id), 'nome': nome, 'descricao': descricao, 'pontuacao': pontuacao, 'exibir_no_grafico': True}
+                    novo_tipo = {'nome': nome, 'descricao': descricao, 'pontuacao': pontuacao, 'exibir_no_grafico': True}
                     try:
                         supabase.table("Tipos_Acao").insert(novo_tipo).execute()
                         st.success("Tipo de ação adicionado!"); load_data.clear()
@@ -235,10 +234,12 @@ def show_config_tipos_acao(supabase):
             
             with col_score_ctrl:
                 sub_c1, sub_c2, sub_c3 = st.columns([1, 1, 1])
-                sub_c1.button("➖", key=f"minus_{row['id']}", on_click=on_pontuacao_change, args=(row['id'], pontuacao_atual, -0.1, supabase), use_container_width=True)
+                # --- CORREÇÃO 2: Alterando o delta para 0.01 ---
+                sub_c1.button("➖", key=f"minus_{row['id']}", on_click=on_pontuacao_change, args=(row['id'], pontuacao_atual, -0.01, supabase), use_container_width=True)
                 cor = 'red' if pontuacao_atual < 0 else 'green' if pontuacao_atual > 0 else 'gray'
-                sub_c2.markdown(f"<p style='font-size: 1.25rem; text-align: center; color: {cor}; margin: 0; font-weight: 500; padding-top: 5px;'>{pontuacao_atual:+.1f}</p>", unsafe_allow_html=True)
-                sub_c3.button("➕", key=f"plus_{row['id']}", on_click=on_pontuacao_change, args=(row['id'], pontuacao_atual, 0.1, supabase), use_container_width=True)
+                # --- CORREÇÃO 3: Alterando a exibição para 2 casas decimais ---
+                sub_c2.markdown(f"<p style='font-size: 1.25rem; text-align: center; color: {cor}; margin: 0; font-weight: 500; padding-top: 5px;'>{pontuacao_atual:+.2f}</p>", unsafe_allow_html=True)
+                sub_c3.button("➕", key=f"plus_{row['id']}", on_click=on_pontuacao_change, args=(row['id'], pontuacao_atual, 0.01, supabase), use_container_width=True)
             
             with col_visibility:
                 st.checkbox(
