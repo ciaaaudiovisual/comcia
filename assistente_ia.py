@@ -2,160 +2,197 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from database import load_data, init_supabase_client
-from st_audiorec import st_audiorec
 import google.generativeai as genai
 import json
-import time # <-- Importa a biblioteca de tempo
+import time
+from io import BytesIO
+import PyPDF2
+import numpy as np
 
 # ==============================================================================
-# FUNÇÃO DA IA (GEMINI) - COM MELHORIAS DE DIAGNÓSTICO
+# FUNÇÕES DE BACKEND PARA INDEXAÇÃO E BUSCA (RAG)
 # ==============================================================================
-def analisar_relato_com_gemini(texto: str, alunos_df: pd.DataFrame, tipos_acao_df: pd.DataFrame) -> list:
+
+# Função para ler texto de um PDF
+def ler_pdf(ficheiro_bytes: BytesIO) -> str:
+    leitor_pdf = PyPDF2.PdfReader(ficheiro_bytes)
+    texto = ""
+    for pagina in leitor_pdf.pages:
+        texto += pagina.extract_text()
+    return texto
+
+# Função para quebrar o texto em pedaços (chunks)
+def dividir_em_chunks(texto: str, chunk_size=1000, overlap=100):
+    chunks = []
+    for i in range(0, len(texto), chunk_size - overlap):
+        chunks.append(texto[i:i + chunk_size])
+    return chunks
+
+# Função principal de indexação
+def indexar_documento(nome_ficheiro: str, ficheiro_bytes: BytesIO, supabase, progress_bar):
+    try:
+        st.info(f"A ler o conteúdo do ficheiro: {nome_ficheiro}...")
+        texto_completo = ler_pdf(ficheiro_bytes)
+        
+        st.info("A dividir o documento em pedaços...")
+        chunks = dividir_em_chunks(texto_completo)
+        
+        st.info(f"Encontrados {len(chunks)} pedaços. A criar 'impressões digitais' (embeddings)...")
+        
+        total_chunks = len(chunks)
+        for i, chunk in enumerate(chunks):
+            # Chama a API do Gemini para criar o embedding
+            response = genai.embed_content(model='models/text-embedding-004', content=chunk)
+            embedding = response['embedding']
+            
+            # Insere o chunk e o seu embedding no Supabase
+            supabase.table('document_chunks').insert({
+                'document_name': nome_ficheiro,
+                'chunk_text': chunk,
+                'embedding': embedding
+            }).execute()
+
+            # Respeita o limite da API para não causar erros
+            time.sleep(1) # Pausa de 1 segundo entre cada chamada
+            progress_bar.progress((i + 1) / total_chunks, text=f"A processar pedaço {i+1}/{total_chunks}")
+
+        st.success(f"Documento '{nome_ficheiro}' indexado com sucesso!")
+        return True
+    except Exception as e:
+        st.error(f"Ocorreu um erro durante a indexação: {e}")
+        return False
+
+# Função para buscar os chunks relevantes
+def buscar_chunks_relevantes(pergunta: str, supabase, top_k=3):
+    # Cria o embedding para a pergunta do utilizador
+    response = genai.embed_content(model='models/text-embedding-004', content=pergunta)
+    pergunta_embedding = response['embedding']
+    
+    # Executa a busca por similaridade de vetores no Supabase
+    # Nota: O Supabase precisa de uma "RPC Function" para busca de vetores.
+    # O comando para criar a função no SQL Editor do Supabase é:
+    # CREATE OR REPLACE FUNCTION match_document_chunks (
+    #   query_embedding vector(768),
+    #   match_threshold float,
+    #   match_count int
+    # )
+    # RETURNS TABLE (
+    #   id uuid,
+    #   document_name text,
+    #   chunk_text text,
+    #   similarity float
+    # )
+    # AS $$
+    #   SELECT
+    #     dc.id,
+    #     dc.document_name,
+    #     dc.chunk_text,
+    #     1 - (dc.embedding <=> query_embedding) as similarity
+    #   FROM document_chunks dc
+    #   WHERE 1 - (dc.embedding <=> query_embedding) > match_threshold
+    #   ORDER BY similarity DESC
+    #   LIMIT match_count;
+    # $$ LANGUAGE sql;
+
+    resultados = supabase.rpc('match_document_chunks', {
+        'query_embedding': pergunta_embedding,
+        'match_threshold': 0.7, # Limiar de similaridade
+        'match_count': top_k
+    }).execute()
+    
+    return resultados.data
+
+# Função para gerar a resposta final com base no contexto
+def gerar_resposta_com_contexto(pergunta: str, chunks_relevantes: list):
+    contexto = "\n\n---\n\n".join([chunk['chunk_text'] for chunk in chunks_relevantes])
+    
+    prompt = f"""
+    Você é um assistente especialista. Responda à pergunta do utilizador baseando-se **exclusivamente** no contexto fornecido abaixo. Se a resposta não estiver no contexto, diga "A informação não foi encontrada nos documentos disponíveis."
+
+    **Contexto:**
+    {contexto}
+
+    **Pergunta:**
+    {pergunta}
     """
-    Envia o TEXTO para a API do Gemini e pede para extrair as ações em formato JSON.
-    """
+    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    response = model.generate_content(prompt)
+    return response.text
+
+
+# ==============================================================================
+# PÁGINA PRINCIPAL DO ASSISTENTE IA (COM ABAS)
+# ==============================================================================
+def show_assistente_ia():
+    st.title("🤖 Assistente de Conhecimento")
+    
+    supabase = init_supabase_client()
     try:
         api_key = st.secrets["google_ai"]["api_key"]
         genai.configure(api_key=api_key)
     except Exception as e:
-        st.error(f"Erro ao configurar a API do Gemini. Verifique seus segredos. Detalhe: {e}")
-        return []
+        st.error(f"Erro ao configurar a API do Gemini. Verifique os segredos: {e}")
+        return
 
-    nomes_validos = [str(nome) for nome in alunos_df['nome_guerra'].dropna().unique()]
-    lista_nomes_alunos = ", ".join(nomes_validos)
-    lista_tipos_acao = ", ".join(tipos_acao_df['nome'].unique().tolist())
-    data_de_hoje = datetime.now().strftime('%Y-%m-%d')
+    # Cria as abas
+    tab_consulta, tab_gestao = st.tabs(["Consultar Documentos", "Gerir Documentos"])
 
-    # --- PROMPT MELHORADO ---
-    prompt = f"""
-    Sua função é analisar relatos de supervisores e extrair ações em formato JSON.
-
-    **Contexto Fixo:**
-    - Data de hoje: {data_de_hoje} (use para todas as ações).
-    - Alunos Válidos: [{lista_nomes_alunos}].
-    - Tipos de Ação Válidos: [{lista_tipos_acao}].
-
-    **Regras Estritas:**
-    1.  Analise o "Relato para Análise" abaixo.
-    2.  Identifique o "nome_guerra" (deve estar na lista de Alunos Válidos), o "tipo_acao" (deve ser um da lista de Tipos de Ação Válidos) e a "descricao" (a sentença completa).
-    3.  Sua resposta DEVE ser APENAS um objeto JSON com uma chave "acoes".
-    4.  Se o relato não contiver nenhuma ocorrência válida ou nenhum aluno reconhecido, retorne uma lista de "acoes" vazia.
-
-    **Relato para Análise:** "{texto}"
-    """
-
-    # --- FERRAMENTA DE DIAGNÓSTICO 1: VER O PROMPT ---
-    with st.expander("👁️ Ver Prompt Enviado para a IA"):
-        st.text(prompt)
-
-    try:
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        response = model.generate_content(prompt)
+    # --- ABA DE CONSULTA PARA TODOS OS UTILIZADORES ---
+    with tab_consulta:
+        st.subheader("Faça uma pergunta sobre os regulamentos")
         
-        # --- FERRAMENTA DE DIAGNÓSTICO 2: VER A RESPOSTA BRUTA ---
-        with st.expander("📄 Ver Resposta Bruta da IA"):
-            st.write(response)
+        if "chat_messages" not in st.session_state:
+            st.session_state.chat_messages = [{"role": "assistant", "content": "Olá! Em que posso ajudar com base nos documentos?"}]
 
-        json_response_text = response.text.strip().replace("```json", "").replace("```", "")
-        sugestoes_dict = json.loads(json_response_text)
-        sugestoes = sugestoes_dict.get('acoes', [])
-        
-        nomes_para_ids = pd.Series(alunos_df.id.values, index=alunos_df.nome_guerra).to_dict()
-        for sugestao in sugestoes:
-            sugestao['aluno_id'] = nomes_para_ids.get(sugestao['nome_guerra'])
-            sugestao['data'] = datetime.strptime(data_de_hoje, '%Y-%m-%d').date()
-        
-        st.toast("Relato analisado com sucesso!", icon="✨")
-        return sugestoes
-
-    except Exception as e:
-        st.error(f"A IA (Gemini) não conseguiu processar o texto. Detalhe do erro: {e}")
-        # --- CORREÇÃO: PAUSA PARA LER O ERRO ---
-        time.sleep(5) 
-        return []
-
-# ==============================================================================
-# PÁGINA PRINCIPAL DA ABA DE IA (Sem alterações na interface)
-# ==============================================================================
-def show_assistente_ia():
-    st.title("🤖 Assistente IA para Lançamentos")
-    
-    if st.button("🧹 Iniciar Novo Relato (Limpar)"):
-        st.session_state.messages = [{"role": "assistant", "content": "Olá! Digite um relato para eu analisar."}]
-        st.session_state.sugestoes_ativas = []
-        st.rerun()
-
-    supabase = init_supabase_client()
-
-    if "messages" not in st.session_state:
-        st.session_state.messages = [{"role": "assistant", "content": "Olá! Digite um relato para eu analisar."}]
-    if "sugestoes_ativas" not in st.session_state:
-        st.session_state.sugestoes_ativas = []
-
-    alunos_df = load_data("Alunos")
-    tipos_acao_df = load_data("Tipos_Acao")
-    opcoes_tipo_acao = sorted(tipos_acao_df['nome'].unique().tolist())
-
-    chat_container = st.container(height=300, border=True)
-    with chat_container:
-        for message in st.session_state.messages:
+        for message in st.session_state.chat_messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
-    
-    if st.session_state.sugestoes_ativas:
-        st.markdown("---")
-        st.subheader("Ações Sugeridas para Revisão")
-        st.info("Verifique e edite os dados abaixo antes de lançar cada ação individualmente.")
 
-        for i, sugestao in enumerate(list(st.session_state.sugestoes_ativas)):
-            chave_unica = f"form_{sugestao.get('aluno_id')}_{sugestao.get('tipo_acao').replace(' ', '_')}_{i}"
-            with st.form(key=chave_unica, border=True):
-                if not sugestao.get('aluno_id'):
-                    st.error(f"Erro: ID não encontrado para o aluno '{sugestao.get('nome_guerra')}'.")
-                    continue
-                
-                st.markdown(f"**Sugestão para: {sugestao['nome_guerra']}**")
-                lista_nomes_alunos = [""] + sorted(alunos_df['nome_guerra'].dropna().unique().tolist())
-                try:
-                    index_aluno = lista_nomes_alunos.index(sugestao['nome_guerra'])
-                except ValueError:
-                    index_aluno = 0
-                aluno_selecionado_nome = st.selectbox("Aluno (pode corrigir se necessário)", options=lista_nomes_alunos, index=index_aluno, key=f"aluno_{chave_unica}")
-
-                try:
-                    index_acao = opcoes_tipo_acao.index(sugestao['tipo_acao'])
-                except ValueError:
-                    index_acao = 0
-                tipo_acao = st.selectbox("Tipo de Ação", options=opcoes_tipo_acao, index=index_acao, key=f"tipo_{chave_unica}")
-                data_acao = st.date_input("Data", value=sugestao['data'], key=f"data_{chave_unica}")
-                desc_acao = st.text_area("Descrição", value=sugestao['descricao'], height=100, key=f"desc_{chave_unica}")
-                
-                if st.form_submit_button("✅ Lançar Ação"):
-                    if not aluno_selecionado_nome:
-                        st.warning("Por favor, selecione um aluno antes de lançar.")
+        prompt_texto = st.chat_input("Qual é a sua dúvida?")
+        if prompt_texto:
+            st.session_state.chat_messages.append({"role": "user", "content": prompt_texto})
+            with st.chat_message("user"):
+                st.markdown(prompt_texto)
+            
+            with st.chat_message("assistant"):
+                with st.spinner("A consultar a base de conhecimento..."):
+                    chunks = buscar_chunks_relevantes(prompt_texto, supabase)
+                    if not chunks:
+                        resposta = "Não encontrei informações relevantes nos documentos para responder à sua pergunta."
                     else:
-                        aluno_info = alunos_df[alunos_df['nome_guerra'] == aluno_selecionado_nome].iloc[0]
-                        aluno_id_final = str(aluno_info['id'])
-                        
-                        nova_acao = {
-                            'aluno_id': aluno_id_final, 
-                            'tipo_acao_id': str(tipos_acao_df[tipos_acao_df['nome'] == tipo_acao].iloc[0]['id']),
-                            'tipo': tipo_acao, 'descricao': desc_acao, 'data': data_acao.strftime('%Y-%m-%d'),
-                            'usuario': st.session_state['username'], 'status': 'Pendente'
-                        }
-                        supabase.table("Acoes").insert(nova_acao).execute()
-                        st.toast(f"Ação para {aluno_selecionado_nome} lançada!", icon="🎉")
-                        
-                        st.session_state.sugestoes_ativas.pop(i)
-                        st.rerun()
+                        resposta = gerar_resposta_com_contexto(prompt_texto, chunks)
+                st.markdown(resposta)
+            
+            st.session_state.chat_messages.append({"role": "assistant", "content": resposta})
 
-    st.markdown("---")
-    
-    prompt_texto = st.chat_input("Digite o relato aqui e pressione Enter...")
-    if prompt_texto:
-        st.session_state.messages.append({"role": "user", "content": prompt_texto})
-        with st.spinner("Gemini está a analisar o seu relato..."):
-            sugestoes = analisar_relato_com_gemini(prompt_texto, alunos_df, tipos_acao_df)
-            st.session_state.sugestoes_ativas.extend(sugestoes)
-            st.session_state.messages.append({"role": "assistant", "content": f"Análise concluída. Encontrei {len(sugestoes)} nova(s) sugestão(ões) para sua revisão."})
-        st.rerun()
+    # --- ABA DE GESTÃO APENAS PARA ADMINS ---
+    with tab_gestao:
+        st.subheader("Gestão da Base de Conhecimento")
+        if check_permission('pode_gerenciar_usuarios'): # Usando uma permissão de admin existente como exemplo
+            
+            # Secção de Upload e Indexação
+            st.markdown("#### Carregar e Indexar Novo Documento")
+            uploaded_file = st.file_uploader("Escolha um ficheiro PDF", type="pdf")
+            if uploaded_file is not None:
+                if st.button(f"Indexar Ficheiro: {uploaded_file.name}"):
+                    progress_bar = st.progress(0, text="A iniciar a indexação...")
+                    indexar_documento(uploaded_file.name, BytesIO(uploaded_file.getvalue()), supabase, progress_bar)
+                    st.success("Processo de indexação concluído!")
+
+            st.divider()
+
+            # Secção para ver documentos já indexados
+            st.markdown("#### Documentos na Memória da IA")
+            try:
+                documentos_db = supabase.table('document_chunks').select('document_name').execute()
+                if documentos_db.data:
+                    nomes_unicos = sorted(list(set(item['document_name'] for item in documentos_db.data)))
+                    for nome in nomes_unicos:
+                        st.write(f"📄 {nome}")
+                else:
+                    st.info("Nenhum documento foi indexado ainda.")
+            except Exception as e:
+                st.warning(f"Não foi possível listar os documentos. A tabela 'document_chunks' existe? Erro: {e}")
+
+        else:
+            st.error("Apenas administradores podem aceder a esta secção.")
