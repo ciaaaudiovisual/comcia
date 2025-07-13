@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from database import load_data, init_supabase_client
+from auth import check_permission # <-- CORREÇÃO: Importa a função de permissão
 import google.generativeai as genai
 import json
 import time
