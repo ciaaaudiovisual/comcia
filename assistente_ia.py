@@ -97,7 +97,7 @@ def buscar_chunks_relevantes(pergunta: str, supabase, top_k=3):
 
     resultados = supabase.rpc('match_document_chunks', {
         'query_embedding': pergunta_embedding,
-        'match_threshold': 0.7, # Limiar de similaridade
+        'match_threshold': 0.5, # Limiar de similaridade
         'match_count': top_k
     }).execute()
     
