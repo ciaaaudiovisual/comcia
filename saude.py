@@ -148,6 +148,8 @@ def show_saude():
             
             with st.form("new_health_record_form"):
                 # Tipos de Ação de Saúde (filtrados para relevância)
+                # Definindo tipos_saude_padrao aqui para ser acessível
+                tipos_saude_padrao = ["ENFERMARIA", "HOSPITAL", "NAS", "DISPENSA MÉDICA", "SAÚDE"]
                 tipos_saude_disponiveis = [t for t in tipos_saude_padrao if t in tipos_acao_df['nome'].unique().tolist()]
                 if not tipos_saude_disponiveis:
                     st.warning("Nenhum tipo de ação de saúde padrão encontrado. Cadastre-os em 'Configurações > Tipos de Ação'.")
@@ -244,6 +246,7 @@ def show_saude():
         todos_tipos_nomes = sorted(tipos_acao_df['nome'].unique().tolist())
         
         # Tipos padrão de saúde para seleção inicial no multiselect
+        # Definindo tipos_saude_padrao aqui também para ser acessível
         tipos_saude_padrao = ["ENFERMARIA", "HOSPITAL", "NAS", "DISPENSA MÉDICA", "SAÚDE"]
         
         selected_types = st.multiselect(
