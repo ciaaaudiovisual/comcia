@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta # Importa timedelta
-from database import load_data, init_supabase_client
 from aluno_selection_components import render_alunos_filter_and_selection # Importa o componente de seleção de alunos
 
 # ==============================================================================
@@ -12,16 +11,31 @@ def safe_strftime(date_obj, fmt='%d/%m/%y'):
     Formata um objeto de data/hora de forma segura. Retorna 'N/A' se for nulo,
     inválido ou não puder ser formatado.
     """
+    # Debugging print para inspecionar o objeto recebido
+    print(f"DEBUG safe_strftime: Received date_obj type: {type(date_obj)}, value: {date_obj}")
+
     if pd.isna(date_obj): # Verifica se é NaN (incluindo NaT do Pandas)
         return "N/A"
-    # Aceita datetime.date, datetime.datetime ou pandas.Timestamp
-    if isinstance(date_obj, (datetime.date, datetime.datetime, pd.Timestamp)): 
+
+    # Acesso defensivo a pd.Timestamp para evitar AttributeError se não estiver disponível
+    pd_timestamp_type = getattr(pd, 'Timestamp', None)
+
+    # Constrói a tupla de tipos válidos dinamicamente
+    valid_date_types = (datetime.date, datetime.datetime)
+    if pd_timestamp_type: # Adiciona pd.Timestamp apenas se estiver disponível
+        valid_date_types += (pd_timestamp_type,)
+
+    if isinstance(date_obj, valid_date_types):
         try:
             # Converte para Timestamp do pandas para formatação consistente
             return pd.to_datetime(date_obj).strftime(fmt) 
-        except Exception: # Captura qualquer erro de formatação
+        except Exception as e: # Captura qualquer erro de formatação ou strftime
+            print(f"DEBUG safe_strftime: Error during formatting: {e}")
             return "N/A"
-    return "N/A" # Retorna N/A para outros tipos de objeto
+    else:
+        # Debugging print para objetos que não são tipos de data reconhecidos
+        print(f"DEBUG safe_strftime: Object is not a recognized date type. Type: {type(date_obj)}")
+        return "N/A" # Retorna N/A para outros tipos de objeto
 
 # ==============================================================================
 # DIÁLOGO DE EDIÇÃO
