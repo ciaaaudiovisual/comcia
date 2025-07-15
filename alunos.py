@@ -5,6 +5,7 @@ from database import load_data, init_supabase_client
 from auth import check_permission
 import math
 import re 
+from aluno_selection_components import render_alunos_filter_and_selection, get_all_alunos_data # Importa o novo componente e a função de dados
 
 # ==============================================================================
 # FUNÇÃO DE APOIO PARA IMPORTAÇÃO
@@ -254,24 +255,66 @@ def informacoes_dialog(aluno, supabase):
 # ==============================================================================
 # PÁGINA PRINCIPAL
 # ==============================================================================
+# PÁGINA PRINCIPAL
+# ==============================================================================
 def show_alunos():
     st.title("Gestão de Alunos")
     supabase = init_supabase_client()
     if 'page_num' not in st.session_state: st.session_state.page_num = 1
     def reset_page(): st.session_state.page_num = 1
 
-    alunos_df = load_data("Alunos")
+    alunos_df_raw = get_all_alunos_data() # Carrega os dados brutos de alunos
+    if alunos_df_raw is None or alunos_df_raw.empty:
+        st.warning("Não foi possível carregar os dados dos alunos.")
+        return
+
+    # Certifica-se de que todas as colunas necessárias para cálculo de conceito existem e são numéricas
+    novas_colunas = {
+        'media_academica': 0.0, 'endereco': '', 'telefone_contato': '',
+        'contato_emergencia_nome': '', 'contato_emergencia_numero': '', 'numero_armario': '',
+        'nip': '', 'nome_completo': '' # Adicionados para garantir existência
+    }
+    for col, default_value in novas_colunas.items():
+        if col not in alunos_df_raw.columns:
+            alunos_df_raw[col] = default_value
+
+    # Converte 'media_academica' para numérico
+    alunos_df_raw['media_academica'] = pd.to_numeric(alunos_df_raw['media_academica'], errors='coerce').fillna(0.0)
+
+    # --- NOVO: Usa o componente de seleção e filtro aqui ---
+    # Este componente substitui os antigos filtros de busca por nome, número, etc.
+    # Você pode remover os st.text_input e st.selectbox antigos se usar este componente.
+    st.subheader("Filtros de Alunos")
+    alunos_filtrados_component_df = render_alunos_filter_and_selection(
+        key_suffix="alunos_page",
+        include_full_name_search=True # Ativa todos os campos de busca para esta página
+    )
+    
+    # Filtros adicionais (Pelotão, Especialidade, Ordenação)
+    col1, col2 = st.columns(2)
+    with col1:
+        opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df_raw['pelotao'].unique() if pd.notna(p)])
+        pelotao_selecionado = st.selectbox("Filtrar por Pelotão:", opcoes_pelotao, on_change=reset_page)
+        
+    with col2:
+        opcoes_especialidade = ["Todas"] + sorted([e for e in alunos_df_raw['especialidade'].unique() if pd.notna(e)])
+        especialidade_selecionada = st.selectbox("Filtrar por Especialidade:", opcoes_especialidade, on_change=reset_page)
+
+    sort_option = st.selectbox(
+        "Ordenar por:",
+        ["Padrão (Nº Interno)", "Maior Conceito", "Menor Conceito"],
+        key="sort_aluno", on_change=reset_page
+    )
+
+    # Aplica os filtros do pelotão e especialidade ao resultado do componente
+    filtered_df = alunos_filtrados_component_df.copy()
+    if pelotao_selecionado != "Todos": filtered_df = filtered_df[filtered_df['pelotao'] == pelotao_selecionado]
+    if especialidade_selecionada != "Todas": filtered_df = filtered_df[filtered_df['especialidade'] == especialidade_selecionada]
+
+
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
-    
-    novas_colunas = {
-        'media_academica': 0.0, 'endereco': '', 'telefone_contato': '',
-        'contato_emergencia_nome': '', 'contato_emergencia_numero': '', 'numero_armario': ''
-    }
-    for col, default_value in novas_colunas.items():
-        if col not in alunos_df.columns:
-            alunos_df[col] = default_value
 
     if tipos_acao_df.empty:
         st.error("ERRO CRÍTICO: Tabela 'Tipos_Acao' não encontrada. Cadastre os tipos de ação primeiro."); st.stop()
@@ -282,52 +325,24 @@ def show_alunos():
         acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
         soma_pontos_por_aluno = acoes_com_pontos.groupby('aluno_id')['pontuacao_efetiva'].sum()
         
-        # CORREÇÃO: Garante que ambas as chaves são do tipo string ANTES do mapeamento
-        # Isso protege o código independentemente do tipo de dado que vem do BD.
-        alunos_df['id'] = alunos_df['id'].astype(str)
+        filtered_df['id'] = filtered_df['id'].astype(str)
         soma_pontos_por_aluno.index = soma_pontos_por_aluno.index.astype(str)
         
-        alunos_df['soma_pontos_acoes'] = alunos_df['id'].map(soma_pontos_por_aluno)
+        filtered_df['soma_pontos_acoes'] = filtered_df['id'].map(soma_pontos_por_aluno)
     else:
-        alunos_df['soma_pontos_acoes'] = 0
+        filtered_df['soma_pontos_acoes'] = 0
 
-    alunos_df['soma_pontos_acoes'] = alunos_df['soma_pontos_acoes'].fillna(0)
+    filtered_df['soma_pontos_acoes'] = filtered_df['soma_pontos_acoes'].fillna(0)
     
-    alunos_df['conceito_final_calculado'] = alunos_df.apply(
+    filtered_df['conceito_final_calculado'] = filtered_df.apply(
         lambda row: calcular_conceito_final(
             row['soma_pontos_acoes'],
             float(row.get('media_academica', 0.0)),
-            alunos_df,
+            alunos_df_raw, # Passa o DF completo para o cálculo da média da turma
             config_dict
         ),
         axis=1
     )
-
-    st.subheader("Filtros e Ordenação")
-    col1, col2 = st.columns(2)
-    with col1:
-        opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
-        pelotao_selecionado = st.selectbox("Filtrar por Pelotão:", opcoes_pelotao, on_change=reset_page)
-        opcoes_especialidade = ["Todas"] + sorted([e for e in alunos_df['especialidade'].unique() if pd.notna(e)])
-        especialidade_selecionada = st.selectbox("Filtrar por Especialidade:", opcoes_especialidade, on_change=reset_page)
-    with col2:
-        search = st.text_input("Buscar por nome, número ou NIP...", key="search_aluno", on_change=reset_page)
-        sort_option = st.selectbox(
-            "Ordenar por:",
-            ["Padrão (Nº Interno)", "Maior Conceito", "Menor Conceito"],
-            key="sort_aluno", on_change=reset_page
-        )
-
-    filtered_df = alunos_df.copy()
-    if pelotao_selecionado != "Todos": filtered_df = filtered_df[filtered_df['pelotao'] == pelotao_selecionado]
-    if especialidade_selecionada != "Todas": filtered_df = filtered_df[filtered_df['especialidade'] == especialidade_selecionada]
-    if search:
-        search_lower = search.lower()
-        mask_nome_guerra = filtered_df['nome_guerra'].str.lower().str.contains(search_lower, na=False)
-        mask_num_interno = filtered_df['numero_interno'].astype(str).str.lower().str.contains(search_lower, na=False)
-        mask_nome_completo = filtered_df['nome_completo'].str.lower().str.contains(search_lower, na=False)
-        mask_nip = filtered_df['nip'].astype(str).str.lower().str.contains(search_lower, na=False)
-        filtered_df = filtered_df[mask_nome_guerra | mask_num_interno | mask_nome_completo | mask_nip]
 
     if sort_option == "Maior Conceito":
         filtered_df = filtered_df.sort_values(by='conceito_final_calculado', ascending=False)
@@ -377,13 +392,11 @@ def show_alunos():
                 try:
                     new_alunos_df = pd.read_csv(uploaded_file, sep=';', dtype=str).fillna('')
                     
-                    # Verifica apenas se o ficheiro tem colunas, sem exigir nomes específicos
                     if new_alunos_df.empty or len(new_alunos_df.columns) == 0:
                         st.error("Erro: O ficheiro CSV está vazio ou formatado incorretamente.")
                     else:
                         records_to_upsert = new_alunos_df.to_dict(orient='records')
                         with st.spinner("A processar e importar alunos..."):
-                            # A chave 'numero_interno' é mantida pois é a regra de negócio da aplicação
                             supabase.table("Alunos").upsert(records_to_upsert, on_conflict='numero_interno').execute()
                         st.success(f"Importação concluída! {len(records_to_upsert)} registos foram processados.")
                         load_data.clear()
