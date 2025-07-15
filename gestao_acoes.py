@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta # Importa timedelta
-from supabase import create_client, Client # Importa para Supabase
+from datetime import datetime, timedelta
+from supabase import create_client, Client
 
 # Assume que o componente aluno_selection_components.py existe e funciona
 # Para fins de exemplo, vou criar uma versão mock simples aqui.
@@ -56,24 +56,38 @@ except ImportError:
 
 
 # ==============================================================================
-# FUNÇÕES DE SUPABASE (ADICIONADAS PARA RESOLVER O NAMERROR)
+# FUNÇÕES DE SUPABASE (AJUSTADAS PARA ACESSO FLEXÍVEL)
 # ==============================================================================
 @st.cache_resource
 def init_supabase_client():
     """
     Inicializa e retorna o cliente Supabase.
-    As credenciais devem ser configuradas como segredos no Streamlit.
+    Tenta acessar as credenciais como st.secrets.supabase.url/key primeiro,
+    e depois como st.secrets["SUPABASE_URL"]/KEY.
     """
+    url = None
+    key = None
     try:
-        url = st.secrets["SUPABASE_URL"]
-        key = st.secrets["SUPABASE_KEY"]
+        # Tenta acessar as credenciais no formato de seção [supabase]
+        url = st.secrets.supabase.url
+        key = st.secrets.supabase.key
+    except AttributeError:
+        # Se não encontrar no formato de seção, tenta o formato de chave direta
+        try:
+            url = st.secrets["SUPABASE_URL"]
+            key = st.secrets["SUPABASE_KEY"]
+        except KeyError:
+            st.error("Credenciais do Supabase não encontradas nos segredos do Streamlit. Por favor, configure SUPABASE_URL e SUPABASE_KEY ou [supabase] url e key.")
+            st.stop()
+    except Exception as e:
+        st.error(f"Erro inesperado ao acessar segredos do Supabase: {e}")
+        st.stop()
+
+    try:
         supabase: Client = create_client(url, key)
         return supabase
-    except KeyError:
-        st.error("Credenciais do Supabase não encontradas nos segredos do Streamlit. Por favor, configure SUPABASE_URL e SUPABASE_KEY.")
-        st.stop()
     except Exception as e:
-        st.error(f"Erro ao inicializar o cliente Supabase: {e}")
+        st.error(f"Erro ao inicializar o cliente Supabase com as credenciais fornecidas: {e}")
         st.stop()
 
 @st.cache_data(ttl=300) # Cache dos dados por 5 minutos
@@ -181,16 +195,16 @@ def render_export_section(df_acoes_para_exportar, alunos_df, pelotao_selecionado
     # For this example, we'll assume permission is always granted.
     # if not check_permission('pode_exportar_relatorio_faia'):
     #     return
-    
+
     with st.container(border=True):
         st.subheader("📥 Exportar Relatórios FAIA")
-        
+
         # Filtro de alunos para exportação (opcional, para exibir apenas os alunos relevantes)
         alunos_elegivel_exportacao_df = alunos_df.copy()
 
         if pelotao_selecionado != "Todos":
             alunos_elegivel_exportacao_df = alunos_elegivel_exportacao_df[alunos_elegivel_exportacao_df['pelotao'] == pelotao_selecionado]
-        
+
         # O botão de exportação individual só é ativado se um aluno específico estiver selecionado
         if aluno_selecionado != "Nenhum" and aluno_selecionado != "Todos":
             st.info(f"Pré-visualize e exporte o relatório individual para **{aluno_selecionado}**. Serão incluídas apenas as ações com status 'Lançado'.")
@@ -447,7 +461,7 @@ def show_gestao_acoes():
         if filtro_tipo_acao != "Todos":
             df_filtrado_final = df_filtrado_final[df_filtrado_final['nome'].fillna('') == filtro_tipo_acao]
 
-        if ordenar_por == "Mais Antigos":
+        if ordenar_por == "Mais Recentes":
             df_filtrado_final = df_filtrado_final.sort_values(by="data", ascending=True)
         elif ordenar_por == "Aluno (A-Z)":
             df_filtrado_final = df_filtrado_final.sort_values(by="nome_guerra", ascending=True)
