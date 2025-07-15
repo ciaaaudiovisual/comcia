@@ -2,10 +2,10 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from database import load_data, init_supabase_client
-from aluno_selection_components import render_alunos_filter_and_selection # Importe o novo nome
+from aluno_selection_components import render_alunos_filter_and_selection
 
 # ==============================================================================
-# DIÁLOGO DE EDIÇÃO (Sem alterações nesta versão)
+# DIÁLOGO DE EDIÇÃO
 # ==============================================================================
 @st.dialog("Editar Dados de Saúde")
 def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
@@ -113,31 +113,30 @@ def show_saude():
 
     col_filter_saude1, col_filter_saude2 = st.columns(2)
     with col_filter_saude1:
-        # [cite_start]Filtro por Dispensa Médica [cite: 1]
+        # Filtro por Dispensa Médica
         dispensa_medica_options = ["Todos", "Com Dispensa Ativa", "Com Dispensa Vencida", "Sem Dispensa"]
         selected_dispensa = st.selectbox(
             "Status de Dispensa Médica:",
             options=dispensa_medica_options,
             key="dispensa_medica_filter",
-            [cite_start]index=0 # ALTERADO: Padrão para 'Todos' [cite: 1]
+            index=0 # ALTERADO: Padrão para 'Todos'
         )
     
     with col_filter_saude2:
-        # [cite_start]Filtro por Tipos de Ação (saúde) [cite: 1]
+        # Filtro por Tipos de Ação (saúde)
         todos_tipos_nomes = sorted(tipos_acao_df['nome'].unique().tolist())
-        # tipos_saude_padrao = ["ENFERMARIA", "HOSPITAL", "NAS", "DISPENSA MÉDICA", "SAÚDE"] # Removido para usar todos os tipos
         
         selected_types = st.multiselect(
             "Filtrar por Tipo de Evento:",
             options=todos_tipos_nomes,
-            [cite_start]default=todos_tipos_nomes, # ALTERADO: Seleciona todos os tipos por padrão [cite: 1]
+            default=todos_tipos_nomes, # ALTERADO: Seleciona todos os tipos por padrão
             key="saude_event_types_filter"
         )
 
-    # [cite_start]Filtro por Período (Data Range) [cite: 1]
+    # Filtro por Período (Data Range)
     st.markdown("##### Filtrar por Período de Registro:")
     today = datetime.now().date()
-    [cite_start]default_start_date = today - timedelta(days=90) # Últimos 90 dias como padrão [cite: 1]
+    default_start_date = today - timedelta(days=90) # Últimos 90 dias como padrão
 
     col_date1, col_date2 = st.columns(2)
     with col_date1:
@@ -162,22 +161,22 @@ def show_saude():
         st.warning("Não há dados de ações para exibir. Verifique a tabela 'Acoes'.")
         return
 
-    # [cite_start]1. Filtra as ações pelos tipos selecionados [cite: 1]
+    # 1. Filtra as ações pelos tipos selecionados
     acoes_saude_df = acoes_df[acoes_df['tipo'].isin(selected_types)].copy()
 
-    # [cite_start]2. Filtra as ações pelos alunos selecionados do componente [cite: 1]
-    # [cite_start]SOLUÇÃO DO ValueError: Converter as colunas 'aluno_id' e 'id' para string ANTES DO MERGE [cite: 1]
+    # 2. Filtra as ações pelos alunos selecionados do componente
+    # SOLUÇÃO DO ValueError: Converter as colunas 'aluno_id' e 'id' para string ANTES DO MERGE
     acoes_saude_df['aluno_id'] = acoes_saude_df['aluno_id'].astype(str)
     selected_alunos_df['id'] = selected_alunos_df['id'].astype(str) # Garante que o ID do aluno também é string
 
-    # [cite_start]3. Filtra as ações pelo período de registro [cite: 1]
+    # 3. Filtra as ações pelo período de registro
     acoes_saude_df['data'] = pd.to_datetime(acoes_saude_df['data'], errors='coerce').dt.date
     acoes_saude_df = acoes_saude_df[
         (acoes_saude_df['data'] >= start_date_event) &
         (acoes_saude_df['data'] <= end_date_event)
     ]
     
-    # [cite_start]4. Adiciona informações do aluno às ações para exibição e filtro de dispensa [cite: 1]
+    # 4. Adiciona informações do aluno às ações para exibição e filtro de dispensa
     acoes_com_nomes_df = pd.merge(
         acoes_saude_df,
         selected_alunos_df[['id', 'nome_guerra', 'pelotao', 'numero_interno']],
@@ -188,7 +187,7 @@ def show_saude():
     acoes_com_nomes_df['nome_guerra'].fillna('N/A', inplace=True)
     acoes_com_nomes_df = acoes_com_nomes_df.sort_values(by="data", ascending=False)
 
-    # [cite_start]5. Aplica filtro de dispensa médica (AGORA MAIS ROBUSTO) [cite: 1]
+    # 5. Aplica filtro de dispensa médica (AGORA MAIS ROBUSTO)
     if selected_dispensa != "Todos":
         hoje = datetime.now().date()
         
@@ -231,7 +230,7 @@ def show_saude():
             col1, col2, col3 = st.columns([3, 2, 1])
             
             with col1:
-                # [cite_start]--- MODIFICAÇÃO 3: Exibição alterada para "Número - Nome de Guerra" --- [cite: 2]
+                # Exibição alterada para "Número - Nome de Guerra"
                 st.markdown(f"##### {acao.get('numero_interno', 'S/N')} - {acao.get('nome_guerra', 'N/A')}")
                 st.markdown(f"**Evento:** {acao.get('tipo', 'N/A')}")
                 st.caption(f"Data do Registro: {acao['data'].strftime('%d/%m/%Y')}")
