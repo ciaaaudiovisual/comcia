@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from database import load_data, init_supabase_client
-from aluno_selection_components import render_alunos_filter_and_selection # Importe o novo nome
+from aluno_selection_components import render_alunos_filter_and_selection
 
 # ==============================================================================
 # FUNÇÃO AUXILIAR PARA FORMATAÇÃO SEGURA DE DATAS
@@ -12,8 +12,10 @@ def safe_strftime(date_obj, fmt='%d/%m/%y'):
     Formata um objeto de data/hora de forma segura. Retorna 'N/A' se for nulo,
     inválido ou não puder ser formatado.
     """
-    # Certifique-se de que date_obj seja um escalar e não pd.NaT antes de usar isinstance
-    if pd.notna(date_obj) and isinstance(date_obj, (datetime.date, datetime.datetime)):
+    # A verificação pd.notna já foi feita ANTES de chamar esta função.
+    # Agora, apenas verificamos se é uma instância de datetime.date/datetime.datetime
+    # pois se não for, significa que foi convertido para None.
+    if isinstance(date_obj, (datetime.date, datetime.datetime)):
         try:
             return date_obj.strftime(fmt)
         except AttributeError:
@@ -272,8 +274,9 @@ def show_saude():
             with col2:
                 if acao.get('esta_dispensado'):
                     # Pega os valores da série ou DataFrame
-                    inicio_dt = acao['periodo_dispensa_inicio']
-                    fim_dt = acao['periodo_dispensa_fim']
+                    # Garante que seja None se for NaT, antes de passar para safe_strftime
+                    inicio_dt = acao['periodo_dispensa_inicio'] if pd.notna(acao['periodo_dispensa_inicio']) else None
+                    fim_dt = acao['periodo_dispensa_fim'] if pd.notna(acao['periodo_dispensa_fim']) else None
 
                     # Usa a função auxiliar safe_strftime
                     inicio_str = safe_strftime(inicio_dt, '%d/%m/%y')
