@@ -237,24 +237,29 @@ def show_saude():
                 if acao.get('descricao'):
                     st.caption(f"Observação: {acao.get('descricao')}")
             
-            with col2:
-                if acao.get('esta_dispensado'):
-                    inicio_str = acao['periodo_dispensa_inicio'].strftime('%d/%m/%y') if pd.notna(acao['periodo_dispensa_inicio']) else "N/A"
-                    fim_str = acao['periodo_dispensa_fim'].strftime('%d/%m/%y') if pd.notna(acao['periodo_dispensa_fim']) else "N/A"
+             with col2:
+                        if acao.get('esta_dispensado'):
+                            # Corrigido para verificar se o valor é um objeto de data válido, não apenas pd.notna
+                            # pd.isna() é mais robusto para NaT
+                            inicio_dt = acao['periodo_dispensa_inicio']
+                            fim_dt = acao['periodo_dispensa_fim']
+        
+                            inicio_str = inicio_dt.strftime('%d/%m/%y') if pd.notna(inicio_dt) and pd.api.types.is_datetime64_any_dtype(inicio_dt) else "N/A"
+                            fim_str = fim_dt.strftime('%d/%m/%y') if pd.notna(fim_dt) and pd.api.types.is_datetime64_any_dtype(fim_dt) else "N/A"
+                            
+                            data_fim = acao['periodo_dispensa_fim']
+                            hoje = datetime.now().date()
+                            
+                            if data_fim and data_fim < hoje: # AQUI data_fim já deve ser um objeto date ou None
+                                st.warning("**DISPENSA VENCIDA**", icon="⌛")
+                            else:
+                                st.error("**DISPENSADO**", icon="⚕️")
+                            
+                            st.markdown(f"**Período:** {inicio_str} a {fim_str}")
+                            st.caption(f"Tipo: {acao.get('tipo_dispensa', 'Não especificado')}")
+                        else:
+                            st.success("**SEM DISPENSA**", icon="✅")
                     
-                    data_fim = acao['periodo_dispensa_fim']
-                    hoje = datetime.now().date()
-                    
-                    if data_fim and data_fim < hoje:
-                        st.warning("**DISPENSA VENCIDA**", icon="⌛")
-                    else:
-                        st.error("**DISPENSADO**", icon="⚕️")
-                    
-                    st.markdown(f"**Período:** {inicio_str} a {fim_str}")
-                    st.caption(f"Tipo: {acao.get('tipo_dispensa', 'Não especificado')}")
-                else:
-                    st.success("**SEM DISPENSA**", icon="✅")
-            
             with col3:
                 id_da_acao = acao['id_x'] 
                 if st.button("✏️ Editar", key=f"edit_{id_da_acao}"):
