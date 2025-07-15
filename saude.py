@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta # Importa timedelta
 from database import load_data, init_supabase_client
 from aluno_selection_components import render_alunos_filter_and_selection # Importa o componente de seleção de alunos
 
