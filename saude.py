@@ -255,17 +255,18 @@ def show_saude():
                 if acao.get('descricao'):
                     st.caption(f"Observação: {acao.get('descricao')}")
             
-            with col2:
+          with col2:
                 if acao.get('esta_dispensado'):
-                    # Pega os valores da série ou DataFrame
-                    inicio_dt = acao['periodo_dispensa_inicio']
-                    fim_dt = acao['periodo_dispensa_fim']
+                    # Garante que estamos pegando o escalar real, tratando NaT explicitamente se necessário
+                    # Convertendo para datetime.date mais cedo e manipulando None para NaT
+                    inicio_dt = acao['periodo_dispensa_inicio'] if pd.notna(acao['periodo_dispensa_inicio']) else None
+                    fim_dt = acao['periodo_dispensa_fim'] if pd.notna(acao['periodo_dispensa_fim']) else None
 
                     # Usa a função auxiliar safe_strftime
                     inicio_str = safe_strftime(inicio_dt, '%d/%m/%y')
                     fim_str = safe_strftime(fim_dt, '%d/%m/%y')
                     
-                    data_fim = acao['periodo_dispensa_fim']
+                    data_fim = fim_dt # Agora data_fim é datetime.date ou None
                     hoje = datetime.now().date()
                     
                     # Usa pd.notna() para a comparação da data de fim também
