@@ -152,11 +152,17 @@ def show_ranking_acoes(acoes_df):
 def show_evolucao_individual_comparativa(acoes_df, alunos_df, config_dict, view_mode):
     st.subheader("Comparativo de Evolução Individual")
     
-    opcoes_alunos = {aluno['id']: f"{aluno.get('nome_guerra', 'N/A')} ({aluno.get('pelotao', 'N/A')})" for _, aluno in alunos_df.iterrows()}
-    alunos_selecionados_ids = st.multiselect("Selecione um ou mais alunos para comparar:", options=list(opcoes_alunos.keys()), format_func=opcoes_alunos.get)
+    # --- NOVO: Usa o componente de seleção de alunos para seleção individual/comparativa ---
+    selected_alunos_for_chart_df = render_alunos_filter_and_selection(
+        key_suffix="evolucao_individual_chart",
+        include_full_name_search=False # Não precisamos de todos os campos aqui
+    )
 
-    if not alunos_selecionados_ids:
-        st.info("Selecione pelo menos um aluno para ver a evolução."); return
+    if selected_alunos_for_chart_df.empty:
+        st.info("Selecione um ou mais alunos para ver a evolução."); return
+
+    # Transforma os IDs dos alunos selecionados para a lista esperada
+    alunos_selecionados_ids = selected_alunos_for_chart_df['id'].tolist()
 
     df_plot = pd.DataFrame()
     for aluno_id in alunos_selecionados_ids:
@@ -178,6 +184,7 @@ def show_evolucao_individual_comparativa(acoes_df, alunos_df, config_dict, view_
         fig = px.line(df_plot, x='data', y='valor_final', color='nome_guerra', title=titulo, markers=True, labels={'valor_final': view_mode, 'nome_guerra': 'Aluno'})
         fig.update_layout(template="plotly_white")
         st.plotly_chart(fig, use_container_width=True, theme=None)
+
 
 def show_evolucao_pelotao_comparativa(acoes_df, alunos_df, config_dict, view_mode):
     st.subheader("Comparativo de Evolução por Pelotão")
@@ -258,22 +265,33 @@ def show_relatorios():
         acoes_filtradas = acoes_filtradas[(acoes_filtradas['data'].dt.date >= start_date) & (acoes_filtradas['data'].dt.date <= end_date)]
 
     st.write("") 
-    pelotoes_validos = sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
-    pelotoes = ["Todos os Pelotões"] + pelotoes_validos
-    pelotao_selecionado = st.selectbox("Filtrar por Pelotão", pelotoes, key="pelotao_filtro")
+    
+    # --- NOVO: Adiciona o filtro de alunos para os relatórios ---
+    # Alunos filtrados pelos seletores padrão (Pelotão, Especialidade)
+    alunos_filtrados_component_df = render_alunos_filter_and_selection(
+        key_suffix="relatorios_page",
+        include_full_name_search=True # Permite busca completa aqui
+    )
 
-    alunos_filtrados = alunos_df.copy()
-    if pelotao_selecionado != "Todos os Pelotões":
-        alunos_filtrados = alunos_df[alunos_df['pelotao'] == pelotao_selecionado]
-        aluno_ids_do_pelotao = alunos_filtrados['id'].tolist()
-        acoes_filtradas = acoes_filtradas[acoes_filtradas['aluno_id'].isin(aluno_ids_do_pelotao)]
+    # Aplica o filtro de pelotão e depois o resultado do componente
+    # O filtro de pelotão no relatório afeta o componente de seleção também.
+    # Por isso, é importante o `alunos_filtrados` ser o resultado do `render_alunos_filter_and_selection`.
+    
+    # Ajusta as 'acoes_filtradas' com base nos 'alunos_filtrados_component_df'
+    if not alunos_filtrados_component_df.empty:
+        aluno_ids_do_filtro = alunos_filtrados_component_df['id'].tolist()
+        acoes_filtradas = acoes_filtradas[acoes_filtradas['aluno_id'].isin(aluno_ids_do_filtro)]
+    else:
+        # Se nenhum aluno for selecionado no componente, as ações filtradas devem ser vazias
+        acoes_filtradas = pd.DataFrame()
 
     st.divider()
     tab1, tab2, tab3 = st.tabs(["📊 Gráficos", "🏆 Rankings", "📈 Evolução"])
 
     with tab1:
-        render_graficos_tab(acoes_filtradas, alunos_filtrados, config_dict, view_mode, tipos_acao_df)
+        render_graficos_tab(acoes_filtradas, alunos_filtrados_component_df, config_dict, view_mode, tipos_acao_df)
     with tab2:
-        render_rankings_tab(acoes_filtradas, alunos_filtrados)
+        render_rankings_tab(acoes_filtradas, alunos_filtrados_component_df)
     with tab3:
-        render_evolucao_tab(acoes_filtradas, alunos_filtrados, config_dict, view_mode)
+        # Passa o DF de alunos filtrados pelo componente para as funções de evolução
+        render_evolucao_tab(acoes_filtradas, alunos_filtrados_component_df, config_dict, view_mode)
