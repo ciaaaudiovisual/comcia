@@ -237,20 +237,23 @@ def show_saude():
                 if acao.get('descricao'):
                     st.caption(f"Observação: {acao.get('descricao')}")
             
+# saude.py (TRECHO CORRIGIDO ONDE O ERRO OCORRE)
+
             with col2:
                 if acao.get('esta_dispensado'):
-                    # Pega os valores da série ou DataFrame
                     inicio_dt = acao['periodo_dispensa_inicio']
                     fim_dt = acao['periodo_dispensa_fim']
 
-                    # Adicionado pd.api.types.is_datetime64_any_dtype para robustez na formatação
-                    inicio_str = inicio_dt.strftime('%d/%m/%y') if pd.notna(inicio_dt) and pd.api.types.is_datetime64_any_dtype(inicio_dt) else "N/A"
-                    fim_str = fim_dt.strftime('%d/%m/%y') if pd.notna(fim_dt) and pd.api.types.is_datetime64_any_dtype(fim_dt) else "N/A"
+                    # === INÍCIO DA CORREÇÃO MAIS ROBUSTA ===
+                    # Verifica se não é nulo E se é uma instância de datetime.date ou datetime.datetime
+                    inicio_str = inicio_dt.strftime('%d/%m/%y') if pd.notna(inicio_dt) and isinstance(inicio_dt, (datetime.date, datetime.datetime)) else "N/A"
+                    fim_str = fim_dt.strftime('%d/%m/%y') if pd.notna(fim_dt) and isinstance(fim_dt, (datetime.date, datetime.datetime)) else "N/A"
+                    # === FIM DA CORREÇÃO MAIS ROBUSTA ===
                     
-                    data_fim = acao['periodo_dispensa_fim']
+                    data_fim = acao['periodo_dispensa_fim'] # data_fim já é um objeto date ou NaT/None
                     hoje = datetime.now().date()
                     
-                    if data_fim and data_fim < hoje:
+                    if pd.notna(data_fim) and data_fim < hoje: # Use pd.notna() aqui também para data_fim
                         st.warning("**DISPENSA VENCIDA**", icon="⌛")
                     else:
                         st.error("**DISPENSADO**", icon="⚕️")
