@@ -6,8 +6,6 @@ from datetime import datetime, timedelta
 from database import load_data
 from auth import check_permission
 from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
-from aluno_selection_components import render_alunos_filter_and_selection # Importa o novo componente
-
 
 # =============================================================================
 # FUNÇÕES DE RENDERIZAÇÃO DAS ABAS
@@ -36,11 +34,19 @@ def render_rankings_tab(acoes_filtradas, alunos_filtrados):
     if acoes_filtradas.empty:
         st.info("Nenhuma ação registrada para os filtros selecionados."); return
 
+    # Garante que 'aluno_id' e 'id' são do mesmo tipo para o merge
+    acoes_filtradas['aluno_id'] = acoes_filtradas['aluno_id'].astype(str)
+    alunos_filtrados['id'] = alunos_filtrados['id'].astype(str)
+
     pontuacao_periodo = acoes_filtradas.groupby('aluno_id')['pontuacao_efetiva'].sum().reset_index()
     alunos_com_pontuacao = pd.merge(alunos_filtrados, pontuacao_periodo, left_on='id', right_on='aluno_id', how='inner')
     
     if alunos_com_pontuacao.empty:
         st.info("Nenhum aluno com ações para os filtros selecionados."); return
+
+    # Garante que 'pelotao' existe antes de tentar acessá-lo para exibição
+    if 'pelotao' not in alunos_com_pontuacao.columns:
+        alunos_com_pontuacao['pelotao'] = 'N/A' # Adiciona uma coluna padrão se ausente
 
     top_positivos = alunos_com_pontuacao[alunos_com_pontuacao['pontuacao_efetiva'] > 0].sort_values('pontuacao_efetiva', ascending=False).head(5)
     top_negativos = alunos_com_pontuacao[alunos_com_pontuacao['pontuacao_efetiva'] < 0].sort_values('pontuacao_efetiva').head(5)
@@ -79,9 +85,13 @@ def show_pontuacao_pelotao(alunos_df, acoes_df, config_dict, view_mode):
     titulo = "Conceito Médio por Pelotão" if view_mode == 'Conceito Final' else "Saldo Médio de Pontos por Pelotão"
     st.subheader(titulo)
 
-    if acoes_df.empty: 
-        st.info("Dados de ações insuficientes para gerar este relatório.")
+    if acoes_df.empty or alunos_df.empty: 
+        st.info("Dados de ações ou alunos insuficientes para gerar este relatório.")
         return
+    
+    # Garante que 'aluno_id' e 'id' são do mesmo tipo para o merge
+    acoes_df['aluno_id'] = acoes_df['aluno_id'].astype(str)
+    alunos_df['id'] = alunos_df['id'].astype(str)
 
     soma_pontos_por_aluno = acoes_df.groupby('aluno_id')['pontuacao_efetiva'].sum()
     alunos_com_pontos = pd.merge(alunos_df, soma_pontos_por_aluno.rename('pontos_acoes'), left_on='id', right_on='aluno_id', how='left')
@@ -92,10 +102,17 @@ def show_pontuacao_pelotao(alunos_df, acoes_df, config_dict, view_mode):
     else:
         alunos_com_pontos['valor_final'] = alunos_com_pontos['pontos_acoes']
 
+    # Garante que 'pelotao' existe antes de agrupar
+    if 'pelotao' not in alunos_com_pontos.columns:
+        st.warning("Coluna 'pelotao' não encontrada nos dados dos alunos para este gráfico.")
+        return
+
     media_por_pelotao = alunos_com_pontos.groupby('pelotao')['valor_final'].mean().reset_index()
     
-    # --- INÍCIO DA CORREÇÃO ---
-    # Altera o 'color' para o valor numérico e usa uma escala de cor contínua
+    if media_por_pelotao.empty:
+        st.info("Nenhum dado de pontuação por pelotão para exibir.")
+        return
+
     fig = px.bar(
         media_por_pelotao, 
         x='pelotao', 
@@ -105,21 +122,39 @@ def show_pontuacao_pelotao(alunos_df, acoes_df, config_dict, view_mode):
         color='valor_final',  # Colore as barras com base no valor final (permite o degradê)
         color_continuous_scale='RdYlGn' # Define a escala de cores vermelho-amarelo-verde
     )
-    # --- FIM DA CORREÇÃO ---
     
     fig.update_layout(template="plotly_white")
     st.plotly_chart(fig, use_container_width=True, theme=None)
+
 def show_distribuicao_acoes(acoes_df, tipos_acao_df):
     st.subheader("Distribuição de Tipos de Ação")
     
+    if tipos_acao_df.empty:
+        st.info("Nenhum tipo de ação cadastrado para análise."); return
+
+    # Garante que 'nome' e 'exibir_no_grafico' existem
+    if 'nome' not in tipos_acao_df.columns:
+        st.warning("Coluna 'nome' não encontrada na tabela de tipos de ação.")
+        return
+    if 'exibir_no_grafico' not in tipos_acao_df.columns:
+        tipos_acao_df['exibir_no_grafico'] = True # Assume True se a coluna não existe
+
     tipos_visiveis = tipos_acao_df[tipos_acao_df.get('exibir_no_grafico', True)]['nome'].tolist()
+    
+    if acoes_df.empty:
+        st.info("Nenhuma ação para analisar."); return
+    
+    # Garante que 'nome' existe em acoes_df antes de filtrar
+    if 'nome' not in acoes_df.columns:
+        st.warning("Coluna 'nome' não encontrada nos dados de ações.")
+        return
+
     acoes_visiveis_df = acoes_df[acoes_df['nome'].isin(tipos_visiveis)]
     
     if not acoes_visiveis_df.empty and 'nome' in acoes_visiveis_df.columns:
         contagem_tipos = acoes_visiveis_df['nome'].value_counts().reset_index()
         contagem_tipos.columns = ['Tipo de Ação', 'Quantidade']
         
-        # --- CORREÇÃO DEFINITIVA: Define uma sequência de cores explícita ---
         fig = px.pie(
             contagem_tipos, 
             values='Quantidade', 
@@ -136,7 +171,7 @@ def show_distribuicao_acoes(acoes_df, tipos_acao_df):
 
 def show_ranking_acoes(acoes_df):
     st.subheader("Ranking de Tipos de Ação Registrados")
-    if acoes_df.empty or 'nome' not in acoes_df.columns:
+    if acoes_df.empty or 'nome' not in acoes_df.columns or 'pontuacao_efetiva' not in acoes_df.columns:
         st.info("Nenhuma ação para analisar."); return
 
     col1, col2 = st.columns(2)
@@ -144,40 +179,56 @@ def show_ranking_acoes(acoes_df):
         positivas = acoes_df[acoes_df['pontuacao_efetiva'] > 0]['nome'].value_counts().nlargest(5).reset_index()
         positivas.columns = ['Tipo de Ação', 'Ocorrências']
         st.write("Top 5 Ações Positivas:")
-        st.dataframe(positivas, use_container_width=True)
+        if positivas.empty:
+            st.info("Nenhuma ação positiva.")
+        else:
+            st.dataframe(positivas, use_container_width=True)
     with col2:
         negativas = acoes_df[acoes_df['pontuacao_efetiva'] < 0]['nome'].value_counts().nlargest(5).reset_index()
         negativas.columns = ['Tipo de Ação', 'Ocorrências']
         st.write("Top 5 Ações Negativas:")
-        st.dataframe(negativas, use_container_width=True)
+        if negativas.empty:
+            st.info("Nenhuma ação negativa.")
+        else:
+            st.dataframe(negativas, use_container_width=True)
 
 def show_evolucao_individual_comparativa(acoes_df, alunos_df, config_dict, view_mode):
     st.subheader("Comparativo de Evolução Individual")
     
-    # --- NOVO: Usa o componente de seleção de alunos para seleção individual/comparativa ---
-    selected_alunos_for_chart_df = render_alunos_filter_and_selection(
-        key_suffix="evolucao_individual_chart",
-        include_full_name_search=False # Não precisamos de todos os campos aqui
-    )
+    if alunos_df.empty:
+        st.info("Nenhum aluno disponível para comparação."); return
 
-    if selected_alunos_for_chart_df.empty:
-        st.info("Selecione um ou mais alunos para ver a evolução."); return
+    # Garante que 'id' e 'nome_guerra' e 'pelotao' existem
+    if 'id' not in alunos_df.columns or 'nome_guerra' not in alunos_df.columns or 'pelotao' not in alunos_df.columns:
+        st.warning("Colunas essenciais (id, nome_guerra, pelotao) não encontradas nos dados dos alunos.")
+        return
 
-    # Transforma os IDs dos alunos selecionados para a lista esperada
-    alunos_selecionados_ids = selected_alunos_for_chart_df['id'].tolist()
+    opcoes_alunos = {aluno['id']: f"{aluno.get('nome_guerra', 'N/A')} ({aluno.get('pelotao', 'N/A')})" for _, aluno in alunos_df.iterrows()}
+    
+    if not opcoes_alunos: # Se não houver alunos após as verificações
+        st.info("Nenhum aluno disponível para seleção após as verificações de dados."); return
+
+    alunos_selecionados_ids = st.multiselect("Selecione um ou mais alunos para comparar:", options=list(opcoes_alunos.keys()), format_func=opcoes_alunos.get)
+
+    if not alunos_selecionados_ids:
+        st.info("Selecione pelo menos um aluno para ver a evolução."); return
 
     df_plot = pd.DataFrame()
     for aluno_id in alunos_selecionados_ids:
-        acoes_aluno = acoes_df[acoes_df['aluno_id'] == aluno_id].copy()
+        acoes_aluno = acoes_df[acoes_df['aluno_id'].astype(str) == str(aluno_id)].copy()
         if not acoes_aluno.empty:
             acoes_aluno.sort_values('data', inplace=True)
-            soma_pontos_acoes = acoes_aluno['pontuacao_efetiva'].cumsum()
-            aluno_info = alunos_df[alunos_df['id'] == aluno_id].iloc[0]
+            acoes_aluno['pontuacao_acumulada'] = acoes_aluno['pontuacao_efetiva'].cumsum()
+            
+            aluno_info = alunos_df[alunos_df['id'].astype(str) == str(aluno_id)].iloc[0]
+            
             if view_mode == 'Conceito Final':
                 media_acad = float(aluno_info.get('media_academica', 0.0))
-                acoes_aluno['valor_final'] = soma_pontos_acoes.apply(lambda x: calcular_conceito_final(x, media_acad, alunos_df, config_dict))
+                # Recalcula o conceito final para cada ponto acumulado
+                acoes_aluno['valor_final'] = acoes_aluno['pontuacao_acumulada'].apply(lambda x: calcular_conceito_final(x, media_acad, alunos_df, config_dict))
             else:
-                acoes_aluno['valor_final'] = soma_pontos_acoes
+                acoes_aluno['valor_final'] = acoes_aluno['pontuacao_acumulada']
+            
             acoes_aluno['nome_guerra'] = aluno_info['nome_guerra']
             df_plot = pd.concat([df_plot, acoes_aluno])
 
@@ -186,11 +237,21 @@ def show_evolucao_individual_comparativa(acoes_df, alunos_df, config_dict, view_
         fig = px.line(df_plot, x='data', y='valor_final', color='nome_guerra', title=titulo, markers=True, labels={'valor_final': view_mode, 'nome_guerra': 'Aluno'})
         fig.update_layout(template="plotly_white")
         st.plotly_chart(fig, use_container_width=True, theme=None)
+    else:
+        st.info("Nenhum dado de evolução disponível para os alunos selecionados.")
 
 
 def show_evolucao_pelotao_comparativa(acoes_df, alunos_df, config_dict, view_mode):
     st.subheader("Comparativo de Evolução por Pelotão")
+    
+    if alunos_df.empty or 'pelotao' not in alunos_df.columns:
+        st.info("Dados de alunos ou coluna 'pelotao' ausente para comparação por pelotão."); return
+
     opcoes_pelotao = sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
+    
+    if not opcoes_pelotao:
+        st.info("Nenhum pelotão disponível para seleção."); return
+
     pelotoes_selecionados = st.multiselect("Selecione um ou mais pelotões para comparar:", options=opcoes_pelotao, default=opcoes_pelotao)
 
     if not pelotoes_selecionados:
@@ -198,25 +259,42 @@ def show_evolucao_pelotao_comparativa(acoes_df, alunos_df, config_dict, view_mod
         
     df_plot = pd.DataFrame()
     for pelotao in pelotoes_selecionados:
-        alunos_do_pelotao_ids = alunos_df[alunos_df['pelotao'] == pelotao]['id'].tolist()
-        acoes_pelotao = acoes_df[acoes_df['aluno_id'].isin(alunos_do_pelotao_ids)].copy()
+        alunos_do_pelotao_ids = alunos_df[alunos_df['pelotao'] == pelotao]['id'].astype(str).tolist()
+        
+        if not alunos_do_pelotao_ids: # Se não houver alunos no pelotão selecionado
+            continue # Pula para o próximo pelotão
+
+        acoes_pelotao = acoes_df[acoes_df['aluno_id'].astype(str).isin(alunos_do_pelotao_ids)].copy()
+        
         if not acoes_pelotao.empty:
             acoes_pelotao.sort_values('data', inplace=True)
-            soma_pontos_acoes = acoes_pelotao.groupby('data')['pontuacao_efetiva'].sum().cumsum()
-            df_temp = soma_pontos_acoes.reset_index()
+            # Agrupa por data e soma a pontuação efetiva para o pelotão naquele dia
+            soma_pontos_por_dia = acoes_pelotao.groupby('data')['pontuacao_efetiva'].sum().reset_index()
+            soma_pontos_por_dia['pontuacao_acumulada'] = soma_pontos_por_dia['pontuacao_efetiva'].cumsum()
+            
+            df_temp = soma_pontos_por_dia.copy()
+            
             if view_mode == 'Conceito Final':
                 linha_base = float(config_dict.get('linha_base_conceito', 8.5))
-                df_temp['valor_final'] = linha_base + df_temp['pontuacao_efetiva'] / len(alunos_do_pelotao_ids)
+                # Calcula o conceito médio para o pelotão. Divide pela contagem de alunos no pelotão
+                # Isso pode ser impreciso se a quantidade de alunos no pelotão variar ao longo do tempo.
+                # Para maior precisão, seria necessário calcular o conceito final individualmente e depois a média.
+                # Por simplicidade, usando a soma acumulada dividida pelo número de alunos fixo.
+                df_temp['valor_final'] = linha_base + (df_temp['pontuacao_acumulada'] / len(alunos_do_pelotao_ids))
             else:
-                df_temp['valor_final'] = df_temp['pontuacao_efetiva']
+                df_temp['valor_final'] = df_temp['pontuacao_acumulada']
+            
             df_temp['pelotao'] = pelotao
             df_plot = pd.concat([df_plot, df_temp])
     
     if not df_plot.empty:
-        titulo = "Evolução do Conceito Médio" if view_mode == 'Conceito Final' else "Evolução do Saldo de Pontos Total"
+        titulo = "Evolução do Conceito Médio por Pelotão" if view_mode == 'Conceito Final' else "Evolução do Saldo de Pontos Total por Pelotão"
         fig = px.line(df_plot, x='data', y='valor_final', color='pelotao', title=titulo, markers=True, labels={'valor_final': view_mode})
         fig.update_layout(template="plotly_white")
         st.plotly_chart(fig, use_container_width=True, theme=None)
+    else:
+        st.info("Nenhum dado de evolução disponível para os pelotões selecionados.")
+
 
 # =============================================================================
 # FUNÇÃO PRINCIPAL DA PÁGINA
@@ -231,13 +309,36 @@ def show_relatorios():
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
     
-    if alunos_df.empty or acoes_df.empty:
-        st.warning("Dados insuficientes para gerar relatórios."); return
+    # Verifica se os DataFrames essenciais não estão vazios
+    if alunos_df.empty:
+        st.warning("Dados de alunos insuficientes para gerar relatórios. Cadastre alunos primeiro."); return
+    if acoes_df.empty:
+        st.warning("Dados de ações insuficientes para gerar relatórios. Registre ações primeiro."); return
+    if tipos_acao_df.empty:
+        st.warning("Dados de tipos de ação insuficientes para gerar relatórios. Cadastre tipos de ação primeiro."); return
+    if config_df.empty:
+        st.warning("Dados de configuração insuficientes para gerar relatórios. Verifique a tabela 'Config'."); # Não retorna, pois alguns gráficos podem funcionar sem config
+
+    # Garante que as colunas de ID são strings para consistência
+    alunos_df['id'] = alunos_df['id'].astype(str)
+    acoes_df['aluno_id'] = acoes_df['aluno_id'].astype(str)
+    tipos_acao_df['id'] = tipos_acao_df['id'].astype(str)
 
     acoes_com_pontos_df = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
+    
+    # Verifica se acoes_com_pontos_df está vazio após o cálculo
+    if acoes_com_pontos_df.empty:
+        st.warning("Nenhuma ação com pontuação efetiva calculada para gerar relatórios."); return
+
     config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
-    if not acoes_com_pontos_df.empty:
+    
+    # Converte a coluna 'data' para datetime, tratando erros
+    if 'data' in acoes_com_pontos_df.columns:
         acoes_com_pontos_df['data'] = pd.to_datetime(acoes_com_pontos_df['data'], errors='coerce')
+        acoes_com_pontos_df.dropna(subset=['data'], inplace=True) # Remove linhas com datas inválidas
+    else:
+        st.warning("Coluna 'data' não encontrada no DataFrame de ações. Relatórios baseados em data podem não funcionar.")
+        return # Retorna se a coluna de data for crítica e não existir
 
     st.subheader("Painel de Controle de Relatórios")
     with st.container(border=True):
@@ -250,7 +351,8 @@ def show_relatorios():
         
         periodo_opts = ["Todo o Período", "Hoje", "Esta Semana", "Este Mês", "Intervalo Personalizado"]
         periodo_tipo = st.selectbox("Filtrar Período", periodo_opts, key="periodo_tipo")
-        start_date, end_date = None, datetime.now().date()
+        
+        start_date, end_date = None, datetime.now().date() # Inicializa com valores padrão
         if periodo_tipo != "Todo o Período":
             if periodo_tipo == "Hoje": start_date = end_date
             elif periodo_tipo == "Esta Semana": start_date = end_date - timedelta(days=end_date.weekday())
@@ -263,29 +365,28 @@ def show_relatorios():
     acoes_filtradas = acoes_com_pontos_df.copy()
     if tipo_acao_filtro != "Todos":
         acoes_filtradas = acoes_filtradas[acoes_filtradas['nome'] == tipo_acao_filtro]
-    if start_date:
+    if start_date: # Aplica filtro de data apenas se start_date for definido
         acoes_filtradas = acoes_filtradas[(acoes_filtradas['data'].dt.date >= start_date) & (acoes_filtradas['data'].dt.date <= end_date)]
 
     st.write("") 
     
-    # --- NOVO: Adiciona o filtro de alunos para os relatórios ---
-    # Alunos filtrados pelos seletores padrão (Pelotão, Especialidade)
-    alunos_filtrados_component_df = render_alunos_filter_and_selection(
-        key_suffix="relatorios_page",
-        include_full_name_search=True # Permite busca completa aqui
-    )
-
-    # Aplica o filtro de pelotão e depois o resultado do componente
-    # O filtro de pelotão no relatório afeta o componente de seleção também.
-    # Por isso, é importante o `alunos_filtrados` ser o resultado do `render_alunos_filter_and_selection`.
-    
-    # Ajusta as 'acoes_filtradas' com base nos 'alunos_filtrados_component_df'
-    if not alunos_filtrados_component_df.empty:
-        aluno_ids_do_filtro = alunos_filtrados_component_df['id'].tolist()
-        acoes_filtradas = acoes_filtradas[acoes_filtradas['aluno_id'].isin(aluno_ids_do_filtro)]
+    # --- CORREÇÃO para KeyError: 'pelotao' ---
+    # Verifica se a coluna 'pelotao' existe e se alunos_df não está vazio
+    if 'pelotao' in alunos_df.columns and not alunos_df.empty:
+        pelotoes_validos = sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
+        pelotoes = ["Todos os Pelotões"] + pelotoes_validos
+        pelotao_selecionado = st.selectbox("Filtrar por Pelotão", pelotoes, key="pelotao_filtro")
     else:
-        # Se nenhum aluno for selecionado no componente, as ações filtradas devem ser vazias
-        acoes_filtradas = pd.DataFrame()
+        # Se 'pelotao' não existe ou alunos_df está vazio, desabilita o filtro de pelotão
+        pelotao_selecionado = "Todos os Pelotões"
+        st.info("Filtro por Pelotão desabilitado: Coluna 'pelotao' não encontrada ou nenhum aluno cadastrado.")
+
+    alunos_filtrados_component_df = alunos_df.copy() # Renomeado para clareza
+    if pelotao_selecionado != "Todos os Pelotões":
+        alunos_filtrados_component_df = alunos_df[alunos_df['pelotao'] == pelotao_selecionado]
+        # Garante que os IDs dos alunos filtrados por pelotão são strings para o isin
+        aluno_ids_do_pelotao = alunos_filtrados_component_df['id'].astype(str).tolist()
+        acoes_filtradas = acoes_filtradas[acoes_filtradas['aluno_id'].isin(aluno_ids_do_pelotao)]
 
     st.divider()
     tab1, tab2, tab3 = st.tabs(["📊 Gráficos", "🏆 Rankings", "📈 Evolução"])
@@ -295,5 +396,5 @@ def show_relatorios():
     with tab2:
         render_rankings_tab(acoes_filtradas, alunos_filtrados_component_df)
     with tab3:
-        # Passa o DF de alunos filtrados pelo componente para as funções de evolução
         render_evolucao_tab(acoes_filtradas, alunos_filtrados_component_df, config_dict, view_mode)
+
