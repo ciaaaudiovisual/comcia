@@ -77,19 +77,13 @@ def show_saude(): # Renomeado para show_saude para consistência com outros arqu
     acoes_saude_df = acoes_df[acoes_df['tipo'].isin(selected_types)].copy()
 
     # 2. Filtra as ações pelos alunos selecionados do componente
-    # Certifique-se que o 'aluno_id' nas Acoes_saude_df é do mesmo tipo que 'id' em selected_alunos_df
-    acoes_saude_df['aluno_id'] = acoes_saude_df['aluno_id'].astype(str)
-    selected_alunos_ids = selected_alunos_df['id'].astype(str).tolist()
-    acoes_saude_df = acoes_saude_df[acoes_saude_df['aluno_id'].isin(selected_alunos_ids)]
+# saude.py (APENAS O TRECHO ONDE O ERRO OCORRE)
 
-    # 3. Filtra as ações pelo período de registro
-    acoes_saude_df['data'] = pd.to_datetime(acoes_saude_df['data']).dt.date
-    acoes_saude_df = acoes_saude_df[
-        (acoes_saude_df['data'] >= start_date_event) &
-        (acoes_saude_df['data'] <= end_date_event)
-    ]
-    
     # 4. Adiciona informações do aluno às ações para exibição e filtro de dispensa
+    # SOLUÇÃO: Converter as colunas 'aluno_id' e 'id' para string ANTES DO MERGE
+    acoes_saude_df['aluno_id'] = acoes_saude_df['aluno_id'].astype(str)
+    selected_alunos_df['id'] = selected_alunos_df['id'].astype(str) # Garante que o ID do aluno também é string
+
     acoes_com_nomes_df = pd.merge(
         acoes_saude_df,
         selected_alunos_df[['id', 'nome_guerra', 'pelotao', 'numero_interno']],
