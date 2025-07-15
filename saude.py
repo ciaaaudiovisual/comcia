@@ -219,21 +219,22 @@ def show_saude():
     # --- Fim da Seção "Adicionar Novo Registro de Saúde" ---
 
 
-    # --- Componente Padronizado de Seleção de Alunos (para filtros de visualização) ---
-    # Este é o filtro principal para a visualização do histórico.
-    # Se selected_alunos_df estiver vazio, ele deve considerar todos os alunos.
+    # --- Filtros de Visualização do Histórico (mantidos e aprimorados) ---
+    st.subheader("Filtro de Eventos de Saúde Existentes") # Título mais claro para esta seção de filtros
+
+    # Componente de seleção de alunos para o histórico (agora opcional para mostrar todos)
     selected_alunos_for_history_filter = render_alunos_filter_and_selection(key_suffix="saude_history_filter", include_full_name_search=False)
 
     # Lógica para exibir todos os alunos se nenhum for selecionado no filtro de histórico
     if selected_alunos_for_history_filter.empty:
-        alunos_para_filtragem_historico = alunos_df.copy() # Considera todos os alunos
-        st.info("Nenhum aluno selecionado para o histórico. Exibindo eventos de todos os alunos.")
+        # Se o usuário não selecionou nenhum aluno específico no filtro de histórico,
+        # consideramos todos os alunos para a exibição dos últimos lançamentos.
+        alunos_para_filtragem_historico = alunos_df.copy() 
+        st.info("Nenhum aluno selecionado para o histórico. Exibindo eventos de **todos** os alunos.")
     else:
+        # Se o usuário selecionou alunos, filtramos por eles.
         alunos_para_filtragem_historico = selected_alunos_for_history_filter
  
-
-    st.divider()
-    st.subheader("Filtros Específicos de Saúde")
 
     col_filter_saude1, col_filter_saude2 = st.columns(2)
     with col_filter_saude1:
