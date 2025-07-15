@@ -273,17 +273,15 @@ def show_saude():
             
             with col2:
                 if acao.get('esta_dispensado'):
-                    # Pega os valores da série ou DataFrame
-                    # NOVO: Garante que seja None se for NaT/NaN ANTES de passar para safe_strftime.
-                    # Isso evita que safe_strftime receba objetos pd.NaT que podem causar o AttributeError.
-                    inicio_dt_safe = acao['periodo_dispensa_inicio'] if pd.notna(acao['periodo_dispensa_inicio']) else None
-                    fim_dt_safe = acao['periodo_dispensa_fim'] if pd.notna(acao['periodo_dispensa_fim']) else None
+                    # Ensure conversion to datetime.date to be safe with safe_strftime's isinstance check
+                    inicio_dt_safe = acao['periodo_dispensa_inicio'].date() if pd.notna(acao['periodo_dispensa_inicio']) else None
+                    fim_dt_safe = acao['periodo_dispensa_fim'].date() if pd.notna(acao['periodo_dispensa_fim']) else None
 
                     # Usa a função auxiliar safe_strftime
                     inicio_str = safe_strftime(inicio_dt_safe, '%d/%m/%y')
                     fim_str = safe_strftime(fim_dt_safe, '%d/%m/%y')
                     
-                    data_fim = acao['periodo_dispensa_fim'] # Já é pd.NaT ou datetime.date
+                    data_fim = acao['periodo_dispensa_fim'] # Já é pd.NaT or datetime.date
                     hoje = datetime.now().date()
                     
                     # Usa pd.notna() para a comparação da data de fim também
