@@ -15,6 +15,7 @@ def get_all_alunos_data():
         df['numero_interno'] = df['numero_interno'].fillna('S/N')
         df['nip'] = df['nip'].fillna('N/A')
         df['nome_completo'] = df['nome_completo'].fillna('N/A')
+        df['turma'] = df['turma'].fillna('N/A') # Adicionado preenchimento para 'turma'
     return df
 
 def render_alunos_filter_and_selection(key_suffix="", include_full_name_search=False):
@@ -36,8 +37,8 @@ def render_alunos_filter_and_selection(key_suffix="", include_full_name_search=F
         st.warning("Não foi possível carregar os dados dos alunos. Verifique a tabela 'Alunos'.")
         return pd.DataFrame()
 
+    # --- Campos de Busca ---
     col_search1, col_search2 = st.columns(2)
-
     with col_search1:
         search_nome_guerra = st.text_input(
             "Buscar por Nome de Guerra:",
@@ -52,7 +53,6 @@ def render_alunos_filter_and_selection(key_suffix="", include_full_name_search=F
             placeholder="Ex: 101"
         )
     
-    # Busca por NIP e Nome Completo, se necessário
     if include_full_name_search:
         col_search3, col_search4 = st.columns(2)
         with col_search3:
@@ -69,9 +69,17 @@ def render_alunos_filter_and_selection(key_suffix="", include_full_name_search=F
                 help="Busca insensível a maiúsculas/minúsculas."
             )
 
+    # --- Filtro por Turma ---
+    turmas_unicas = sorted([t for t in df_alunos['turma'].unique() if pd.notna(t) and t != 'N/A'])
+    selected_turma = st.selectbox(
+        "Filtrar por Turma:",
+        options=["Todas as Turmas"] + turmas_unicas,
+        key=f"filter_turma_{key_suffix}"
+    )
+
+    # --- Aplica os Filtros ---
     filtered_alunos = df_alunos.copy()
 
-    # Aplica os filtros de busca
     if search_nome_guerra:
         filtered_alunos = filtered_alunos[
             filtered_alunos['nome_guerra'].str.contains(search_nome_guerra, case=False, na=False)
@@ -89,25 +97,34 @@ def render_alunos_filter_and_selection(key_suffix="", include_full_name_search=F
             filtered_alunos = filtered_alunos[
                 filtered_alunos['nome_completo'].str.contains(search_nome_completo, case=False, na=False)
             ]
+    
+    if selected_turma != "Todas as Turmas":
+        filtered_alunos = filtered_alunos[filtered_alunos['turma'] == selected_turma]
+
 
     # Prepara as opções para o multiselect
-    # Formato: "Nº Interno - Nome de Guerra (Pelotão)"
-    # Isso ajuda a identificar alunos mesmo com nomes de guerra repetidos
     options_for_multiselect = filtered_alunos.apply(
         lambda row: f"{row['numero_interno']} - {row['nome_guerra']} ({row.get('pelotao', 'N/A')})", axis=1
     ).tolist()
     options_for_multiselect.sort() # Garante que as opções estejam ordenadas
 
     # Mantém os IDs dos alunos para fácil acesso após a seleção
-    # Criamos um mapeamento do label exibido para o ID do aluno
     label_to_id_map = filtered_alunos.set_index(
         filtered_alunos.apply(lambda row: f"{row['numero_interno']} - {row['nome_guerra']} ({row.get('pelotao', 'N/A')})", axis=1)
     )['id'].to_dict()
 
+    # --- Checkbox para Selecionar Todos os Alunos Filtrados ---
+    select_all_filtered = st.checkbox(
+        "Selecionar todos os alunos filtrados",
+        key=f"select_all_filtered_{key_suffix}"
+    )
+
+    default_selection = options_for_multiselect if select_all_filtered else []
+
     selected_labels = st.multiselect(
         "Selecione os alunos (os que correspondem à busca):",
         options=options_for_multiselect,
-        default=options_for_multiselect, # Por padrão, todos os filtrados são selecionados
+        default=default_selection, # Agora o default depende do checkbox
         key=f"multiselect_alunos_{key_suffix}"
     )
 
@@ -117,8 +134,8 @@ def render_alunos_filter_and_selection(key_suffix="", include_full_name_search=F
     # Filtra o DataFrame original de alunos pelos IDs selecionados
     selected_alunos_df = df_alunos[df_alunos['id'].isin(selected_ids)].copy()
 
-    if selected_alunos_df.empty and (search_nome_guerra or search_numero_interno or (include_full_name_search and (search_nip or search_nome_completo))):
-        st.info("Nenhum aluno encontrado com os critérios de busca.")
+    if selected_alunos_df.empty and (search_nome_guerra or search_numero_interno or (include_full_name_search and (search_nip or search_nome_completo)) or selected_turma != "Todas as Turmas"):
+        st.info("Nenhum aluno encontrado com os critérios de busca/filtro.")
     elif selected_alunos_df.empty:
         st.info("Nenhum aluno selecionado.")
     
