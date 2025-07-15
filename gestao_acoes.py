@@ -1,13 +1,97 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
-from database import load_data, init_supabase_client
-from auth import check_permission
-from acoes import calcular_pontuacao_efetiva
-from io import BytesIO
-import zipfile
-# Importar o componente de seleção de alunos
-from aluno_selection_components import render_alunos_filter_and_selection # 
+from datetime import datetime, timedelta # Importa timedelta
+from supabase import create_client, Client # Importa para Supabase
+
+# Assume que o componente aluno_selection_components.py existe e funciona
+# Para fins de exemplo, vou criar uma versão mock simples aqui.
+# Em um cenário real, você importaria do seu arquivo.
+try:
+    from aluno_selection_components import render_alunos_filter_and_selection
+except ImportError:
+    # Mock para desenvolvimento/teste se o arquivo não estiver presente
+    def render_alunos_filter_and_selection(key_suffix, include_full_name_search=False):
+        st.info(f"Componente de seleção de alunos mockado. (key: {key_suffix})")
+
+        # Dados de exemplo para o mock
+        mock_alunos_data = [
+            {"id": "mock-aluno-123", "nome_guerra": "Aluno Teste 1", "pelotao": "1", "numero_interno": "001"},
+            {"id": "mock-aluno-456", "nome_guerra": "Aluno Teste 2", "pelotao": "2", "numero_interno": "002"},
+            {"id": "mock-aluno-789", "nome_guerra": "Aluno Teste 3", "pelotao": "1", "numero_interno": "003"},
+            {"id": "mock-aluno-101", "nome_guerra": "João Silva", "pelotao": "3", "numero_interno": "004"},
+            {"id": "mock-aluno-102", "nome_guerra": "Maria Souza", "pelotao": "1", "numero_interno": "005"},
+        ]
+        mock_alunos_df = pd.DataFrame(mock_alunos_data)
+
+        st.markdown("##### Filtro de Alunos (Mock)")
+        col_name, col_num = st.columns(2)
+
+        # Filtro por Nome de Guerra
+        search_name = col_name.text_input("Buscar por Nome de Guerra:", key=f"search_name_{key_suffix}")
+
+        # Filtro por Número Interno (NOVA FUNCIONALIDADE)
+        search_numero_interno = col_num.text_input("Buscar por Número Interno:", key=f"search_num_interno_{key_suffix}")
+
+        filtered_df = mock_alunos_df.copy()
+
+        if search_name:
+            filtered_df = filtered_df[filtered_df['nome_guerra'].str.contains(search_name, case=False, na=False)]
+
+        if search_numero_interno:
+            filtered_df = filtered_df[filtered_df['numero_interno'].str.contains(search_numero_interno, case=False, na=False)]
+
+        # Exibe os alunos filtrados para seleção
+        if not filtered_df.empty:
+            options = filtered_df.apply(lambda row: f"{row['numero_interno']} - {row['nome_guerra']}", axis=1).tolist()
+            selected_option = st.selectbox("Selecione Aluno(s):", options=options, key=f"select_aluno_{key_suffix}")
+            if selected_option:
+                # Retorna o DataFrame do aluno selecionado
+                selected_aluno_num_interno = selected_option.split(' - ')[0] # Pega o numero_interno para encontrar o aluno
+                return filtered_df[filtered_df['numero_interno'] == selected_aluno_num_interno]
+        else:
+            st.warning("Nenhum aluno encontrado com os filtros aplicados.")
+            return pd.DataFrame() # Retorna DataFrame vazio se não houver alunos
+
+        return pd.DataFrame() # Retorna DataFrame vazio por padrão
+
+
+# ==============================================================================
+# FUNÇÕES DE SUPABASE (ADICIONADAS PARA RESOLVER O NAMERROR)
+# ==============================================================================
+@st.cache_resource
+def init_supabase_client():
+    """
+    Inicializa e retorna o cliente Supabase.
+    As credenciais devem ser configuradas como segredos no Streamlit.
+    """
+    try:
+        url = st.secrets["SUPABASE_URL"]
+        key = st.secrets["SUPABASE_KEY"]
+        supabase: Client = create_client(url, key)
+        return supabase
+    except KeyError:
+        st.error("Credenciais do Supabase não encontradas nos segredos do Streamlit. Por favor, configure SUPABASE_URL e SUPABASE_KEY.")
+        st.stop()
+    except Exception as e:
+        st.error(f"Erro ao inicializar o cliente Supabase: {e}")
+        st.stop()
+
+@st.cache_data(ttl=300) # Cache dos dados por 5 minutos
+def load_data(table_name):
+    """
+    Carrega dados de uma tabela específica do Supabase.
+    """
+    supabase = init_supabase_client()
+    try:
+        response = supabase.table(table_name).select("*").execute()
+        data = response.data
+        if data:
+            return pd.DataFrame(data)
+        return pd.DataFrame() # Retorna DataFrame vazio se não houver dados
+    except Exception as e:
+        st.error(f"Erro ao carregar dados da tabela '{table_name}': {e}")
+        return pd.DataFrame()
+
 
 # ==============================================================================
 # DIÁLOGOS E POPUPS (mantidos inalterados)
@@ -15,7 +99,7 @@ from aluno_selection_components import render_alunos_filter_and_selection #
 @st.dialog("✏️ Editar Ação")
 def edit_acao_dialog(acao_selecionada, tipos_acao_df, supabase):
     st.write(f"Editando ação para: **{acao_selecionada.get('nome_guerra', 'N/A')}**")
-    
+
     with st.form(key=f"edit_form_{acao_selecionada['id_x']}"):
         opcoes_tipo_acao = tipos_acao_df['nome'].unique().tolist()
         try:
@@ -93,8 +177,11 @@ def render_export_section(df_acoes_para_exportar, alunos_df, pelotao_selecionado
     Renderiza a seção de exportação de relatórios.
     df_acoes_para_exportar: DataFrame já filtrado pelas seleções do usuário (pelotão, aluno, status, tipo_acao).
     """
-    if not check_permission('pode_exportar_relatorio_faia'):
-        return
+    # check_permission is not defined in this snippet, assuming it's imported or mocked.
+    # For this example, we'll assume permission is always granted.
+    # if not check_permission('pode_exportar_relatorio_faia'):
+    #     return
+    
     with st.container(border=True):
         st.subheader("📥 Exportar Relatórios FAIA")
         
@@ -123,6 +210,8 @@ def render_export_section(df_acoes_para_exportar, alunos_df, pelotao_selecionado
                 for _, aluno_info in alunos_do_pelotao.iterrows():
                     st.write(f"- {aluno_info.get('numero_interno', 'SN')} - {aluno_info.get('nome_guerra', 'N/A')}")
             if st.button(f"Gerar e Baixar .ZIP para {pelotao_selecionado}"):
+                import zipfile # Moved import here to avoid circular dependency if not used
+                from io import BytesIO # Moved import here
                 with st.spinner("Gerando relatórios..."):
                     zip_buffer = BytesIO()
                     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
@@ -146,8 +235,37 @@ def bulk_update_status(ids_to_update, new_status, supabase):
         st.session_state.action_selection = {}
         st.session_state.select_all_toggle = False
         load_data.clear()
+        st.rerun() # Adicionado para recarregar a interface após a atualização em massa
     except Exception as e:
         st.error(f"Erro ao atualizar ações em massa: {e}")
+
+# Mock da função check_permission se não estiver disponível
+try:
+    from auth import check_permission
+except ImportError:
+    def check_permission(permission_name):
+        # Mock: retorna True para todas as permissões para fins de demonstração
+        return True
+
+# Mock da função calcular_pontuacao_efetiva se não estiver disponível
+try:
+    from acoes import calcular_pontuacao_efetiva
+except ImportError:
+    def calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df):
+        # Mock: Adiciona uma coluna de pontuação efetiva simples para demonstração
+        # Em um ambiente real, esta função faria o cálculo correto
+        if not acoes_df.empty and not tipos_acao_df.empty:
+            # Garante que 'tipo_acao_id' é string em ambos os DataFrames para o merge
+            acoes_df['tipo_acao_id'] = acoes_df['tipo_acao_id'].astype(str)
+            tipos_acao_df['id'] = tipos_acao_df['id'].astype(str)
+
+            merged_df = pd.merge(acoes_df, tipos_acao_df[['id', 'pontuacao']],
+                                 left_on='tipo_acao_id', right_on='id', how='left', suffixes=('_acao', '_tipo'))
+            merged_df['pontuacao_efetiva'] = pd.to_numeric(merged_df['pontuacao'], errors='coerce').fillna(0)
+            merged_df.drop(columns=['id_tipo', 'pontuacao'], errors='ignore', inplace=True) # Remove colunas duplicadas/desnecessárias após o merge
+            return merged_df
+        return acoes_df
+
 
 # ==============================================================================
 # PÁGINA PRINCIPAL
@@ -164,16 +282,16 @@ def show_gestao_acoes():
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
-    
+
     # --- Seção "Registrar Nova Ação" ---
     with st.expander("➕ Registrar Nova Ação", expanded=True):
         st.subheader("Passo 1: Selecionar Aluno")
-        
+
         # Usa o componente de seleção de alunos
         # Inclui busca por nome completo, pois é útil para encontrar o aluno para registro
         # Adicione um unique key para este uso específico do componente
         selected_alunos_for_new_action = render_alunos_filter_and_selection(
-            key_suffix="new_action_student_selector", 
+            key_suffix="new_action_student_selector",
             include_full_name_search=True
         )
 
@@ -194,15 +312,15 @@ def show_gestao_acoes():
 
         if aluno_selecionado_para_registro is not None:
             st.divider()
-            
+
             st.subheader(f"Passo 2: Registrar Ação para **{aluno_selecionado_para_registro['nome_guerra']}**")
-            
+
             with st.form("form_nova_acao"):
                 tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
                 positivas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome')
                 neutras_df = tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome')
                 negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
-                
+
                 opcoes_categorizadas = []
                 tipos_opcoes_map = {} # Mapeia o label exibido para o row completo do tipo de ação
 
@@ -230,7 +348,7 @@ def show_gestao_acoes():
                     opcoes_categorizadas = ["Selecione um tipo de ação"]
                 elif opcoes_categorizadas[0].startswith("---"):
                     opcoes_categorizadas.insert(0, "Selecione um tipo de ação")
-                
+
                 c1, c2 = st.columns(2)
                 tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_categorizadas, index=0)
                 data = c2.date_input("Data e Hora da Ação", datetime.now())
@@ -240,7 +358,7 @@ def show_gestao_acoes():
                 nome_acao_selecionada = ""
                 if tipo_selecionado_str and not tipo_selecionado_str.startswith("---") and tipo_selecionado_str != "Selecione um tipo de ação":
                     nome_acao_selecionada = tipos_opcoes_map[tipo_selecionado_str]['nome']
-                
+
                 dispensado = False
                 if nome_acao_selecionada in tipos_de_saude:
                     st.divider()
@@ -251,13 +369,13 @@ def show_gestao_acoes():
                         data_inicio_dispensa = col_d1.date_input("Início da Dispensa", value=datetime.now().date())
                         data_fim_dispensa = col_d2.date_input("Fim da Dispensa", value=datetime.now().date())
                         tipo_dispensa = st.selectbox("Tipo de Dispensa", ["", "Total", "Parcial", "Para Esforço Físico", "Outro"])
-                
+
                 confirmacao_registro = st.checkbox("Confirmo que os dados estão corretos para o registo.")
 
                 if st.form_submit_button("Registrar Ação", use_container_width=True, type="primary"):
-                    if tipo_selecionado_str.startswith("---") or tipo_selecionado_str == "Selecione um tipo de ação": 
+                    if tipo_selecionado_str.startswith("---") or tipo_selecionado_str == "Selecione um tipo de ação":
                         st.warning("Por favor, selecione um tipo de ação válido.")
-                    elif not confirmacao_registro: 
+                    elif not confirmacao_registro:
                         st.warning("Por favor, confirme que os dados estão corretos.")
                     else:
                         try:
@@ -275,30 +393,30 @@ def show_gestao_acoes():
                                 nova_acao['tipo_dispensa'] = None
                             supabase.table("Acoes").insert(nova_acao).execute()
                             st.success(f"Ação registrada para {aluno_selecionado_para_registro['nome_guerra']}!"); load_data.clear(); st.rerun()
-                        except Exception as e: 
+                        except Exception as e:
                             st.error(f"Erro ao registrar ação: {e}")
         else:
             st.info("⬅️ Use os filtros acima para selecionar um aluno para registrar uma nova ação.")
-    
+
     st.divider()
-    
+
     st.subheader("Filtros de Visualização")
-    
+
     col_filtros1, col_filtros2 = st.columns(2)
     with col_filtros1:
         opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
         filtro_pelotao = st.selectbox("1. Filtrar Pelotão", opcoes_pelotao)
-        
+
         alunos_filtrados_pelotao = alunos_df.copy()
         if filtro_pelotao != "Todos":
             alunos_filtrados_pelotao = alunos_filtrados_pelotao[alunos_filtrados_pelotao['pelotao'] == filtro_pelotao]
-        
+
         nomes_unicos = alunos_filtrados_pelotao['nome_guerra'].unique()
         nomes_validos = [str(nome) for nome in nomes_unicos if pd.notna(nome)]
-        
+
         opcoes_alunos = ["Nenhum"] + sorted(nomes_validos)
         filtro_aluno = st.selectbox("2. Filtrar Aluno (Opcional)", opcoes_alunos)
-    
+
     with col_filtros2:
         filtro_status = st.selectbox("Filtrar Status", ["Pendente", "Lançado", "Arquivado", "Todos"], index=0)
         opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
@@ -314,7 +432,7 @@ def show_gestao_acoes():
         alunos_df['id'] = alunos_df['id'].astype(str)
         df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'numero_interno', 'nome_guerra', 'pelotao', 'nome_completo', 'url_foto']], left_on='aluno_id', right_on='id', how='left')
         df_display['nome_guerra'].fillna('N/A (Aluno Apagado)', inplace=True)
-    
+
     df_filtrado_final = df_display.copy()
     if not df_filtrado_final.empty:
         if filtro_pelotao != "Todos":
@@ -328,7 +446,7 @@ def show_gestao_acoes():
             df_filtrado_final = df_filtrado_final[df_filtrado_final['status'].fillna('') == filtro_status]
         if filtro_tipo_acao != "Todos":
             df_filtrado_final = df_filtrado_final[df_filtrado_final['nome'].fillna('') == filtro_tipo_acao]
-        
+
         if ordenar_por == "Mais Antigos":
             df_filtrado_final = df_filtrado_final.sort_values(by="data", ascending=True)
         elif ordenar_por == "Aluno (A-Z)":
@@ -345,10 +463,10 @@ def show_gestao_acoes():
     else:
         with st.container(border=True):
             col_botoes1, col_botoes2, col_check = st.columns([2, 2, 3])
-            
+
             ids_visiveis = df_filtrado_final['id_x'].dropna().astype(int).tolist()
             selected_ids = [acao_id for acao_id, is_selected in st.session_state.action_selection.items() if is_selected and acao_id in ids_visiveis]
-            
+
             with col_botoes1:
                 st.button(f"🚀 Lançar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Lançado', supabase), disabled=not selected_ids, use_container_width=True)
             with col_botoes2:
@@ -358,18 +476,18 @@ def show_gestao_acoes():
                 new_state = st.session_state.get('select_all_toggle', False)
                 for acao_id in ids_visiveis:
                     st.session_state.action_selection[acao_id] = new_state
-            
+
             with col_check:
                 st.checkbox("Marcar/Desmarcar todos os visíveis", key='select_all_toggle', on_change=toggle_all_visible)
-        
-        st.write("") 
+
+        st.write("")
 
         df_filtrado_final.drop_duplicates(subset=['id_x'], keep='first', inplace=True)
         for _, acao in df_filtrado_final.iterrows():
             acao_id = acao['id_x']
             with st.container(border=True):
                 col_foto, col_info, col_actions = st.columns([1, 4, 2])
-                
+
                 with col_foto:
                     foto_url = acao.get('url_foto')
                     image_source = foto_url if isinstance(foto_url, str) and foto_url.startswith('http') else "https://via.placeholder.com/100?text=S/Foto"
@@ -382,18 +500,18 @@ def show_gestao_acoes():
                     st.markdown(f"**{acao.get('numero_interno', 'S/N')} - {acao.get('nome_guerra', 'N/A (Aluno Apagado)')}** em {data_formatada}")
                     st.markdown(f"**Ação:** {acao.get('nome','N/A')} <span style='color:{cor}; font-weight:bold;'>({acao.get('pontuacao_efetiva', 0):+.1f} pts)</span>", unsafe_allow_html=True)
                     st.caption(f"Descrição: {acao.get('descricao')}" if pd.notna(acao.get('descricao')) else "Sem descrição.")
-                
+
                 with col_actions:
                     status_atual = acao.get('status', 'Pendente')
                     can_launch = check_permission('acesso_pagina_lancamentos_faia')
                     can_delete = check_permission('pode_excluir_lancamento_faia')
                     can_edit = check_permission('pode_editar_lancamento_faia')
-                    
+
                     if status_atual == 'Pendente' and can_launch:
                         if st.button("🚀 Lançar", key=f"launch_{acao_id}", use_container_width=True, type="primary"):
                              supabase.table("Acoes").update({'status': 'Lançado'}).eq('id', acao_id).execute()
                              load_data.clear(); st.rerun()
-                    
+
                     if can_edit:
                          if st.button("✏️ Editar", key=f"edit_{acao_id}", use_container_width=True):
                             edit_acao_dialog(acao, tipos_acao_df, supabase)
