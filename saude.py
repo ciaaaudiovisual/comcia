@@ -12,9 +12,9 @@ def safe_strftime(date_obj, fmt='%d/%m/%y'):
     Formata um objeto de data/hora de forma segura. Retorna 'N/A' se for nulo,
     inválido ou não puder ser formatado.
     """
-    # A verificação pd.notna já foi feita ANTES de chamar esta função.
-    # Agora, apenas verificamos se é uma instância de datetime.date/datetime.datetime
-    # pois se não for, significa que foi convertido para None.
+    # Garante que date_obj é um objeto de data/datetime puro, não um escalar de Pandas ou algo complexo.
+    # A verificação pd.notna já deve ter ocorrido ANTES de chamar esta função,
+    # então se for None, ele não entrará na condição.
     if isinstance(date_obj, (datetime.date, datetime.datetime)):
         try:
             return date_obj.strftime(fmt)
@@ -274,15 +274,16 @@ def show_saude():
             with col2:
                 if acao.get('esta_dispensado'):
                     # Pega os valores da série ou DataFrame
-                    # Garante que seja None se for NaT, antes de passar para safe_strftime
-                    inicio_dt = acao['periodo_dispensa_inicio'] if pd.notna(acao['periodo_dispensa_inicio']) else None
-                    fim_dt = acao['periodo_dispensa_fim'] if pd.notna(acao['periodo_dispensa_fim']) else None
+                    # NOVO: Garante que seja None se for NaT/NaN ANTES de passar para safe_strftime.
+                    # Isso evita que safe_strftime receba objetos pd.NaT que podem causar o AttributeError.
+                    inicio_dt_safe = acao['periodo_dispensa_inicio'] if pd.notna(acao['periodo_dispensa_inicio']) else None
+                    fim_dt_safe = acao['periodo_dispensa_fim'] if pd.notna(acao['periodo_dispensa_fim']) else None
 
                     # Usa a função auxiliar safe_strftime
-                    inicio_str = safe_strftime(inicio_dt, '%d/%m/%y')
-                    fim_str = safe_strftime(fim_dt, '%d/%m/%y')
+                    inicio_str = safe_strftime(inicio_dt_safe, '%d/%m/%y')
+                    fim_str = safe_strftime(fim_dt_safe, '%d/%m/%y')
                     
-                    data_fim = acao['periodo_dispensa_fim']
+                    data_fim = acao['periodo_dispensa_fim'] # Já é pd.NaT ou datetime.date
                     hoje = datetime.now().date()
                     
                     # Usa pd.notna() para a comparação da data de fim também
