@@ -1,8 +1,26 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta # Importar timedelta
 from database import load_data, init_supabase_client
-from aluno_selection_components import render_alunos_filter_and_selection # Importa o componente de seleção de alunos
+# Importa o componente de seleção de alunos
+from aluno_selection_components import render_alunos_filter_and_selection 
+
+# ==============================================================================
+# FUNÇÃO AUXILIAR PARA FORMATAÇÃO SEGURA DE DATAS
+# ==============================================================================
+def safe_strftime(date_obj, fmt='%d/%m/%y'):
+    """
+    Formata um objeto de data/hora de forma segura. Retorna 'N/A' se for nulo,
+    inválido ou não puder ser formatado.
+    """
+    if pd.isna(date_obj):
+        return "N/A"
+    if isinstance(date_obj, (datetime.date, datetime.datetime, pd.Timestamp)):
+        try:
+            return pd.to_datetime(date_obj).strftime(fmt)
+        except Exception:
+            return "N/A"
+    return "N/A"
 
 # ==============================================================================
 # DIÁLOGO DE EDIÇÃO
@@ -85,24 +103,6 @@ def edit_saude_dialog(acao_id, dados_acao_atual, supabase):
                 st.error(f"Erro ao salvar as alterações: {e}")
 
 # ==============================================================================
-# FUNÇÃO AUXILIAR PARA FORMATAÇÃO SEGURA DE DATAS (Mantida para robustez)
-# ==============================================================================
-def safe_strftime(date_obj, fmt='%d/%m/%y'):
-    """
-    Formata um objeto de data/hora de forma segura. Retorna 'N/A' se for nulo,
-    inválido ou não puder ser formatado.
-    """
-    if pd.isna(date_obj): # Check for NaT or None from pandas
-        return "N/A"
-    if isinstance(date_obj, (datetime.date, datetime.datetime, pd.Timestamp)): # Add pd.Timestamp
-        try:
-            return pd.to_datetime(date_obj).strftime(fmt) # Convert to pandas Timestamp then format
-        except Exception:
-            return "N/A"
-    return "N/A"
-
-
-# ==============================================================================
 # PÁGINA PRINCIPAL DO MÓDULO DE SAÚDE
 # ==============================================================================
 def show_saude():
@@ -119,35 +119,34 @@ def show_saude():
         st.error(f"Erro ao carregar dados: {e}")
         return
 
-    # --- Componente Padronizado de Seleção de Alunos ---
-    # Usando key_suffix para evitar conflitos se este componente for usado em outros lugares
+    # --- Componente Padronizado de Seleção de Alunos (reintroduzido) ---
     selected_alunos_df = render_alunos_filter_and_selection(key_suffix="saude_module", include_full_name_search=False)
 
     if selected_alunos_df.empty:
         st.info("Selecione alunos para visualizar os dados de saúde.")
-        # Se nenhum aluno for selecionado, podemos optar por mostrar todos os eventos de saúde
-        # ou sair. Para "últimos registros", é melhor filtrar pelos selecionados.
-        return 
+        return # Sai da função se nenhum aluno for selecionado
 
     st.divider()
     st.subheader("Filtros Específicos de Saúde")
 
     col_filter_saude1, col_filter_saude2 = st.columns(2)
     with col_filter_saude1:
-        # Filtro por Dispensa Médica
+        # Filtro por Dispensa Médica (mantido)
         dispensa_medica_options = ["Todos", "Com Dispensa Ativa", "Com Dispensa Vencida", "Sem Dispensa"]
         selected_dispensa = st.selectbox(
             "Status de Dispensa Médica:",
             options=dispensa_medica_options,
             key="dispensa_medica_filter",
-            index=0 
+            index=0 # Padrão para 'Todos'
         )
     
     with col_filter_saude2:
-        # Filtro por Tipos de Ação (saúde)
+        # Filtro por Tipos de Ação (saúde) (mantido)
         todos_tipos_nomes = sorted(tipos_acao_df['nome'].unique().tolist())
         
+        # Tipos padrão de saúde para seleção inicial no multiselect
         tipos_saude_padrao = ["ENFERMARIA", "HOSPITAL", "NAS", "DISPENSA MÉDICA", "SAÚDE"]
+        
         selected_types = st.multiselect(
             "Filtrar por Tipo de Evento:",
             options=todos_tipos_nomes,
@@ -159,7 +158,7 @@ def show_saude():
         st.warning("Selecione pelo menos um tipo de evento para continuar.")
         return
 
-    # Filtro por Período (Data Range)
+    # Filtro por Período (Data Range) (reintroduzido)
     st.markdown("##### Filtrar por Período de Registro:")
     today = datetime.now().date()
     default_start_date = today - timedelta(days=90) # Últimos 90 dias como padrão
@@ -190,7 +189,7 @@ def show_saude():
     # 1. Filtra as ações pelos tipos selecionados
     acoes_saude_df = acoes_df[acoes_df['tipo'].isin(selected_types)].copy()
 
-    # 2. Filtra as ações pelos alunos selecionados do componente `render_alunos_filter_and_selection`
+    # 2. Filtra as ações pelos alunos selecionados do componente
     # Garante que as colunas 'aluno_id' e 'id' são strings para a fusão/filtro
     acoes_saude_df['aluno_id'] = acoes_saude_df['aluno_id'].astype(str)
     selected_alunos_df['id'] = selected_alunos_df['id'].astype(str) 
@@ -207,18 +206,14 @@ def show_saude():
     ]
     
     # 4. Adiciona informações do aluno às ações para exibição e filtro de dispensa
-    # Renomeia 'id' de alunos_df para 'aluno_real_id' para evitar conflito com 'id' de acoes_df
     acoes_com_nomes_df = pd.merge(
         acoes_saude_df,
         selected_alunos_df[['id', 'nome_guerra', 'pelotao', 'numero_interno']],
         left_on='aluno_id',
-        right_on='id', # Este 'id' é o ID do aluno
+        right_on='id',
         how='left',
         suffixes=('_acao', '_aluno') # Adiciona sufixos para diferenciar colunas 'id'
     )
-    # A coluna original 'id' da tabela 'Acoes' se torna 'id_acao'
-    # A coluna 'id' da tabela 'Alunos' se torna 'id_aluno'
-
     acoes_com_nomes_df['nome_guerra'].fillna('N/A (Aluno Removido)', inplace=True)
     acoes_com_nomes_df = acoes_com_nomes_df.sort_values(by="data", ascending=False) # Ordena pelos mais recentes
     
@@ -263,27 +258,23 @@ def show_saude():
             col1, col2, col3 = st.columns([3, 2, 1])
             
             with col1:
-                # Exibição alterada para "Número - Nome de Guerra"
                 st.markdown(f"##### {acao.get('numero_interno', 'S/N')} - {acao.get('nome_guerra', 'N/A')}")
                 st.markdown(f"**Evento:** {acao.get('tipo', 'N/A')}")
-                st.caption(f"Data do Registro: {acao['data'].strftime('%d/%m/%Y')}")
+                st.caption(f"Data do Registro: {safe_strftime(acao['data'], '%d/%m/%Y')}") # Usando safe_strftime
                 if acao.get('descricao'):
                     st.caption(f"Observação: {acao.get('descricao')}")
             
             with col2:
                 if acao.get('esta_dispensado'):
-                    # Converte para datetime.date antes de passar para safe_strftime
-                    inicio_dt_safe = acao['periodo_dispensa_inicio'].date() if pd.notna(acao['periodo_dispensa_inicio']) else None
-                    fim_dt_safe = acao['periodo_dispensa_fim'].date() if pd.notna(acao['periodo_dispensa_fim']) else None
-
-                    inicio_str = safe_strftime(inicio_dt_safe, '%d/%m/%y')
-                    fim_str = safe_strftime(fim_dt_safe, '%d/%m/%y')
+                    # Usando safe_strftime para as datas de dispensa
+                    inicio_str = safe_strftime(acao.get('periodo_dispensa_inicio'), '%d/%m/%y')
+                    fim_str = safe_strftime(acao.get('periodo_dispensa_fim'), '%d/%m/%y')
                     
-                    # Usa pd.notna() para a comparação da data de fim também
-                    data_fim = acao['periodo_dispensa_fim'] # Já é datetime.date ou pd.NaT
+                    data_fim = acao.get('periodo_dispensa_fim') # Já é datetime.date ou pd.NaT
                     hoje = datetime.now().date()
                     
-                    if pd.notna(data_fim) and data_fim < hoje:
+                    # Verifica o status da dispensa
+                    if pd.notna(data_fim) and pd.to_datetime(data_fim).date() < hoje: # Converter para date para comparar
                         st.warning("**DISPENSA VENCIDA**", icon="⌛")
                     else:
                         st.error("**DISPENSADO**", icon="⚕️")
@@ -294,8 +285,7 @@ def show_saude():
                     st.success("**SEM DISPENSA**", icon="✅")
             
             with col3:
-                # Usa 'id_acao' que é o ID original da ação da tabela 'Acoes'
+                # O ID da ação agora é 'id_acao' devido ao sufixo no merge
                 id_da_acao = acao['id_acao'] 
-                if st.button("✏️ Editar", key=f"edit_saude_{id_da_acao}"): # Chave única para o botão
-                    # Passa o ID da ação e os dados da linha (que incluem nome_guerra, etc.)
+                if st.button("✏️ Editar", key=f"edit_saude_{id_da_acao}"):
                     edit_saude_dialog(id_da_acao, acao, supabase)
