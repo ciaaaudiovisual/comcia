@@ -15,7 +15,16 @@ def get_all_alunos_data():
         df['numero_interno'] = df['numero_interno'].fillna('S/N')
         df['nip'] = df['nip'].fillna('N/A')
         df['nome_completo'] = df['nome_completo'].fillna('N/A')
-        df['turma'] = df['turma'].fillna('N/A') # Adicionado preenchimento para 'turma'
+        
+        # --- CORREÇÃO DO KeyError: VERIFICAR SE A COLUNA EXISTE ANTES DE PREENCHER ---
+        if 'turma' in df.columns: # 
+            df['turma'] = df['turma'].fillna('N/A') # 
+        else:
+            df['turma'] = 'N/A' #  # Se a coluna 'turma' não existe, cria ela com um valor padrão
+
+        # Garante que 'id' é string para consistência nos merges
+        df['id'] = df['id'].astype(str)
+
     return df
 
 def render_alunos_filter_and_selection(key_suffix="", include_full_name_search=False):
@@ -70,6 +79,7 @@ def render_alunos_filter_and_selection(key_suffix="", include_full_name_search=F
             )
 
     # --- Filtro por Turma ---
+    #  Garante que 'turma' é uma coluna, mesmo que 'N/A'
     turmas_unicas = sorted([t for t in df_alunos['turma'].unique() if pd.notna(t) and t != 'N/A'])
     selected_turma = st.selectbox(
         "Filtrar por Turma:",
