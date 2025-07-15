@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from database import load_data, init_supabase_client
-from aluno_selection_components import render_alunos_filter_and_selection
+from aluno_selection_components import render_alunos_filter_and_selection # Importe o novo nome
 
 # ==============================================================================
 # FUNÇÃO AUXILIAR PARA FORMATAÇÃO SEGURA DE DATAS
@@ -12,6 +12,7 @@ def safe_strftime(date_obj, fmt='%d/%m/%y'):
     Formata um objeto de data/hora de forma segura. Retorna 'N/A' se for nulo,
     inválido ou não puder ser formatado.
     """
+    # Certifique-se de que date_obj seja um escalar e não pd.NaT antes de usar isinstance
     if pd.notna(date_obj) and isinstance(date_obj, (datetime.date, datetime.datetime)):
         try:
             return date_obj.strftime(fmt)
@@ -185,6 +186,19 @@ def show_saude():
     acoes_saude_df['aluno_id'] = acoes_saude_df['aluno_id'].astype(str)
     selected_alunos_df['id'] = selected_alunos_df['id'].astype(str) # Garante que o ID do aluno também é string
 
+    # CORREÇÃO PARA "NÃO APARECEREM TODOS OS LANÇAMENTOS"
+    if selected_alunos_df.empty:
+        # Se o multiselect de alunos está vazio (por padrão ou porque nada foi selecionado),
+        # pegue todos os aluno_ids que estão presentes nas ações filtradas por tipo/data.
+        # Isso efetivamente desabilita o filtro de aluno quando nada é selecionado explicitamente.
+        alunos_para_filtragem = acoes_saude_df['aluno_id'].unique().tolist()
+    else:
+        # Se há alunos explicitamente selecionados no componente, filtre por eles.
+        alunos_para_filtragem = selected_alunos_df['id'].tolist()
+    
+    acoes_saude_df = acoes_saude_df[acoes_saude_df['aluno_id'].isin(alunos_para_filtragem)]
+
+
     # 3. Filtra as ações pelo período de registro
     acoes_saude_df['data'] = pd.to_datetime(acoes_saude_df['data'], errors='coerce').dt.date
     acoes_saude_df = acoes_saude_df[
@@ -255,18 +269,17 @@ def show_saude():
                 if acao.get('descricao'):
                     st.caption(f"Observação: {acao.get('descricao')}")
             
-          with col2:
+            with col2:
                 if acao.get('esta_dispensado'):
-                    # Garante que estamos pegando o escalar real, tratando NaT explicitamente se necessário
-                    # Convertendo para datetime.date mais cedo e manipulando None para NaT
-                    inicio_dt = acao['periodo_dispensa_inicio'] if pd.notna(acao['periodo_dispensa_inicio']) else None
-                    fim_dt = acao['periodo_dispensa_fim'] if pd.notna(acao['periodo_dispensa_fim']) else None
+                    # Pega os valores da série ou DataFrame
+                    inicio_dt = acao['periodo_dispensa_inicio']
+                    fim_dt = acao['periodo_dispensa_fim']
 
                     # Usa a função auxiliar safe_strftime
                     inicio_str = safe_strftime(inicio_dt, '%d/%m/%y')
                     fim_str = safe_strftime(fim_dt, '%d/%m/%y')
                     
-                    data_fim = fim_dt # Agora data_fim é datetime.date ou None
+                    data_fim = acao['periodo_dispensa_fim']
                     hoje = datetime.now().date()
                     
                     # Usa pd.notna() para a comparação da data de fim também
