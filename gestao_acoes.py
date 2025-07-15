@@ -6,9 +6,11 @@ from auth import check_permission
 from acoes import calcular_pontuacao_efetiva
 from io import BytesIO
 import zipfile
+# Importar o componente de seleção de alunos
+from aluno_selection_components import render_alunos_filter_and_selection # 
 
 # ==============================================================================
-# DIÁLOGOS E POPUPS
+# DIÁLOGOS E POPUPS (mantidos inalterados)
 # ==============================================================================
 @st.dialog("✏️ Editar Ação")
 def edit_acao_dialog(acao_selecionada, tipos_acao_df, supabase):
@@ -52,7 +54,7 @@ def preview_faia_dialog(aluno_info, acoes_aluno_df):
     st.download_button(label="✅ Baixar Relatório .TXT", data=texto_relatorio.encode('utf-8'), file_name=nome_arquivo, mime="text/plain")
 
 # ==============================================================================
-# FUNÇÕES DE APOIO
+# FUNÇÕES DE APOIO (mantidas inalteradas)
 # ==============================================================================
 def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
     texto = [
@@ -66,7 +68,6 @@ def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
         "LANÇAMENTOS (STATUS 'LANÇADO') EM ORDEM CRONOLÓGICA:",
         "------------------------------------------------------------\n"
     ]
-    # Filtra apenas as ações com status 'Lançado' para o relatório
     acoes_lancadas = acoes_aluno_df[acoes_aluno_df['status'] == 'Lançado']
     if acoes_lancadas.empty:
         texto.append("Nenhum lançamento com status 'Lançado' encontrado para este aluno.")
@@ -156,8 +157,8 @@ def show_gestao_acoes():
     supabase = init_supabase_client()
 
     if 'action_selection' not in st.session_state: st.session_state.action_selection = {}
-    if 'search_results_df_gestao' not in st.session_state: st.session_state.search_results_df_gestao = pd.DataFrame()
-    if 'selected_student_id_gestao' not in st.session_state: st.session_state.selected_student_id_gestao = None
+    # Removidos os st.session_state.search_results_df_gestao e selected_student_id_gestao
+    # pois a gestão da seleção será feita pelo componente render_alunos_filter_and_selection.
 
     alunos_df = load_data("Alunos")
     acoes_df = load_data("Acoes")
@@ -166,157 +167,118 @@ def show_gestao_acoes():
     
     # --- Seção "Registrar Nova Ação" ---
     with st.expander("➕ Registrar Nova Ação", expanded=True):
-        st.subheader("Passo 1: Buscar Aluno")
-        with st.form("search_form_gestao"):
-            # Layout dos campos de busca
-            col_s1, col_s2 = st.columns(2)
-            busca_num_interno = col_s1.text_input("Nº Interno", help="Busca exata pelo número interno.")
-            busca_nome_guerra = col_s2.text_input("Nome de Guerra", help="Busca por parte do nome de guerra (ex: 'GUILHERME' ou 'guilherme').")
-            
-            col_s3, col_s4 = st.columns(2)
-            busca_nip = col_s3.text_input("NIP", help="Busca exata pelo NIP.")
-            busca_nome_completo = col_s4.text_input("Nome Completo", help="Busca por parte do nome completo.")
-            
-            if st.form_submit_button("🔎 Buscar Aluno", use_container_width=True):
-                df_busca = alunos_df.copy()
-
-                # Aplicar filtros de busca, tornando-os case-insensitive e robustos para números
-                if busca_num_interno:
-                    df_busca = df_busca[df_busca['numero_interno'].astype(str).str.lower() == busca_num_interno.lower()]
-                if busca_nome_guerra:
-                    df_busca = df_busca[df_busca['nome_guerra'].str.contains(busca_nome_guerra, case=False, na=False)]
-                if busca_nip and 'nip' in df_busca.columns:
-                    df_busca = df_busca[df_busca['nip'].astype(str).str.lower() == busca_nip.lower()]
-                if busca_nome_completo and 'nome_completo' in df_busca.columns:
-                    df_busca = df_busca[df_busca['nome_completo'].str.contains(busca_nome_completo, case=False, na=False)]
-                
-                st.session_state.search_results_df_gestao = df_busca
-                st.session_state.selected_student_id_gestao = None # Reseta a seleção para forçar nova escolha
+        st.subheader("Passo 1: Selecionar Aluno")
         
-        search_results_df = st.session_state.search_results_df_gestao
-        if not search_results_df.empty:
-            st.write("Resultados da busca:")
-            search_results_df['label'] = search_results_df.apply(lambda row: f"{row.get('numero_interno', 'S/N')} - {row.get('nome_guerra', 'N/A')} ({row.get('pelotao', 'N/A')})", axis=1)
-            opcoes_encontradas = pd.Series(search_results_df.id.values, index=search_results_df.label).to_dict()
-            
-            # Garante que o aluno previamente selecionado (se houver) esteja pré-selecionado no rádio
-            default_index = None
-            if st.session_state.selected_student_id_gestao:
-                try:
-                    current_label = search_results_df[search_results_df['id'] == st.session_state.selected_student_id_gestao]['label'].iloc[0]
-                    default_index = list(opcoes_encontradas.keys()).index(current_label)
-                except IndexError:
-                    default_index = None # Reset if previously selected student is not in current search results
+        # Usa o componente de seleção de alunos
+        # Inclui busca por nome completo, pois é útil para encontrar o aluno para registro
+        # Adicione um unique key para este uso específico do componente
+        selected_alunos_for_new_action = render_alunos_filter_and_selection(
+            key_suffix="new_action_student_selector", 
+            include_full_name_search=True
+        )
 
-            aluno_selecionado_label = st.radio(
-                "Selecione um aluno:", 
-                options=opcoes_encontradas.keys(), 
-                index=default_index, # Define o índice padrão
-                key=f"aluno_radio_select_{datetime.now().timestamp()}" # Chave única para forçar atualização
-            )
-            
-            if aluno_selecionado_label:
-                st.session_state.selected_student_id_gestao = str(opcoes_encontradas[aluno_selecionado_label])
+        aluno_selecionado_para_registro = None
+        if not selected_alunos_for_new_action.empty:
+            # Se múltiplos alunos forem selecionados, o Streamlit multi-select permite.
+            # Para registro de uma AÇÃO, geralmente é um aluno por vez.
+            # Se você quer permitir múltiplos registros em massa, a lógica abaixo precisaria mudar.
+            # Por simplicidade, vamos pegar o primeiro aluno selecionado para registro.
+            if len(selected_alunos_for_new_action) > 1:
+                st.warning("Por favor, selecione apenas UM aluno para registrar uma nova ação.")
+                aluno_selecionado_para_registro = None # Reseta a seleção para forçar um único aluno
+            else:
+                aluno_selecionado_para_registro = selected_alunos_for_new_action.iloc[0]
+                st.info(f"Aluno selecionado: **{aluno_selecionado_para_registro.get('nome_guerra', 'N/A')}**")
         else:
-            st.info("Nenhum aluno encontrado. Refine sua busca ou cadastre o aluno.")
-        
-        if st.session_state.selected_student_id_gestao:
+            st.info("Nenhum aluno selecionado. Use os filtros acima para encontrar um aluno.")
+
+        if aluno_selecionado_para_registro is not None:
             st.divider()
             
-            alunos_df['id'] = alunos_df['id'].astype(str)
-            aluno_selecionado_df = alunos_df[alunos_df['id'] == st.session_state.selected_student_id_gestao]
+            st.subheader(f"Passo 2: Registrar Ação para **{aluno_selecionado_para_registro['nome_guerra']}**")
             
-            if not aluno_selecionado_df.empty:
-                aluno_selecionado = aluno_selecionado_df.iloc[0]
-                st.subheader(f"Passo 2: Registrar Ação para **{aluno_selecionado['nome_guerra']}**")
+            with st.form("form_nova_acao"):
+                tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
+                positivas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome')
+                neutras_df = tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome')
+                negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
                 
-                with st.form("form_nova_acao"):
-                    # Organização dos tipos de ação por categoria para melhor visualização
-                    tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
-                    positivas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome')
-                    neutras_df = tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome')
-                    negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
-                    
-                    opcoes_categorizadas = []
-                    tipos_opcoes_map = {} # Mapeia o label exibido para o row completo do tipo de ação
+                opcoes_categorizadas = []
+                tipos_opcoes_map = {} # Mapeia o label exibido para o row completo do tipo de ação
 
-                    # Adiciona as categorias e os tipos de ação
-                    if not positivas_df.empty:
-                        opcoes_categorizadas.append("--- AÇÕES POSITIVAS ---")
-                        for _, r in positivas_df.iterrows():
-                            label = f"{r['nome']} ({r['pontuacao']:+.1f} pts)"
-                            opcoes_categorizadas.append(label)
-                            tipos_opcoes_map[label] = r
-                    if not neutras_df.empty:
-                        opcoes_categorizadas.append("--- AÇÕES NEUTRAS ---")
-                        for _, r in neutras_df.iterrows():
-                            label = f"{r['nome']} ({r['pontuacao']:.1f} pts)"
-                            opcoes_categorizadas.append(label)
-                            tipos_opcoes_map[label] = r
-                    if not negativas_df.empty:
-                        opcoes_categorizadas.append("--- AÇÕES NEGATIVAS ---")
-                        for _, r in negativas_df.iterrows():
-                            label = f"{r['nome']} ({r['pontuacao']:+.1f} pts)"
-                            opcoes_categorizadas.append(label)
-                            tipos_opcoes_map[label] = r
+                # Adiciona as categorias e os tipos de ação
+                if not positivas_df.empty:
+                    opcoes_categorizadas.append("--- AÇÕES POSITIVAS ---")
+                    for _, r in positivas_df.iterrows():
+                        label = f"{r['nome']} ({r['pontuacao']:+.1f} pts)"
+                        opcoes_categorizadas.append(label)
+                        tipos_opcoes_map[label] = r
+                if not neutras_df.empty:
+                    opcoes_categorizadas.append("--- AÇÕES NEUTRAS ---")
+                    for _, r in neutras_df.iterrows():
+                        label = f"{r['nome']} ({r['pontuacao']:.1f} pts)"
+                        opcoes_categorizadas.append(label)
+                        tipos_opcoes_map[label] = r
+                if not negativas_df.empty:
+                    opcoes_categorizadas.append("--- AÇÕES NEGATIVAS ---")
+                    for _, r in negativas_df.iterrows():
+                        label = f"{r['nome']} ({r['pontuacao']:+.1f} pts)"
+                        opcoes_categorizadas.append(label)
+                        tipos_opcoes_map[label] = r
 
-                    # Adiciona uma opção de placeholder no início se não houver categorias vazias
-                    if not opcoes_categorizadas:
-                        opcoes_categorizadas = ["Selecione um tipo de ação"] # Placeholder
-                    elif opcoes_categorizadas[0].startswith("---"):
-                        opcoes_categorizadas.insert(0, "Selecione um tipo de ação") # Add placeholder if categories exist
-                    
-                    c1, c2 = st.columns(2)
-                    tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_categorizadas, index=0)
-                    data = c2.date_input("Data e Hora da Ação", datetime.now())
-                    descricao = st.text_area("Descrição/Justificativa (Opcional)")
+                if not opcoes_categorizadas:
+                    opcoes_categorizadas = ["Selecione um tipo de ação"]
+                elif opcoes_categorizadas[0].startswith("---"):
+                    opcoes_categorizadas.insert(0, "Selecione um tipo de ação")
+                
+                c1, c2 = st.columns(2)
+                tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_categorizadas, index=0)
+                data = c2.date_input("Data e Hora da Ação", datetime.now())
+                descricao = st.text_area("Descrição/Justificativa (Opcional)")
 
-                    tipos_de_saude = ["ENFERMARIA", "HOSPITAL", "NAS", "DISPENSA MÉDICA", "SAÚDE"]
-                    nome_acao_selecionada = ""
-                    # Verifica se o tipo selecionado não é uma linha de categoria
-                    if tipo_selecionado_str and not tipo_selecionado_str.startswith("---") and tipo_selecionado_str != "Selecione um tipo de ação":
-                        nome_acao_selecionada = tipos_opcoes_map[tipo_selecionado_str]['nome']
-                    
-                    dispensado = False
-                    if nome_acao_selecionada in tipos_de_saude:
-                        st.divider()
-                        st.markdown("##### Controle de Dispensa Médica")
-                        dispensado = st.toggle("Gerou dispensa médica?")
-                        if dispensado:
-                            col_d1, col_d2 = st.columns(2)
-                            data_inicio_dispensa = col_d1.date_input("Início da Dispensa", value=datetime.now().date())
-                            data_fim_dispensa = col_d2.date_input("Fim da Dispensa", value=datetime.now().date())
-                            tipo_dispensa = st.selectbox("Tipo de Dispensa", ["", "Total", "Parcial", "Para Esforço Físico", "Outro"])
-                    
-                    confirmacao_registro = st.checkbox("Confirmo que os dados estão corretos para o registo.")
+                tipos_de_saude = ["ENFERMARIA", "HOSPITAL", "NAS", "DISPENSA MÉDICA", "SAÚDE"]
+                nome_acao_selecionada = ""
+                if tipo_selecionado_str and not tipo_selecionado_str.startswith("---") and tipo_selecionado_str != "Selecione um tipo de ação":
+                    nome_acao_selecionada = tipos_opcoes_map[tipo_selecionado_str]['nome']
+                
+                dispensado = False
+                if nome_acao_selecionada in tipos_de_saude:
+                    st.divider()
+                    st.markdown("##### Controle de Dispensa Médica")
+                    dispensado = st.toggle("Gerou dispensa médica?")
+                    if dispensado:
+                        col_d1, col_d2 = st.columns(2)
+                        data_inicio_dispensa = col_d1.date_input("Início da Dispensa", value=datetime.now().date())
+                        data_fim_dispensa = col_d2.date_input("Fim da Dispensa", value=datetime.now().date())
+                        tipo_dispensa = st.selectbox("Tipo de Dispensa", ["", "Total", "Parcial", "Para Esforço Físico", "Outro"])
+                
+                confirmacao_registro = st.checkbox("Confirmo que os dados estão corretos para o registo.")
 
-                    if st.form_submit_button("Registrar Ação", use_container_width=True, type="primary"):
-                        if tipo_selecionado_str.startswith("---") or tipo_selecionado_str == "Selecione um tipo de ação": 
-                            st.warning("Por favor, selecione um tipo de ação válido.")
-                        elif not confirmacao_registro: 
-                            st.warning("Por favor, confirme que os dados estão corretos.")
-                        else:
-                            try:
-                                tipo_info = tipos_opcoes_map[tipo_selecionado_str]
-                                nova_acao = {'aluno_id': str(st.session_state.selected_student_id_gestao), 'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 'descricao': descricao, 'data': data.isoformat(), 'usuario': st.session_state.username, 'status': 'Pendente'}
-                                if nome_acao_selecionada in tipos_de_saude and dispensado:
-                                    nova_acao['esta_dispensado'] = True
-                                    nova_acao['periodo_dispensa_inicio'] = data_inicio_dispensa.isoformat()
-                                    nova_acao['periodo_dispensa_fim'] = data_fim_dispensa.isoformat()
-                                    nova_acao['tipo_dispensa'] = tipo_dispensa
-                                else:
-                                    nova_acao['esta_dispensado'] = False
-                                    nova_acao['periodo_dispensa_inicio'] = None
-                                    nova_acao['periodo_dispensa_fim'] = None
-                                    nova_acao['tipo_dispensa'] = None
-                                supabase.table("Acoes").insert(nova_acao).execute()
-                                st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!"); load_data.clear(); st.rerun()
-                            except Exception as e: 
-                                st.error(f"Erro ao registrar ação: {e}")
-            else:
-                st.info("Nenhum aluno selecionado para registrar ação.")
+                if st.form_submit_button("Registrar Ação", use_container_width=True, type="primary"):
+                    if tipo_selecionado_str.startswith("---") or tipo_selecionado_str == "Selecione um tipo de ação": 
+                        st.warning("Por favor, selecione um tipo de ação válido.")
+                    elif not confirmacao_registro: 
+                        st.warning("Por favor, confirme que os dados estão corretos.")
+                    else:
+                        try:
+                            tipo_info = tipos_opcoes_map[tipo_selecionado_str]
+                            nova_acao = {'aluno_id': str(aluno_selecionado_para_registro['id']), 'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 'descricao': descricao, 'data': data.isoformat(), 'usuario': st.session_state.username, 'status': 'Pendente'}
+                            if nome_acao_selecionada in tipos_de_saude and dispensado:
+                                nova_acao['esta_dispensado'] = True
+                                nova_acao['periodo_dispensa_inicio'] = data_inicio_dispensa.isoformat()
+                                nova_acao['periodo_dispensa_fim'] = data_fim_dispensa.isoformat()
+                                nova_acao['tipo_dispensa'] = tipo_dispensa
+                            else:
+                                nova_acao['esta_dispensado'] = False
+                                nova_acao['periodo_dispensa_inicio'] = None
+                                nova_acao['periodo_dispensa_fim'] = None
+                                nova_acao['tipo_dispensa'] = None
+                            supabase.table("Acoes").insert(nova_acao).execute()
+                            st.success(f"Ação registrada para {aluno_selecionado_para_registro['nome_guerra']}!"); load_data.clear(); st.rerun()
+                        except Exception as e: 
+                            st.error(f"Erro ao registrar ação: {e}")
         else:
-            st.info("⬅️ Busque e selecione um aluno acima para registrar uma nova ação.")
+            st.info("⬅️ Use os filtros acima para selecionar um aluno para registrar uma nova ação.")
     
     st.divider()
     
@@ -324,11 +286,9 @@ def show_gestao_acoes():
     
     col_filtros1, col_filtros2 = st.columns(2)
     with col_filtros1:
-        # Garante que as opções de pelotão incluam 'Todos' e estejam ordenadas
         opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
         filtro_pelotao = st.selectbox("1. Filtrar Pelotão", opcoes_pelotao)
         
-        # Filtra os alunos disponíveis para a seleção do aluno pelo pelotão e depois pela busca
         alunos_filtrados_pelotao = alunos_df.copy()
         if filtro_pelotao != "Todos":
             alunos_filtrados_pelotao = alunos_filtrados_pelotao[alunos_filtrados_pelotao['pelotao'] == filtro_pelotao]
@@ -336,13 +296,11 @@ def show_gestao_acoes():
         nomes_unicos = alunos_filtrados_pelotao['nome_guerra'].unique()
         nomes_validos = [str(nome) for nome in nomes_unicos if pd.notna(nome)]
         
-        # Adiciona "Nenhum" ao topo das opções, seguido dos nomes de guerra ordenados
         opcoes_alunos = ["Nenhum"] + sorted(nomes_validos)
         filtro_aluno = st.selectbox("2. Filtrar Aluno (Opcional)", opcoes_alunos)
     
     with col_filtros2:
         filtro_status = st.selectbox("Filtrar Status", ["Pendente", "Lançado", "Arquivado", "Todos"], index=0)
-        # Garante que as opções de tipo de ação incluam 'Todos' e estejam ordenadas
         opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
         filtro_tipo_acao = st.selectbox("Filtrar por Tipo de Ação", opcoes_tipo_acao)
 
@@ -354,7 +312,6 @@ def show_gestao_acoes():
     if not acoes_com_pontos.empty and not alunos_df.empty:
         acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
         alunos_df['id'] = alunos_df['id'].astype(str)
-        # Adicionada 'url_foto' para exibir a imagem do aluno
         df_display = pd.merge(acoes_com_pontos, alunos_df[['id', 'numero_interno', 'nome_guerra', 'pelotao', 'nome_completo', 'url_foto']], left_on='aluno_id', right_on='id', how='left')
         df_display['nome_guerra'].fillna('N/A (Aluno Apagado)', inplace=True)
     
