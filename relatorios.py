@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 from database import load_data
 from auth import check_permission
 from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
+from aluno_selection_components import render_alunos_filter_and_selection # Importa o novo componente
+
 
 # =============================================================================
 # FUNÇÕES DE RENDERIZAÇÃO DAS ABAS
