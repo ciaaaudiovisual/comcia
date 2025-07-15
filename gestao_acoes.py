@@ -8,7 +8,7 @@ from io import BytesIO
 import zipfile
 
 # ==============================================================================
-# DIÁLOGOS E POPUPS (Sem alterações nesta seção)
+# DIÁLOGOS E POPUPS
 # ==============================================================================
 @st.dialog("✏️ Editar Ação")
 def edit_acao_dialog(acao_selecionada, tipos_acao_df, supabase):
@@ -52,7 +52,7 @@ def preview_faia_dialog(aluno_info, acoes_aluno_df):
     st.download_button(label="✅ Baixar Relatório .TXT", data=texto_relatorio.encode('utf-8'), file_name=nome_arquivo, mime="text/plain")
 
 # ==============================================================================
-# FUNÇÕES DE APOIO (Sem alterações nesta seção)
+# FUNÇÕES DE APOIO
 # ==============================================================================
 def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
     texto = [
@@ -66,6 +66,7 @@ def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
         "LANÇAMENTOS (STATUS 'LANÇADO') EM ORDEM CRONOLÓGICA:",
         "------------------------------------------------------------\n"
     ]
+    # Filtra apenas as ações com status 'Lançado' para o relatório
     acoes_lancadas = acoes_aluno_df[acoes_aluno_df['status'] == 'Lançado']
     if acoes_lancadas.empty:
         texto.append("Nenhum lançamento com status 'Lançado' encontrado para este aluno.")
@@ -103,8 +104,8 @@ def render_export_section(df_acoes_para_exportar, alunos_df, pelotao_selecionado
             alunos_elegivel_exportacao_df = alunos_elegivel_exportacao_df[alunos_elegivel_exportacao_df['pelotao'] == pelotao_selecionado]
         
         # O botão de exportação individual só é ativado se um aluno específico estiver selecionado
-        if aluno_selecionado != "Nenhum" and aluno_selecionado != "Todos": # Adicionado "Todos" para garantir que não haja ambiguidade
-            st.info(f"Pré-visualize e exporte o relatório individual para {aluno_selecionado}. Serão incluídas apenas as ações com status 'Lançado'.")
+        if aluno_selecionado != "Nenhum" and aluno_selecionado != "Todos":
+            st.info(f"Pré-visualize e exporte o relatório individual para **{aluno_selecionado}**. Serão incluídas apenas as ações com status 'Lançado'.")
             aluno_info_df = alunos_df[alunos_df['nome_guerra'] == aluno_selecionado]
             if not aluno_info_df.empty:
                 aluno_info = aluno_info_df.iloc[0]
@@ -115,7 +116,7 @@ def render_export_section(df_acoes_para_exportar, alunos_df, pelotao_selecionado
             else:
                 st.warning(f"Aluno '{aluno_selecionado}' não encontrado.")
         elif pelotao_selecionado != "Todos":
-            st.info(f"A exportação gerará um arquivo .ZIP com os relatórios de todos os alunos do pelotão '{pelotao_selecionado}'. Serão incluídas apenas as ações com status 'Lançado'.")
+            st.info(f"A exportação gerará um arquivo .ZIP com os relatórios de todos os alunos do pelotão **'{pelotao_selecionado}'**. Serão incluídas apenas as ações com status 'Lançado'.")
             alunos_do_pelotao = alunos_elegivel_exportacao_df # Já está filtrado por pelotão
             with st.expander(f"Ver os {len(alunos_do_pelotao)} alunos que serão incluídos no .ZIP"):
                 for _, aluno_info in alunos_do_pelotao.iterrows():
@@ -163,33 +164,61 @@ def show_gestao_acoes():
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
     
-    # ... (código do expander "Registrar Nova Ação" continua igual) ...
+    # --- Seção "Registrar Nova Ação" ---
     with st.expander("➕ Registrar Nova Ação", expanded=True):
+        st.subheader("Passo 1: Buscar Aluno")
         with st.form("search_form_gestao"):
-            st.subheader("Passo 1: Buscar Aluno")
-            c1, c2 = st.columns(2)
-            busca_num_interno = c1.text_input("Nº Interno")
-            busca_nome_guerra = c2.text_input("Nome de Guerra")
-            c3, c4 = st.columns(2)
-            busca_nip = c3.text_input("NIP")
-            busca_nome_completo = c4.text_input("Nome Completo")
-            if st.form_submit_button("🔎 Buscar Aluno"):
+            # Layout dos campos de busca
+            col_s1, col_s2 = st.columns(2)
+            busca_num_interno = col_s1.text_input("Nº Interno", help="Busca exata pelo número interno.")
+            busca_nome_guerra = col_s2.text_input("Nome de Guerra", help="Busca por parte do nome de guerra (ex: 'GUILHERME' ou 'guilherme').")
+            
+            col_s3, col_s4 = st.columns(2)
+            busca_nip = col_s3.text_input("NIP", help="Busca exata pelo NIP.")
+            busca_nome_completo = col_s4.text_input("Nome Completo", help="Busca por parte do nome completo.")
+            
+            if st.form_submit_button("🔎 Buscar Aluno", use_container_width=True):
                 df_busca = alunos_df.copy()
-                if busca_num_interno: df_busca = df_busca[df_busca['numero_interno'].astype(str).str.contains(busca_num_interno, na=False)]
-                if busca_nome_guerra: df_busca = df_busca[df_busca['nome_guerra'].str.contains(busca_nome_guerra, case=False, na=False)]
-                if busca_nip and 'nip' in df_busca.columns: df_busca = df_busca[df_busca['nip'].astype(str).str.contains(busca_nip, na=False)]
-                if busca_nome_completo and 'nome_completo' in df_busca.columns: df_busca = df_busca[df_busca['nome_completo'].str.contains(busca_nome_completo, case=False, na=False)]
-                st.session_state.search_results_df_gestao = df_busca
-                st.session_state.selected_student_id_gestao = None
 
+                # Aplicar filtros de busca, tornando-os case-insensitive e robustos para números
+                if busca_num_interno:
+                    df_busca = df_busca[df_busca['numero_interno'].astype(str).str.lower() == busca_num_interno.lower()]
+                if busca_nome_guerra:
+                    df_busca = df_busca[df_busca['nome_guerra'].str.contains(busca_nome_guerra, case=False, na=False)]
+                if busca_nip and 'nip' in df_busca.columns:
+                    df_busca = df_busca[df_busca['nip'].astype(str).str.lower() == busca_nip.lower()]
+                if busca_nome_completo and 'nome_completo' in df_busca.columns:
+                    df_busca = df_busca[df_busca['nome_completo'].str.contains(busca_nome_completo, case=False, na=False)]
+                
+                st.session_state.search_results_df_gestao = df_busca
+                st.session_state.selected_student_id_gestao = None # Reseta a seleção para forçar nova escolha
+        
         search_results_df = st.session_state.search_results_df_gestao
         if not search_results_df.empty:
             st.write("Resultados da busca:")
-            search_results_df['label'] = search_results_df.apply(lambda row: f"{row.get('numero_interno', '')} - {row.get('nome_guerra', '')} ({row.get('pelotao', '')})", axis=1)
+            search_results_df['label'] = search_results_df.apply(lambda row: f"{row.get('numero_interno', 'S/N')} - {row.get('nome_guerra', 'N/A')} ({row.get('pelotao', 'N/A')})", axis=1)
             opcoes_encontradas = pd.Series(search_results_df.id.values, index=search_results_df.label).to_dict()
-            aluno_selecionado_label = st.radio("Selecione um aluno:", options=opcoes_encontradas.keys(), index=None)
+            
+            # Garante que o aluno previamente selecionado (se houver) esteja pré-selecionado no rádio
+            default_index = None
+            if st.session_state.selected_student_id_gestao:
+                try:
+                    current_label = search_results_df[search_results_df['id'] == st.session_state.selected_student_id_gestao]['label'].iloc[0]
+                    default_index = list(opcoes_encontradas.keys()).index(current_label)
+                except IndexError:
+                    default_index = None # Reset if previously selected student is not in current search results
+
+            aluno_selecionado_label = st.radio(
+                "Selecione um aluno:", 
+                options=opcoes_encontradas.keys(), 
+                index=default_index, # Define o índice padrão
+                key=f"aluno_radio_select_{datetime.now().timestamp()}" # Chave única para forçar atualização
+            )
+            
             if aluno_selecionado_label:
                 st.session_state.selected_student_id_gestao = str(opcoes_encontradas[aluno_selecionado_label])
+        else:
+            st.info("Nenhum aluno encontrado. Refine sua busca ou cadastre o aluno.")
         
         if st.session_state.selected_student_id_gestao:
             st.divider()
@@ -199,27 +228,53 @@ def show_gestao_acoes():
             
             if not aluno_selecionado_df.empty:
                 aluno_selecionado = aluno_selecionado_df.iloc[0]
-                st.subheader(f"Passo 2: Registrar Ação para {aluno_selecionado['nome_guerra']}")
+                st.subheader(f"Passo 2: Registrar Ação para **{aluno_selecionado['nome_guerra']}**")
                 
                 with st.form("form_nova_acao"):
-                    c1, c2 = st.columns(2)
+                    # Organização dos tipos de ação por categoria para melhor visualização
                     tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
-                    positivas_df, neutras_df, negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome'), tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome'), tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
-                    opcoes_finais, tipos_opcoes_map = [], {}
-                    if not positivas_df.empty:
-                        opcoes_finais.append("--- AÇÕES POSITIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in positivas_df.iterrows()]
-                    if not neutras_df.empty:
-                        opcoes_finais.append("--- AÇÕES NEUTRAS ---"); [opcoes_finais.append(f"{r['nome']} (0.0 pts)") or tipos_opcoes_map.update({f"{r['nome']} (0.0 pts)": r}) for _, r in neutras_df.iterrows()]
-                    if not negativas_df.empty:
-                        opcoes_finais.append("--- AÇÕES NEGATIVAS ---"); [opcoes_finais.append(f"{r['nome']} ({r['pontuacao']:.1f} pts)") or tipos_opcoes_map.update({f"{r['nome']} ({r['pontuacao']:.1f} pts)": r}) for _, r in negativas_df.iterrows()]
+                    positivas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome')
+                    neutras_df = tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome')
+                    negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
                     
-                    tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_finais)
+                    opcoes_categorizadas = []
+                    tipos_opcoes_map = {} # Mapeia o label exibido para o row completo do tipo de ação
+
+                    # Adiciona as categorias e os tipos de ação
+                    if not positivas_df.empty:
+                        opcoes_categorizadas.append("--- AÇÕES POSITIVAS ---")
+                        for _, r in positivas_df.iterrows():
+                            label = f"{r['nome']} ({r['pontuacao']:+.1f} pts)"
+                            opcoes_categorizadas.append(label)
+                            tipos_opcoes_map[label] = r
+                    if not neutras_df.empty:
+                        opcoes_categorizadas.append("--- AÇÕES NEUTRAS ---")
+                        for _, r in neutras_df.iterrows():
+                            label = f"{r['nome']} ({r['pontuacao']:.1f} pts)"
+                            opcoes_categorizadas.append(label)
+                            tipos_opcoes_map[label] = r
+                    if not negativas_df.empty:
+                        opcoes_categorizadas.append("--- AÇÕES NEGATIVAS ---")
+                        for _, r in negativas_df.iterrows():
+                            label = f"{r['nome']} ({r['pontuacao']:+.1f} pts)"
+                            opcoes_categorizadas.append(label)
+                            tipos_opcoes_map[label] = r
+
+                    # Adiciona uma opção de placeholder no início se não houver categorias vazias
+                    if not opcoes_categorizadas:
+                        opcoes_categorizadas = ["Selecione um tipo de ação"] # Placeholder
+                    elif opcoes_categorizadas[0].startswith("---"):
+                        opcoes_categorizadas.insert(0, "Selecione um tipo de ação") # Add placeholder if categories exist
+                    
+                    c1, c2 = st.columns(2)
+                    tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_categorizadas, index=0)
                     data = c2.date_input("Data e Hora da Ação", datetime.now())
                     descricao = st.text_area("Descrição/Justificativa (Opcional)")
 
                     tipos_de_saude = ["ENFERMARIA", "HOSPITAL", "NAS", "DISPENSA MÉDICA", "SAÚDE"]
                     nome_acao_selecionada = ""
-                    if tipo_selecionado_str and not tipo_selecionado_str.startswith("---"):
+                    # Verifica se o tipo selecionado não é uma linha de categoria
+                    if tipo_selecionado_str and not tipo_selecionado_str.startswith("---") and tipo_selecionado_str != "Selecione um tipo de ação":
                         nome_acao_selecionada = tipos_opcoes_map[tipo_selecionado_str]['nome']
                     
                     dispensado = False
@@ -235,9 +290,11 @@ def show_gestao_acoes():
                     
                     confirmacao_registro = st.checkbox("Confirmo que os dados estão corretos para o registo.")
 
-                    if st.form_submit_button("Registrar Ação"):
-                        if tipo_selecionado_str.startswith("---"): st.warning("Por favor, selecione um tipo de ação válido.")
-                        elif not confirmacao_registro: st.warning("Por favor, confirme que os dados estão corretos.")
+                    if st.form_submit_button("Registrar Ação", use_container_width=True, type="primary"):
+                        if tipo_selecionado_str.startswith("---") or tipo_selecionado_str == "Selecione um tipo de ação": 
+                            st.warning("Por favor, selecione um tipo de ação válido.")
+                        elif not confirmacao_registro: 
+                            st.warning("Por favor, confirme que os dados estão corretos.")
                         else:
                             try:
                                 tipo_info = tipos_opcoes_map[tipo_selecionado_str]
@@ -257,8 +314,7 @@ def show_gestao_acoes():
                             except Exception as e: 
                                 st.error(f"Erro ao registrar ação: {e}")
             else:
-                st.error("O aluno selecionado não foi encontrado. Por favor, realize a busca novamente.")
-                st.session_state.selected_student_id_gestao = None
+                st.info("Nenhum aluno selecionado para registrar ação.")
         else:
             st.info("⬅️ Busque e selecione um aluno acima para registrar uma nova ação.")
     
@@ -355,11 +411,9 @@ def show_gestao_acoes():
         for _, acao in df_filtrado_final.iterrows():
             acao_id = acao['id_x']
             with st.container(border=True):
-                # ALTERAÇÃO 2: Novo layout para incluir a foto do aluno
                 col_foto, col_info, col_actions = st.columns([1, 4, 2])
                 
                 with col_foto:
-                    # ALTERAÇÃO 3: Exibe a foto do aluno
                     foto_url = acao.get('url_foto')
                     image_source = foto_url if isinstance(foto_url, str) and foto_url.startswith('http') else "https://via.placeholder.com/100?text=S/Foto"
                     st.image(image_source, width=80)
@@ -378,7 +432,6 @@ def show_gestao_acoes():
                     can_delete = check_permission('pode_excluir_lancamento_faia')
                     can_edit = check_permission('pode_editar_lancamento_faia')
                     
-                    # ALTERAÇÃO 4: Botões com texto e dispostos verticalmente
                     if status_atual == 'Pendente' and can_launch:
                         if st.button("🚀 Lançar", key=f"launch_{acao_id}", use_container_width=True, type="primary"):
                              supabase.table("Acoes").update({'status': 'Lançado'}).eq('id', acao_id).execute()
@@ -399,5 +452,4 @@ def show_gestao_acoes():
                         st.warning("🗄️ Arquivado")
 
     st.divider()
-    # Passa o DataFrame já filtrado para a seção de exportação
     render_export_section(df_filtrado_final, alunos_df, filtro_pelotao, filtro_aluno)
