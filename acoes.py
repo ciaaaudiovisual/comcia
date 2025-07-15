@@ -1,9 +1,11 @@
+# acoes.py
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 from database import load_data, init_supabase_client
 from auth import check_permission
-from alunos import calcular_pontuacao_efetiva
+from alunos import calcular_pontuacao_efetiva # Mantido para compatibilidade, mas a função agora está em alunos.py
+from aluno_selection_components import render_alunos_filter_and_selection # Importa o novo componente
 
 # --- FUNÇÃO PRINCIPAL DA PÁGINA (MODIFICADA) ---
 def show_lancamentos_page():
@@ -19,69 +21,50 @@ def show_lancamentos_page():
         st.warning("Não há alunos ou tipos de ação cadastrados. Cadastre-os primeiro.")
         return
 
-    # --- FORMULÁRIO (MODIFICADO COM CAMPOS DE BUSCA SEPARADOS) ---
+    # --- FORMULÁRIO (MODIFICADO COM O COMPONENTE PADRONIZADO) ---
     st.subheader("Novo Lançamento")
     with st.form("novo_lancamento"):
-        st.info("Preencha um ou mais campos abaixo para buscar o aluno e, em seguida, preencha os detalhes da ação.")
+        st.info("Utilize os campos abaixo para buscar e selecionar o aluno. Apenas um aluno pode ser selecionado para registro de ação individual.")
         
-        # Novos campos de busca para o aluno
-        col_busca1, col_busca2, col_busca3 = st.columns(3)
-        with col_busca1:
-            busca_num_interno = st.text_input("Buscar por Número Interno")
-        with col_busca2:
-            busca_nome_guerra = st.text_input("Buscar por Nome de Guerra")
-        with col_busca3:
-            busca_nip = st.text_input("Buscar por NIP")
+        # Chamada do componente padronizado com todos os campos de busca
+        alunos_para_registro_df = render_alunos_filter_and_selection(
+            key_suffix="lancamento_acao_individual",
+            include_full_name_search=True # Ativa a busca por NIP e Nome Completo
+        )
 
-        st.divider()
-
-        # Campos para os detalhes da ação
-        col_acao1, col_acao2 = st.columns(2)
-        with col_acao1:
-            # Lógica para ordenar tipos de ação por frequência de uso
-            if not acoes_df.empty:
-                contagem_acoes = acoes_df['tipo_acao_id'].value_counts().to_dict()
-                tipos_acao_df['contagem'] = tipos_acao_df['id'].astype(str).map(contagem_acoes).fillna(0)
-                tipos_acao_df = tipos_acao_df.sort_values('contagem', ascending=False)
+        if len(alunos_para_registro_df) == 1:
+            aluno_encontrado = alunos_para_registro_df.iloc[0]
+            st.success(f"Aluno selecionado: **{aluno_encontrado['nome_guerra']}**")
             
-            tipos_opcoes = {f"{tipo['nome']} ({float(tipo.get('pontuacao', 0)):.1f} pts)": tipo for _, tipo in tipos_acao_df.iterrows()}
-            tipo_selecionado_str = st.selectbox("Tipo de Ação (mais usados primeiro)", tipos_opcoes.keys())
+            st.divider()
+            st.markdown("#### Detalhes da Ação")
+            col_acao1, col_acao2 = st.columns(2)
+            with col_acao1:
+                if not acoes_df.empty:
+                    contagem_acoes = acoes_df['tipo_acao_id'].value_counts().to_dict()
+                    tipos_acao_df['contagem'] = tipos_acao_df['id'].astype(str).map(contagem_acoes).fillna(0)
+                    tipos_acao_df = tipos_acao_df.sort_values('contagem', ascending=False)
+                
+                tipos_opcoes = {f"{tipo['nome']} ({float(tipo.get('pontuacao', 0)):.1f} pts)": tipo for _, tipo in tipos_acao_df.iterrows()}
+                tipo_selecionado_str = st.selectbox("Tipo de Ação (mais usados primeiro)", tipos_opcoes.keys())
 
-        with col_acao2:
-            data = st.date_input("Data", datetime.now())
-            descricao = st.text_area("Descrição/Justificativa (Opcional)", height=100)
+            with col_acao2:
+                data = st.date_input("Data", datetime.now())
+                descricao = st.text_area("Descrição/Justificativa (Opcional)", height=100)
 
-        if st.form_submit_button("Registrar Ação"):
-            # Lógica de busca do aluno ao submeter o formulário
-            df_busca = alunos_df.copy()
-            if busca_num_interno:
-                df_busca = df_busca[df_busca['numero_interno'].astype(str) == str(busca_num_interno)]
-            if busca_nome_guerra:
-                df_busca = df_busca[df_busca['nome_guerra'].str.contains(busca_nome_guerra, case=False, na=False)]
-            if busca_nip:
-                # Garante que a coluna NIP exista e faz a busca
-                if 'nip' in df_busca.columns:
-                    df_busca = df_busca[df_busca['nip'].astype(str) == str(busca_nip)]
-                else:
-                    st.error("A coluna 'NIP' não foi encontrada na base de dados de alunos.")
-                    st.stop()
-            
-            # Validação do resultado da busca
-            if len(df_busca) == 1:
-                aluno_encontrado = df_busca.iloc[0]
+            if st.form_submit_button("Registrar Ação"):
                 aluno_id = aluno_encontrado['id']
                 
-                # Validação dos campos da ação
                 if not tipo_selecionado_str:
                     st.error("Por favor, selecione um tipo de ação.")
                 else:
                     try:
                         tipo_info = tipos_opcoes[tipo_selecionado_str]
-                        ids_numericos = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
-                        novo_id = int(ids_numericos.max()) + 1 if not ids_numericos.empty else 1
-
+                        # IDs agora são gerenciados pelo Supabase automaticamente para novas inserções
+                        # se a coluna 'id' for do tipo UUID ou SERIAL. Se for INT, precisa de lógica.
+                        # Considerando que 'id' é gerado pelo BD, removemos a lógica de max()+1
                         nova_acao = {
-                            'id': str(novo_id), 'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_info['id']),
+                            'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_info['id']),
                             'tipo': tipo_info['nome'], 'descricao': descricao, 'data': data.strftime('%Y-%m-%d'),
                             'usuario': st.session_state.username, 'lancado_faia': False
                         }
@@ -93,42 +76,36 @@ def show_lancamentos_page():
                     except Exception as e:
                         st.error(f"Erro ao salvar a ação: {e}")
 
-            elif len(df_busca) > 1:
-                st.warning(f"Múltiplos alunos ({len(df_busca)}) encontrados. Por favor, refine a sua busca para identificar um único aluno.")
-            else:
-                st.error("Nenhum aluno encontrado com os critérios de busca fornecidos.")
+        elif len(alunos_para_registro_df) > 1:
+            st.warning(f"Múltiplos alunos ({len(alunos_para_registro_df)}) encontrados. Por favor, refine a sua busca para identificar um único aluno.")
+        else:
+            st.info("Nenhum aluno selecionado. Use os filtros acima para encontrar um aluno.")
 
 
-    # --- HISTÓRICO DE LANÇAMENTOS (MODIFICADO) ---
+    # --- HISTÓRICO DE LANÇAMENTOS (SEM MUDANÇAS ESTRUTURAIS GRANDES AQUI) ---
     st.divider()
     col_header, col_filter = st.columns([3, 1])
     with col_header:
         st.subheader("Lançamentos Recentes")
     with col_filter:
-        # Filtro para número de lançamentos a exibir
         num_recentes = st.number_input("Mostrar últimos", min_value=5, max_value=50, value=10, step=5, label_visibility="collapsed")
 
     if acoes_df.empty:
         st.info("Nenhum lançamento registrado ainda.")
     else:
-        # Garante que as colunas de ID sejam do mesmo tipo para o merge
         acoes_df['tipo_acao_id'] = acoes_df['tipo_acao_id'].astype(str)
         tipos_acao_df['id'] = tipos_acao_df['id'].astype(str)
 
-        # CORREÇÃO DA LÓGICA DE CÁLCULO DE PONTOS
-        # A função é chamada com o DataFrame completo para garantir a junção correta
         acoes_com_pontos_df = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
         
         if not acoes_com_pontos_df.empty:
             acoes_com_pontos_df['data'] = pd.to_datetime(acoes_com_pontos_df['data'], errors='coerce')
             acoes_recentes_df = acoes_com_pontos_df.sort_values('data', ascending=False).head(num_recentes)
             
-            # Junta com os dados dos alunos para exibir nome e pelotão
             acoes_display = pd.merge(acoes_recentes_df, alunos_df[['id', 'nome_guerra', 'pelotao']], left_on='aluno_id', right_on='id', how='left')
 
             for _, acao in acoes_display.iterrows():
                 with st.container(border=True):
-                    # Layout em colunas para um card mais compacto
                     col_info, col_pontos = st.columns([4, 1])
                     with col_info:
                         data_fmt = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
@@ -146,8 +123,9 @@ def show_lancamentos_page():
 
 # Função de apoio (mantida por compatibilidade)
 def registrar_acao(aluno_id, nome_aluno):
-    # O código desta função não foi alterado pois é um fluxo secundário.
-    # As principais melhorias foram na função principal 'show_lancamentos_page'.
+    # Esta função provavelmente não será mais chamada diretamente,
+    # pois o fluxo de registro de ação agora passa pelo show_lancamentos_page.
+    # Mas a mantemos para evitar erros de importação se for usada em outro lugar.
     st.subheader(f"Registrar Ação para {nome_aluno}")
     supabase = init_supabase_client()
     tipos_acao_df = load_data("Tipos_Acao")
@@ -169,9 +147,8 @@ def registrar_acao(aluno_id, nome_aluno):
             else:
                 try:
                     tipo_info = tipos_opcoes[tipo_selecionado_str]
-                    ids_numericos = pd.to_numeric(acoes_df['id'], errors='coerce').dropna()
-                    novo_id = int(ids_numericos.max()) + 1 if not ids_numericos.empty else 1
-                    nova_acao = {'id': str(novo_id),'aluno_id': str(aluno_id),'tipo_acao_id': str(tipo_info['id']),'tipo': tipo_info['nome'],'descricao': descricao,'data': data.strftime('%Y-%m-%d'),'usuario': st.session_state.username,'lancado_faia': False}
+                    # Assume que o ID é gerado pelo banco de dados para novas entradas
+                    nova_acao = {'aluno_id': str(aluno_id),'tipo_acao_id': str(tipo_info['id']),'tipo': tipo_info['nome'],'descricao': descricao,'data': data.strftime('%Y-%m-%d'),'usuario': st.session_state.username,'lancado_faia': False}
                     supabase.table("Acoes").insert(nova_acao).execute()
                     st.success(f"Ação registrada com sucesso!")
                     load_data.clear()
