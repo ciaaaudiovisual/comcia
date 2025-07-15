@@ -2,7 +2,23 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from database import load_data, init_supabase_client
-from aluno_selection_components import render_alunos_filter_and_selection # Importe o novo nome
+from aluno_selection_components import render_alunos_filter_and_selection
+
+# ==============================================================================
+# FUNÇÃO AUXILIAR PARA FORMATAÇÃO SEGURA DE DATAS
+# ==============================================================================
+def safe_strftime(date_obj, fmt='%d/%m/%y'):
+    """
+    Formata um objeto de data/hora de forma segura. Retorna 'N/A' se for nulo,
+    inválido ou não puder ser formatado.
+    """
+    if pd.notna(date_obj) and isinstance(date_obj, (datetime.date, datetime.datetime)):
+        try:
+            return date_obj.strftime(fmt)
+        except AttributeError:
+            # Captura caso o objeto passe na verificação de tipo mas não tenha strftime
+            return "N/A"
+    return "N/A"
 
 # ==============================================================================
 # DIÁLOGO DE EDIÇÃO
@@ -191,7 +207,9 @@ def show_saude():
     if selected_dispensa != "Todos":
         hoje = datetime.now().date()
         
-        # Garante que as colunas de data sejam datetime.date
+        # Garante que as colunas de data sejam datetime.date para comparações
+        # Esta conversão aqui é para garantir que a comparação de datas abaixo funcione,
+        # mesmo que haja algum problema anterior na tipagem.
         acoes_com_nomes_df['periodo_dispensa_inicio'] = pd.to_datetime(acoes_com_nomes_df['periodo_dispensa_inicio'], errors='coerce').dt.date
         acoes_com_nomes_df['periodo_dispensa_fim'] = pd.to_datetime(acoes_com_nomes_df['periodo_dispensa_fim'], errors='coerce').dt.date
 
@@ -199,14 +217,14 @@ def show_saude():
             # Está dispensado E a data de fim é >= hoje
             acoes_com_nomes_df = acoes_com_nomes_df[
                 (acoes_com_nomes_df['esta_dispensado'] == True) &
-                (acoes_com_nomes_df['periodo_dispensa_fim'].notna()) & # Garante que a data não é nula
+                (acoes_com_nomes_df['periodo_dispensa_fim'].notna()) & # Garante que a data não é nula/NaT
                 (acoes_com_nomes_df['periodo_dispensa_fim'] >= hoje)
             ]
         elif selected_dispensa == "Com Dispensa Vencida":
             # Está dispensado E a data de fim é < hoje
             acoes_com_nomes_df = acoes_com_nomes_df[
                 (acoes_com_nomes_df['esta_dispensado'] == True) &
-                (acoes_com_nomes_df['periodo_dispensa_fim'].notna()) &
+                (acoes_com_nomes_df['periodo_dispensa_fim'].notna()) & # Garante que a data não é nula/NaT
                 (acoes_com_nomes_df['periodo_dispensa_fim'] < hoje)
             ]
         elif selected_dispensa == "Sem Dispensa":
@@ -237,23 +255,21 @@ def show_saude():
                 if acao.get('descricao'):
                     st.caption(f"Observação: {acao.get('descricao')}")
             
-# saude.py (TRECHO CORRIGIDO ONDE O ERRO OCORRE)
-
             with col2:
                 if acao.get('esta_dispensado'):
+                    # Pega os valores da série ou DataFrame
                     inicio_dt = acao['periodo_dispensa_inicio']
                     fim_dt = acao['periodo_dispensa_fim']
 
-                    # === INÍCIO DA CORREÇÃO MAIS ROBUSTA ===
-                    # Verifica se não é nulo E se é uma instância de datetime.date ou datetime.datetime
-                    inicio_str = inicio_dt.strftime('%d/%m/%y') if pd.notna(inicio_dt) and isinstance(inicio_dt, (datetime.date, datetime.datetime)) else "N/A"
-                    fim_str = fim_dt.strftime('%d/%m/%y') if pd.notna(fim_dt) and isinstance(fim_dt, (datetime.date, datetime.datetime)) else "N/A"
-                    # === FIM DA CORREÇÃO MAIS ROBUSTA ===
+                    # Usa a função auxiliar safe_strftime
+                    inicio_str = safe_strftime(inicio_dt, '%d/%m/%y')
+                    fim_str = safe_strftime(fim_dt, '%d/%m/%y')
                     
-                    data_fim = acao['periodo_dispensa_fim'] # data_fim já é um objeto date ou NaT/None
+                    data_fim = acao['periodo_dispensa_fim']
                     hoje = datetime.now().date()
                     
-                    if pd.notna(data_fim) and data_fim < hoje: # Use pd.notna() aqui também para data_fim
+                    # Usa pd.notna() para a comparação da data de fim também
+                    if pd.notna(data_fim) and data_fim < hoje:
                         st.warning("**DISPENSA VENCIDA**", icon="⌛")
                     else:
                         st.error("**DISPENSADO**", icon="⚕️")
