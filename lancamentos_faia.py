@@ -7,7 +7,7 @@ from acoes import calcular_pontuacao_efetiva
 from io import BytesIO
 import zipfile
 
-# --- FUNÇÕES DE CALLBACK (Sem alterações) ---
+# --- FUNÇÕES DE CALLBACK ---
 def on_faia_status_change(acao_id, supabase, key_name):
     novo_status = st.session_state[key_name]
     try:
@@ -57,7 +57,7 @@ def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
     ])
     return "\n".join(texto)
 
-# --- FUNÇÃO DE FILTROS (MODIFICADA) ---
+# --- FUNÇÃO DE FILTROS (CORRIGIDA: REMOVIDO BLOCO DUPLICADO) ---
 def render_filters(alunos_df):
     """Renderiza os widgets de filtro com seletores dependentes e busca."""
     st.subheader("Filtros")
@@ -67,32 +67,20 @@ def render_filters(alunos_df):
         opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
         pelotao = st.selectbox("1. Filtrar por Pelotão:", opcoes_pelotao)
 
-    alunos_filtrados_df = alunos_df
+    alunos_filtrados_df = alunos_df.copy() # Make a copy to avoid SettingWithCopyWarning
     if pelotao != "Todos":
-        alunos_filtrados_df = alunos_df[alunos_df['pelotao'] == pelotao]
+        alunos_filtrados_df = alunos_filtrados_df[alunos_filtrados_df['pelotao'] == pelotao]
 
     with col2:
         busca_nome = st.text_input("2. Buscar por Nome de Guerra", help="Pode ser usado em conjunto com o filtro de pelotão.")
         if busca_nome:
             alunos_filtrados_df = alunos_filtrados_df[alunos_filtrados_df['nome_guerra'].str.contains(busca_nome, case=False, na=False)]
 
-        # --- INÍCIO DA CORREÇÃO ---
-        # 1. Pega os nomes de guerra únicos da lista já filtrada
         nomes_unicos = alunos_filtrados_df['nome_guerra'].unique()
-        
-        # 2. Filtra a lista para remover valores nulos (NaN/None) e garante que tudo seja string
         nomes_validos = [str(nome) for nome in nomes_unicos if pd.notna(nome)]
         
-        # 3. Cria a lista de opções final, agora com dados limpos e seguros para ordenar
         opcoes_alunos = ["Todos"] + sorted(nomes_validos)
-        # --- FIM DA CORREÇÃO ---
-        
         aluno = st.selectbox("3. Filtrar por Aluno:", opcoes_alunos)
-
-    with col3:
-        status = st.radio("Filtrar Status:", ["A Lançar", "Lançados", "Todos"], horizontal=True, index=0)
-
-    return pelotao, aluno, status, busca_nome
 
     with col3:
         status = st.radio("Filtrar Status:", ["A Lançar", "Lançados", "Todos"], horizontal=True, index=0)
@@ -106,12 +94,19 @@ def render_export_section(df_filtrado, alunos_df, pelotao_selecionado, aluno_sel
 
     with st.container(border=True):
         st.subheader("📥 Exportar Relatórios")
+        # Check if a specific student is selected (not "Todos")
         if aluno_selecionado != "Todos":
-            aluno_info = alunos_df[alunos_df['nome_guerra'] == aluno_selecionado].iloc[0]
-            acoes_do_aluno = df_filtrado[df_filtrado['aluno_id'] == aluno_info['id']]
-            conteudo_txt = formatar_relatorio_individual_txt(aluno_info, acoes_do_aluno)
-            nome_arquivo = f"{aluno_info.get('numero_interno','S-N')}_{aluno_info['nome_guerra']}.txt"
-            st.download_button(label=f"Exportar relatório de {aluno_selecionado}", data=conteudo_txt.encode('utf-8'), file_name=nome_arquivo, mime="text/plain")
+            # Find the student information from the *original* alunos_df
+            aluno_info_df = alunos_df[alunos_df['nome_guerra'] == aluno_selecionado]
+            if not aluno_info_df.empty:
+                aluno_info = aluno_info_df.iloc[0]
+                # Filter actions specifically for this selected student by their actual ID
+                acoes_do_aluno = df_filtrado[df_filtrado['aluno_id'] == aluno_info['id']]
+                conteudo_txt = formatar_relatorio_individual_txt(aluno_info, acoes_do_aluno)
+                nome_arquivo = f"{aluno_info.get('numero_interno','S-N')}_{aluno_info['nome_guerra']}.txt"
+                st.download_button(label=f"Exportar relatório de {aluno_selecionado}", data=conteudo_txt.encode('utf-8'), file_name=nome_arquivo, mime="text/plain")
+            else:
+                st.warning(f"Aluno '{aluno_selecionado}' não encontrado no banco de dados. Não é possível gerar o relatório.")
         elif pelotao_selecionado != "Todos":
             if st.button(f"Gerar e Baixar .ZIP para {pelotao_selecionado}"):
                 with st.spinner("Gerando relatórios..."):
@@ -123,7 +118,7 @@ def render_export_section(df_filtrado, alunos_df, pelotao_selecionado, aluno_sel
                             conteudo_txt = formatar_relatorio_individual_txt(aluno_info, acoes_do_aluno)
                             nome_arquivo = f"{aluno_info.get('numero_interno','S-N')}_{aluno_info.get('nome_guerra','S-N')}.txt"
                             zip_file.writestr(nome_arquivo, conteudo_txt)
-                    st.download_button("Clique para baixar o .ZIP", zip_buffer, f"relatorios_{pelotao_selecionado}.zip", "application/zip", use_container_width=True)
+                    st.download_button("Clique para baixar o .ZIP", zip_buffer.getvalue(), f"relatorios_{pelotao_selecionado}.zip", "application/zip", use_container_width=True)
         else:
             st.warning("Selecione um pelotão ou um aluno específico para habilitar a exportação.")
 
@@ -137,6 +132,10 @@ def display_launch_list(df_filtrado, alunos_df, supabase):
         st.info("Nenhum lançamento encontrado para os filtros selecionados.")
         return
 
+    # Certifica que as colunas de ID são do mesmo tipo para o merge
+    df_filtrado['aluno_id'] = df_filtrado['aluno_id'].astype(str)
+    alunos_df['id'] = alunos_df['id'].astype(str)
+
     df_display = pd.merge(df_filtrado, alunos_df[['id','nome_guerra','pelotao']], left_on='aluno_id', right_on='id', how='inner')
     for idx, acao in df_display.sort_values(by='data', ascending=False).iterrows():
         key_checkbox = f"check_{acao['id_x']}_{idx}"
@@ -147,23 +146,27 @@ def display_launch_list(df_filtrado, alunos_df, supabase):
             
             cols[0].checkbox("Lançado?", value=bool(acao['lancado_faia']), key=key_checkbox, on_change=on_faia_status_change, args=(acao['id_x'], supabase, key_checkbox), label_visibility="collapsed")
             
-            cor_fundo = "rgba(128, 128, 128, 0.1)"
-            if acao['pontuacao_efetiva'] > 0: cor_fundo = "rgba(0, 255, 0, 0.1)"
-            elif acao['pontuacao_efetiva'] < 0: cor_fundo = "rgba(255, 0, 0, 0.1)"
-            
+            cor_fundo = "rgba(128, 128, 128, 0.1)" # Gray for neutral/archived or no effective points
+            if pd.notna(acao['pontuacao_efetiva']): # Only apply color if pontuacao_efetiva is not NaN
+                if acao['pontuacao_efetiva'] > 0: cor_fundo = "rgba(0, 255, 0, 0.1)" # Green for positive points
+                elif acao['pontuacao_efetiva'] < 0: cor_fundo = "rgba(255, 0, 0, 0.1)" # Red for negative points
+
+            # Ensure 'data' is datetime before formatting
+            data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y') if pd.notna(acao['data']) else "N/A"
+
             cols[1].markdown(f"""
             <div style="background-color: {cor_fundo}; padding: 10px; border-radius: 5px; {'opacity: 0.6;' if acao['lancado_faia'] else ''}">
-                <b>{pd.to_datetime(acao['data']).strftime('%d/%m/%Y')} - {acao.get('nome_guerra','N/A')} ({acao.get('pelotao','N/A')})</b>
+                <b>{data_formatada} - {acao.get('nome_guerra','N/A')} ({acao.get('pelotao','N/A')})</b>
                 <br><b>{acao.get('nome','Tipo Desconhecido')}</b>
                 <br><small><i>Registrado por: {acao.get('usuario','N/A')}</i></small>
-                <br><small>{acao.get('descricao','')}</small>
+                <br><small>{acao.get('descricao','') if pd.notna(acao.get('descricao')) else 'Sem descrição.'}</small>
             </div>
             """, unsafe_allow_html=True)
 
             if check_permission('pode_excluir_lancamento_faia'):
                 cols[2].button("🗑️", key=key_delete, help="Excluir este lançamento", on_click=on_faia_delete_click, args=(acao['id_x'], supabase))
 
-# --- FUNÇÃO PRINCIPAL (MODIFICADA) ---
+# --- FUNÇÃO PRINCIPAL ---
 def show_lancamentos_faia():
     """Função principal que renderiza a página de gestão de lançamentos da FAIA."""
     st.title("Gestão de Lançamentos (FAIA)")
@@ -175,37 +178,48 @@ def show_lancamentos_faia():
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
 
-    if 'lancado_faia' not in acoes_df.columns: acoes_df['lancado_faia'] = False
-    else: acoes_df['lancado_faia'] = acoes_df['lancado_faia'].apply(lambda x: str(x).lower() in ['true', '1', 't', 'y', 'yes', 'sim'])
+    if 'lancado_faia' not in acoes_df.columns:
+        acoes_df['lancado_faia'] = False
+    else:
+        # Ensure 'lancado_faia' is boolean for proper filtering
+        acoes_df['lancado_faia'] = acoes_df['lancado_faia'].apply(lambda x: str(x).lower() in ['true', '1', 't', 'y', 'yes', 'sim'])
     
     acoes_com_pontos_df = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
 
     # Renderiza os filtros e obtém os valores selecionados
-    pelotao, aluno, status, busca_nome = render_filters(alunos_df)
+    pelotao_selecionado, aluno_selecionado, status_selecionado, busca_nome = render_filters(alunos_df)
 
     # Aplica os filtros
-    df_filtrado = acoes_com_pontos_df.copy()
-    alunos_ids_filtrados = alunos_df['id'].tolist()
+    df_filtrado_para_display = acoes_com_pontos_df.copy()
+
+    # Filter by Pelotão
+    if pelotao_selecionado != "Todos":
+        alunos_ids_no_pelotao = alunos_df[alunos_df['pelotao'] == pelotao_selecionado]['id'].tolist()
+        df_filtrado_para_display = df_filtrado_para_display[df_filtrado_para_display['aluno_id'].isin(alunos_ids_no_pelotao)]
     
-    if pelotao != "Todos":
-        alunos_ids_filtrados = alunos_df[alunos_df['pelotao'] == pelotao]['id'].tolist()
-    
+    # Filter by Search Name
     if busca_nome:
-         ids_busca = alunos_df[alunos_df['nome_guerra'].str.contains(busca_nome, case=False, na=False)]['id'].tolist()
-         alunos_ids_filtrados = list(set(alunos_ids_filtrados) & set(ids_busca))
+        alunos_ids_por_busca = alunos_df[alunos_df['nome_guerra'].str.contains(busca_nome, case=False, na=False)]['id'].tolist()
+        df_filtrado_para_display = df_filtrado_para_display[df_filtrado_para_display['aluno_id'].isin(alunos_ids_por_busca)]
 
-    df_filtrado = df_filtrado[df_filtrado['aluno_id'].isin(alunos_ids_filtrados)]
+    # Filter by Specific Student (if selected)
+    if aluno_selecionado != "Todos":
+        # Find the ID of the selected student by name
+        aluno_id_obj = alunos_df[alunos_df['nome_guerra'] == aluno_selecionado]['id']
+        if not aluno_id_obj.empty:
+            aluno_id_especifico = str(aluno_id_obj.iloc[0])
+            df_filtrado_para_display = df_filtrado_para_display[df_filtrado_para_display['aluno_id'] == aluno_id_especifico]
+        else:
+            st.warning(f"Aluno '{aluno_selecionado}' não encontrado para aplicar o filtro.")
+            df_filtrado_para_display = pd.DataFrame() # Clear dataframe if student not found
 
-    if aluno != "Todos":
-        aluno_id = alunos_df[alunos_df['nome_guerra'] == aluno]['id'].iloc[0]
-        df_filtrado = df_filtrado[df_filtrado['aluno_id'] == aluno_id]
-        
-    if status == "A Lançar":
-        df_filtrado = df_filtrado[~df_filtrado['lancado_faia']]
-    elif status == "Lançados":
-        df_filtrado = df_filtrado[df_filtrado['lancado_faia']]
+    # Filter by FAIA Status
+    if status_selecionado == "A Lançar":
+        df_filtrado_para_display = df_filtrado_para_display[df_filtrado_para_display['lancado_faia'] == False]
+    elif status_selecionado == "Lançados":
+        df_filtrado_para_display = df_filtrado_para_display[df_filtrado_para_display['lancado_faia'] == True]
 
     st.divider()
-    render_export_section(df_filtrado, alunos_df, pelotao, aluno)
+    render_export_section(df_filtrado_para_display, alunos_df, pelotao_selecionado, aluno_selecionado)
     st.divider()
-    display_launch_list(df_filtrado, alunos_df, supabase)
+    display_launch_list(df_filtrado_para_display, alunos_df, supabase)
