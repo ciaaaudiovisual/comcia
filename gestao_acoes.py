@@ -366,4 +366,3 @@ def show_gestao_acoes():
 
     st.divider()
     render_export_section(acoes_com_pontos, alunos_df, filtro_pelotao, None) # O filtro de aluno é agora pelo componente
-
