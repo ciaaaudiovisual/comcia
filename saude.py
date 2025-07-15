@@ -221,11 +221,16 @@ def show_saude():
 
     # --- Componente Padronizado de Seleção de Alunos (para filtros de visualização) ---
     # Este é o filtro principal para a visualização do histórico.
-    selected_alunos_df = render_alunos_filter_and_selection(key_suffix="saude_history_filter", include_full_name_search=False)
+    # Se selected_alunos_df estiver vazio, ele deve considerar todos os alunos.
+    selected_alunos_for_history_filter = render_alunos_filter_and_selection(key_suffix="saude_history_filter", include_full_name_search=False)
 
-    if selected_alunos_df.empty:
-        st.info("Nenhum aluno selecionado para visualizar o histórico de saúde.")
-        return 
+    # Lógica para exibir todos os alunos se nenhum for selecionado no filtro de histórico
+    if selected_alunos_for_history_filter.empty:
+        alunos_para_filtragem_historico = alunos_df.copy() # Considera todos os alunos
+        st.info("Nenhum aluno selecionado para o histórico. Exibindo eventos de todos os alunos.")
+    else:
+        alunos_para_filtragem_historico = selected_alunos_for_history_filter
+ 
 
     st.divider()
     st.subheader("Filtros Específicos de Saúde")
@@ -291,14 +296,12 @@ def show_saude():
     # 1. Filtra as ações pelos tipos selecionados
     acoes_saude_df = acoes_df[acoes_df['tipo'].isin(selected_types)].copy()
 
-    # 2. Filtra as ações pelos alunos selecionados do componente `render_alunos_filter_and_selection`
-    # Garante que as colunas 'aluno_id' e 'id' são strings para a fusão/filtro
+    # 2. Filtra as ações pelos alunos selecionados (ou todos os alunos se nenhum selecionado)
     acoes_saude_df['aluno_id'] = acoes_saude_df['aluno_id'].astype(str)
-    selected_alunos_df['id'] = selected_alunos_df['id'].astype(str)
+    alunos_para_filtragem_historico['id'] = alunos_para_filtragem_historico['id'].astype(str)
 
-    # Aplica o filtro de alunos: apenas ações de alunos que estão em selected_alunos_df
-    alunos_ids_selecionados = selected_alunos_df['id'].tolist()
-    acoes_saude_df = acoes_saude_df[acoes_saude_df['aluno_id'].isin(alunos_ids_selecionados)]
+    alunos_ids_para_filtragem = alunos_para_filtragem_historico['id'].tolist()
+    acoes_saude_df = acoes_saude_df[acoes_saude_df['aluno_id'].isin(alunos_ids_para_filtragem)]
 
     # 3. Filtra as ações pelo período de registro
     acoes_saude_df['data'] = pd.to_datetime(acoes_saude_df['data'], errors='coerce').dt.date
@@ -310,7 +313,7 @@ def show_saude():
     # 4. Adiciona informações do aluno às ações para exibição e filtro de dispensa
     acoes_com_nomes_df = pd.merge(
         acoes_saude_df,
-        selected_alunos_df[['id', 'nome_guerra', 'pelotao', 'numero_interno']],
+        alunos_para_filtragem_historico[['id', 'nome_guerra', 'pelotao', 'numero_interno']],
         left_on='aluno_id',
         right_on='id',
         how='left',
