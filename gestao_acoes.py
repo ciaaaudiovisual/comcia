@@ -2,9 +2,11 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from supabase import create_client, Client
+import zipfile
+from io import BytesIO
 
-# Assume que o componente aluno_selection_components.py existe e funciona.
-# Em um cenário real, você importaria do seu arquivo original.
+# Tenta importar o componente real de seleção de alunos.
+# Se falhar, usa uma versão mock para desenvolvimento/teste.
 try:
     from aluno_selection_components import render_alunos_filter_and_selection
 except ImportError:
@@ -14,34 +16,20 @@ except ImportError:
         mock_alunos_data = [
             {"id": "mock-aluno-123", "nome_guerra": "Aluno Teste 1", "pelotao": "1", "numero_interno": "001"},
             {"id": "mock-aluno-456", "nome_guerra": "Aluno Teste 2", "pelotao": "2", "numero_interno": "002"},
-            {"id": "mock-aluno-789", "nome_guerra": "Aluno Teste 3", "pelotao": "1", "numero_interno": "003"},
-            {"id": "mock-aluno-101", "nome_guerra": "João Silva", "pelotao": "3", "numero_interno": "004"},
-            {"id": "mock-aluno-102", "nome_guerra": "Maria Souza", "pelotao": "1", "numero_interno": "005"},
         ]
         mock_alunos_df = pd.DataFrame(mock_alunos_data)
         st.markdown("##### Filtro de Alunos (Mock)")
-        col_name, col_num = st.columns(2)
-        search_name = col_name.text_input("Buscar por Nome de Guerra:", key=f"search_name_{key_suffix}")
-        search_numero_interno = col_num.text_input("Buscar por Número Interno:", key=f"search_num_interno_{key_suffix}")
-        filtered_df = mock_alunos_df.copy()
-        if search_name:
-            filtered_df = filtered_df[filtered_df['nome_guerra'].str.contains(search_name, case=False, na=False)]
-        if search_numero_interno:
-            filtered_df = filtered_df[filtered_df['numero_interno'].str.contains(search_numero_interno, case=False, na=False)]
+        search_name = st.text_input("Buscar por Nome de Guerra:", key=f"search_name_{key_suffix}")
+        filtered_df = mock_alunos_df[mock_alunos_df['nome_guerra'].str.contains(search_name, case=False, na=False)] if search_name else mock_alunos_df
         if not filtered_df.empty:
             options = filtered_df.apply(lambda row: f"{row['numero_interno']} - {row['nome_guerra']}", axis=1).tolist()
             selected_option = st.selectbox("Selecione Aluno(s):", options=options, key=f"select_aluno_{key_suffix}")
             if selected_option:
                 selected_aluno_num_interno = selected_option.split(' - ')[0]
                 return filtered_df[filtered_df['numero_interno'] == selected_aluno_num_interno]
-        else:
-            st.warning("Nenhum aluno encontrado com os filtros aplicados.")
-            return pd.DataFrame()
         return pd.DataFrame()
 
-# ==============================================================================
-# FUNÇÕES DE SUPABASE E DADOS
-# ==============================================================================
+
 @st.cache_resource
 def init_supabase_client():
     url, key = None, None
@@ -53,31 +41,26 @@ def init_supabase_client():
         except KeyError:
             st.error("Credenciais do Supabase não encontradas. Configure em secrets.toml.")
             st.stop()
-    try:
-        return create_client(url, key)
-    except Exception as e:
-        st.error(f"Erro ao inicializar o cliente Supabase: {e}")
-        st.stop()
+    return create_client(url, key)
 
 @st.cache_data(ttl=300)
 def load_data(table_name):
     supabase = init_supabase_client()
     try:
         response = supabase.table(table_name).select("*").execute()
-        return pd.DataFrame(response.data)
+        return pd.DataFrame(response.data) if response.data else pd.DataFrame()
     except Exception as e:
         st.error(f"Erro ao carregar dados da tabela '{table_name}': {e}")
         return pd.DataFrame()
 
-# ==============================================================================
-# DIÁLOGOS E POPUPS
-# ==============================================================================
+
 @st.dialog("✏️ Editar Ação")
 def edit_acao_dialog(acao_selecionada, tipos_acao_df, supabase):
     st.write(f"Editando ação para: **{acao_selecionada.get('nome_guerra', 'N/A')}**")
-    with st.form(key=f"edit_form_{acao_selecionada['id_x']}"):
+    # CORREÇÃO: Usa o id correto da ação (id_acao) para a chave do formulário
+    with st.form(key=f"edit_form_{acao_selecionada['id_acao']}"):
         opcoes_tipo_acao = tipos_acao_df['nome'].unique().tolist()
-        index_acao_atual = opcoes_tipo_acao.index(acao_selecionada['nome']) if acao_selecionada.get('nome') in opcoes_tipo_acao else 0
+        index_acao_atual = opcoes_tipo_acao.index(acao_selecionada['tipo']) if acao_selecionada.get('tipo') in opcoes_tipo_acao else 0
         novo_tipo_acao = st.selectbox("Tipo de Ação", options=opcoes_tipo_acao, index=index_acao_atual)
         data_atual = pd.to_datetime(acao_selecionada.get('data', datetime.now())).date()
         nova_data = st.date_input("Data da Ação", value=data_atual)
@@ -86,14 +69,43 @@ def edit_acao_dialog(acao_selecionada, tipos_acao_df, supabase):
             try:
                 tipo_acao_info = tipos_acao_df[tipos_acao_df['nome'] == novo_tipo_acao].iloc[0]
                 update_data = {'tipo_acao_id': str(tipo_acao_info['id']), 'tipo': novo_tipo_acao, 'data': nova_data.strftime('%Y-%m-%d'), 'descricao': nova_descricao}
-                supabase.table("Acoes").update(update_data).eq('id', acao_selecionada['id_x']).execute()
+                # CORREÇÃO: Usa o id correto da ação (id_acao) para a query
+                supabase.table("Acoes").update(update_data).eq('id', acao_selecionada['id_acao']).execute()
                 st.toast("Ação atualizada com sucesso!", icon="✅"); load_data.clear(); st.rerun()
             except Exception as e:
                 st.error(f"Erro ao salvar as alterações: {e}")
 
-# ==============================================================================
-# FUNÇÕES DE APOIO
-# ==============================================================================
+def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
+    texto = [
+        "============================================================",
+        f"FICHA DE ACOMPANHAMENTO INDIVIDUAL DO ALUNO (FAIA)\n",
+        f"Pelotão: {aluno_info.get('pelotao', 'N/A')}",
+        f"Aluno: {aluno_info.get('nome_completo', 'N/A')}",
+        f"Nome de Guerra: {aluno_info.get('nome_guerra', 'N/A')}",
+        f"Numero Interno: {aluno_info.get('numero_interno', 'N/A')}",
+        "\n------------------------------------------------------------",
+        "LANÇAMENTOS (STATUS 'LANÇADO') EM ORDEM CRONOLÓGICA:",
+        "------------------------------------------------------------\n"
+    ]
+    acoes_lancadas = acoes_aluno_df[acoes_aluno_df['status'] == 'Lançado']
+    if acoes_lancadas.empty:
+        texto.append("Nenhum lançamento com status 'Lançado' encontrado para este aluno.")
+    else:
+        for _, acao in acoes_lancadas.sort_values(by='data').iterrows():
+            texto.extend([
+                f"Data: {pd.to_datetime(acao['data']).strftime('%d/%m/%Y')}",
+                f"Tipo: {acao.get('tipo', 'Tipo Desconhecido')}",
+                f"Descrição: {acao.get('descricao', '')}",
+                f"Registrado por: {acao.get('usuario', 'N/A')}",
+                "\n-----------------------------------\n"
+            ])
+    texto.extend([
+        "\n============================================================",
+        f"Fim do Relatório - Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+        "============================================================"
+    ])
+    return "\n".join(texto)
+
 def bulk_update_status(ids_to_update, new_status, supabase):
     if not ids_to_update:
         st.warning("Nenhuma ação foi selecionada."); return
@@ -105,7 +117,6 @@ def bulk_update_status(ids_to_update, new_status, supabase):
     except Exception as e:
         st.error(f"Erro ao atualizar ações em massa: {e}")
 
-# Mocks para funções importadas, caso não existam
 try:
     from auth import check_permission
 except ImportError:
@@ -117,18 +128,14 @@ except ImportError:
         if not acoes_df.empty and not tipos_acao_df.empty:
             acoes_df['tipo_acao_id'] = acoes_df['tipo_acao_id'].astype(str)
             tipos_acao_df['id'] = tipos_acao_df['id'].astype(str)
-            merged_df = pd.merge(acoes_df, tipos_acao_df[['id', 'pontuacao', 'nome']], left_on='tipo_acao_id', right_on='id', how='left')
+            merged_df = pd.merge(acoes_df, tipos_acao_df[['id', 'pontuacao', 'tipo']], left_on='tipo_acao_id', right_on='id', how='left', suffixes=('_acao', '_tipo'))
             merged_df['pontuacao_efetiva'] = pd.to_numeric(merged_df['pontuacao'], errors='coerce').fillna(0)
             return merged_df
         return acoes_df
 
-# ==============================================================================
-# PÁGINA PRINCIPAL
-# ==============================================================================
 def show_gestao_acoes():
-    st.title("Lançamentos de Ações dos Alunos")
+    st.title("Gestão de Lançamentos de Ações dos Alunos")
     supabase = init_supabase_client()
-
     if 'action_selection' not in st.session_state: st.session_state.action_selection = {}
 
     alunos_df = load_data("Alunos")
@@ -146,69 +153,59 @@ def show_gestao_acoes():
             else:
                 aluno_selecionado = selected_alunos.iloc[0]
                 st.info(f"Aluno selecionado: **{aluno_selecionado.get('nome_guerra', 'N/A')}**")
-        else:
-            st.info("Nenhum aluno selecionado. Use os filtros acima para encontrar um aluno.")
-
         if aluno_selecionado is not None:
             st.divider()
             st.subheader(f"Passo 2: Registrar Ação para **{aluno_selecionado['nome_guerra']}**")
             with st.form("form_nova_acao"):
                 tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df.get('pontuacao', 0), errors='coerce').fillna(0)
-                positivas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome')
-                neutras_df = tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome')
-                negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
+                positivas_df, neutras_df, negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome'), tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome'), tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
                 opcoes_categorizadas, tipos_opcoes_map = [], {}
                 for df, categoria in [(positivas_df, "POSITIVAS"), (neutras_df, "NEUTRAS"), (negativas_df, "NEGATIVAS")]:
                     if not df.empty:
                         opcoes_categorizadas.append(f"--- AÇÕES {categoria} ---")
                         for _, r in df.iterrows():
-                            label = f"{r['nome']} ({r['pontuacao']:+.1f} pts)"
-                            opcoes_categorizadas.append(label); tipos_opcoes_map[label] = r
-                
+                            label = f"{r['nome']} ({r['pontuacao']:+.1f} pts)"; opcoes_categorizadas.append(label); tipos_opcoes_map[label] = r
                 c1, c2 = st.columns(2)
-                tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_categorizadas, index=0)
+                tipo_selecionado_str = c1.selectbox("Tipo de Ação", opcoes_categorizadas)
                 data = c2.date_input("Data da Ação", datetime.now())
-                descricao = st.text_area("Descrição/Justificativa (Opcional)")
+                descricao = st.text_area("Descrição/Justificativa")
                 if st.form_submit_button("Registrar Ação", use_container_width=True, type="primary"):
                     if tipo_selecionado_str.startswith("---"):
-                        st.warning("Por favor, selecione um tipo de ação válido.")
+                        st.warning("Selecione um tipo de ação válido.")
                     else:
                         try:
                             tipo_info = tipos_opcoes_map[tipo_selecionado_str]
                             nova_acao = {'aluno_id': str(aluno_selecionado['id']), 'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 'descricao': descricao, 'data': data.isoformat(), 'usuario': st.session_state.get('username', 'sistema'), 'status': 'Pendente'}
                             supabase.table("Acoes").insert(nova_acao).execute()
-                            st.success(f"Ação registrada para {aluno_selecionado['nome_guerra']}!"); load_data.clear(); st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao registrar ação: {e}")
+                            st.success(f"Ação registrada!"); load_data.clear(); st.rerun()
+                        except Exception as e: st.error(f"Erro ao registrar: {e}")
 
     st.divider()
     st.subheader("Filtros de Visualização")
-
-    col_filtros1, col_filtros2 = st.columns(2)
-    with col_filtros1:
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
         opcoes_pelotao = ["Todos"] + sorted([p for p in alunos_df['pelotao'].unique() if pd.notna(p)])
         filtro_pelotao = st.selectbox("1. Filtrar Pelotão", opcoes_pelotao)
         alunos_filtrados_pelotao = alunos_df[alunos_df['pelotao'] == filtro_pelotao] if filtro_pelotao != "Todos" else alunos_df
         opcoes_alunos = ["Todos"] + sorted([str(n) for n in alunos_filtrados_pelotao['nome_guerra'].unique() if pd.notna(n)])
-        filtro_aluno = st.selectbox("2. Filtrar Aluno (Opcional)", opcoes_alunos)
-    with col_filtros2:
+        filtro_aluno = st.selectbox("2. Filtrar Aluno", opcoes_alunos)
+    with col_f2:
         filtro_status = st.selectbox("Filtrar Status", ["Pendente", "Lançado", "Arquivado", "Todos"], index=0)
         opcoes_tipo_acao = ["Todos"] + sorted(tipos_acao_df['nome'].unique().tolist())
-        filtro_tipo_acao = st.selectbox("Filtrar por Tipo de Ação", opcoes_tipo_acao)
-    
+        filtro_tipo_acao = st.selectbox("Filtrar Tipo de Ação", opcoes_tipo_acao)
     ordenar_por = st.selectbox("Ordenar por", ["Mais Recentes", "Mais Antigos", "Aluno (A-Z)"])
 
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
     df_display = pd.merge(acoes_com_pontos, alunos_df, left_on='aluno_id', right_on='id', how='left', suffixes=('_acao', '_aluno')) if not acoes_com_pontos.empty else pd.DataFrame()
     if 'nome_guerra' in df_display: df_display['nome_guerra'].fillna('N/A (Aluno Apagado)', inplace=True)
-    
+
     df_filtrado_final = df_display.copy()
     if not df_filtrado_final.empty:
         if filtro_pelotao != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['pelotao'].fillna('') == filtro_pelotao]
         if filtro_aluno != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['nome_guerra'].fillna('') == filtro_aluno]
         if filtro_status != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['status'].fillna('') == filtro_status]
         if filtro_tipo_acao != "Todos": df_filtrado_final = df_filtrado_final[df_filtrado_final['tipo'].fillna('') == filtro_tipo_acao]
-        
+
         # --- LÓGICA DE ORDENAÇÃO CORRIGIDA ---
         df_filtrado_final['data'] = pd.to_datetime(df_filtrado_final['data'], errors='coerce')
         if ordenar_por == "Mais Recentes":
@@ -217,36 +214,39 @@ def show_gestao_acoes():
             df_filtrado_final = df_filtrado_final.sort_values(by="data", ascending=True)
         elif ordenar_por == "Aluno (A-Z)":
             df_filtrado_final = df_filtrado_final.sort_values(by="nome_guerra", ascending=True)
+        # --- FIM DA CORREÇÃO ---
 
     st.divider()
-    st.subheader("Fila de Revisão e Ações")
+    st.subheader(f"Fila de Revisão ({len(df_filtrado_final)} ações)")
     if df_filtrado_final.empty:
         st.info("Nenhuma ação encontrada para os filtros selecionados.")
     else:
+        # CORREÇÃO: Usar 'id_acao' que é o nome correto da coluna de ID após o merge.
         ids_visiveis = [int(i) for i in df_filtrado_final['id_acao'].dropna().unique()]
         with st.container(border=True):
-            col_botoes1, col_botoes2, col_check = st.columns([2, 2, 3])
+            col_b1, col_b2, col_c1 = st.columns([2, 2, 3])
             selected_ids = [acao_id for acao_id, is_selected in st.session_state.action_selection.items() if is_selected and acao_id in ids_visiveis]
-            with col_botoes1:
-                st.button(f"🚀 Lançar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Lançado', supabase), disabled=not selected_ids, use_container_width=True)
-            with col_botoes2:
-                st.button(f"🗑️ Arquivar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Arquivado', supabase), disabled=not selected_ids, use_container_width=True)
+            with col_b1:
+                st.button(f"🚀 Lançar ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Lançado', supabase), disabled=not selected_ids, use_container_width=True)
+            with col_b2:
+                st.button(f"🗑️ Arquivar ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Arquivado', supabase), disabled=not selected_ids, use_container_width=True)
             def toggle_all_visible():
                 new_state = not st.session_state.get('select_all_toggle', False)
                 st.session_state.select_all_toggle = new_state
                 for acao_id in ids_visiveis: st.session_state.action_selection[acao_id] = new_state
-            with col_check:
-                st.checkbox("Marcar/Desmarcar todos os visíveis", key='select_all_toggle_disp', on_change=toggle_all_visible, value=st.session_state.get('select_all_toggle', False))
-        
+            with col_c1:
+                st.checkbox("Marcar/Desmarcar todos", key='select_all_toggle_disp', on_change=toggle_all_visible, value=st.session_state.get('select_all_toggle', False))
+
         st.write("")
+        # CORREÇÃO: Usar 'id_acao' para remover duplicatas
         df_to_display = df_filtrado_final.drop_duplicates(subset=['id_acao'], keep='first')
         for _, acao in df_to_display.iterrows():
-            acao_id = acao['id_acao']
+            # CORREÇÃO: Usar 'id_acao' para todas as operações
+            acao_id = int(acao['id_acao'])
             with st.container(border=True):
                 col_foto, col_info, col_actions = st.columns([1, 4, 2])
                 with col_foto:
-                    foto_url = acao.get('url_foto')
-                    st.image(foto_url if isinstance(foto_url, str) and foto_url.startswith('http') else "https://via.placeholder.com/100?text=S/Foto", width=80)
+                    st.image(acao.get('url_foto') or "https://via.placeholder.com/100?text=S/Foto", width=80)
                 with col_info:
                     st.checkbox("Selecionar", key=f"select_{acao_id}", value=st.session_state.action_selection.get(acao_id, False), label_visibility="collapsed")
                     cor = "green" if acao.get('pontuacao_efetiva', 0) > 0 else "red" if acao.get('pontuacao_efetiva', 0) < 0 else "gray"
@@ -257,10 +257,10 @@ def show_gestao_acoes():
                 with col_actions:
                     status_atual = acao.get('status', 'Pendente')
                     if status_atual == 'Pendente' and check_permission('acesso_pagina_lancamentos_faia'):
-                        st.button("🚀 Lançar", key=f"launch_{acao_id}", on_click=lambda id=acao_id: supabase.table("Acoes").update({'status': 'Lançado'}).eq('id', id).execute() and st.rerun(), use_container_width=True, type="primary")
+                        st.button("🚀 Lançar", key=f"launch_{acao_id}", on_click=lambda id=acao_id: (supabase.table("Acoes").update({'status': 'Lançado'}).eq('id', id).execute(), st.rerun()), use_container_width=True, type="primary")
                     if check_permission('pode_editar_lancamento_faia'):
                         st.button("✏️ Editar", key=f"edit_{acao_id}", on_click=edit_acao_dialog, args=(acao, tipos_acao_df, supabase), use_container_width=True)
                     if status_atual != 'Arquivado' and check_permission('pode_excluir_lancamento_faia'):
-                        st.button("🗑️ Arquivar", key=f"archive_{acao_id}", on_click=lambda id=acao_id: supabase.table("Acoes").update({'status': 'Arquivado'}).eq('id', id).execute() and st.rerun(), use_container_width=True)
+                        st.button("🗑️ Arquivar", key=f"archive_{acao_id}", on_click=lambda id=acao_id: (supabase.table("Acoes").update({'status': 'Arquivado'}).eq('id', id).execute(), st.rerun()), use_container_width=True)
                     if status_atual == 'Lançado': st.success("✅ Lançado")
                     elif status_atual == 'Arquivado': st.warning("🗄️ Arquivado")
