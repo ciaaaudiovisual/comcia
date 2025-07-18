@@ -52,6 +52,8 @@ if check_permission('acesso_pagina_configuracoes'):
     menu_options["Configurações"] = show_config
 if check_permission('acesso_pagina_painel_admin'):
     menu_options["Painel do Admin"] = show_admin_panel
+if check_permission('acesso_pagina_revisao_geral'):
+    menu_options["Revisão Geral"] = show_revisao_geral
 
 selected_page = st.sidebar.radio(
     "Ir para:", 
