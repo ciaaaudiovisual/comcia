@@ -4,14 +4,14 @@ from datetime import datetime
 from database import load_data, init_supabase_client
 from auth import check_permission
 
-# --- Funções de Callback e Diálogos ---
+# --- Funções de Callback e Diálogos (sem alterações) ---
 
 def on_delete_action(action_id, supabase):
     """Callback para excluir uma ação."""
     try:
         supabase.table("Acoes").delete().eq('id', action_id).execute()
         st.toast("Ação excluída com sucesso!", icon="🗑️")
-        load_data.clear() # Limpa o cache para recarregar os dados
+        load_data.clear()
     except Exception as e:
         st.error(f"Erro ao excluir a ação: {e}")
 
@@ -20,7 +20,6 @@ def edit_action_dialog(action, tipos_acao_df, supabase):
     """Diálogo para editar os detalhes de uma ação."""
     st.write(f"Editando ação para: **{action.get('nome_guerra', 'N/A')}**")
     
-    # --- CORREÇÃO: Usar 'id_acao' para a chave do formulário e na query ---
     with st.form(key=f"edit_form_revisao_{action['id_acao']}"):
         opcoes_tipo_acao = tipos_acao_df['nome'].unique().tolist()
         try:
@@ -83,10 +82,8 @@ def show_revisao_geral():
         df_merged = pd.merge(acoes_df, tipos_acao_df[['id', 'pontuacao']], left_on='tipo_acao_id', right_on='id', how='left', suffixes=('_acao', '_tipo'))
         df_merged['pontuacao'] = pd.to_numeric(df_merged['pontuacao'], errors='coerce').fillna(0)
         
-        # O merge aqui cria as colunas id_acao e id_aluno
         df_final = pd.merge(df_merged, alunos_df[['id', 'numero_interno', 'nome_guerra']], left_on='aluno_id', right_on='id', how='left', suffixes=('_acao', '_aluno'))
         
-        # Garante que o nome de guerra não seja nulo para alunos apagados
         if 'nome_guerra' in df_final.columns:
             df_final['nome_guerra'].fillna('Aluno Apagado', inplace=True)
             
@@ -106,6 +103,10 @@ def show_revisao_geral():
         df_filtrado = df_filtrado[df_filtrado['pontuacao'] == 0]
 
     df_filtrado['data'] = pd.to_datetime(df_filtrado['data'], errors='coerce')
+    # --- ALTERAÇÃO: Converter a coluna 'created_at' para datetime ---
+    if 'created_at' in df_filtrado.columns:
+        df_filtrado['created_at'] = pd.to_datetime(df_filtrado['created_at'], errors='coerce')
+    
     df_filtrado.sort_values(by='data', ascending=False, inplace=True)
 
     st.divider()
@@ -116,18 +117,26 @@ def show_revisao_geral():
         return
 
     for _, action in df_filtrado.iterrows():
-        # --- CORREÇÃO: Usar 'id_acao' consistentemente ---
         action_id = action['id_acao']
-        cols = st.columns([2, 5, 2, 1, 1])
+        # Ajustado o layout das colunas para melhor espaçamento
+        cols = st.columns([3, 4, 3, 1, 1])
         
         with cols[0]:
             st.markdown(f"**{action.get('numero_interno', 'S/N')} - {action.get('nome_guerra')}**")
+            data_evento_str = action['data'].strftime('%d/%m/%Y') if pd.notna(action['data']) else 'Data N/A'
+            st.caption(f"Data do Evento: {data_evento_str}")
         
         with cols[1]:
             st.caption(action.get('descricao', 'Sem descrição.'))
 
         with cols[2]:
-            st.caption(f"Por: {action.get('usuario', 'N/A')}")
+            # --- ALTERAÇÃO: Exibir o usuário e a data/hora de lançamento ---
+            st.caption(f"Lançado por: {action.get('usuario', 'N/A')}")
+            # Formata e exibe a data/hora de criação do registo
+            if 'created_at' in action and pd.notna(action['created_at']):
+                data_lancamento_str = action['created_at'].strftime('%d/%m/%Y %H:%M')
+                st.caption(f"Em: {data_lancamento_str}")
+            # --- FIM DA ALTERAÇÃO ---
         
         with cols[3]:
             if st.button("✏️", key=f"edit_{action_id}", help="Editar esta ação"):
