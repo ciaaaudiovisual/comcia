@@ -66,6 +66,7 @@ def edit_tipo_acao_dialog(tipo_acao, supabase):
                 supabase.table("Tipos_Acao").update(update_data).eq("id", tipo_acao['id']).execute()
                 st.success("Tipo de Ação atualizado!")
                 load_data.clear()
+                st.rerun()
             except Exception as e:
                 st.error(f"Falha ao salvar as alterações: {e}")
 
@@ -74,6 +75,7 @@ def on_pontuacao_change(tipo_acao_id, pontuacao_atual, delta, supabase):
     try:
         supabase.table("Tipos_Acao").update({'pontuacao': nova_pontuacao}).eq('id', tipo_acao_id).execute()
         load_data.clear()
+        st.rerun()
     except Exception as e:
         st.error(f"Falha ao alterar a pontuação: {e}")
 
@@ -243,6 +245,7 @@ def show_config_tipos_acao(supabase):
                     try:
                         supabase.table("Tipos_Acao").insert(novo_tipo).execute()
                         st.success("Tipo de ação adicionado!"); load_data.clear()
+                        st.rerun()
                     except Exception as e: st.error(f"Erro ao adicionar: {e}")
 
     st.divider()
