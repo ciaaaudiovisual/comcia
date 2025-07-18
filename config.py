@@ -20,6 +20,7 @@ FEATURES_LIST = [
     ('pode_excluir_lancamento_faia', 'Pode Excluir Lançamentos na tela da FAIA', 'admin,supervisor'),
     ('pode_ver_conceito_final', 'Pode Visualizar o Conceito Final do Aluno', 'admin,supervisor,comcia'),
     ('pode_editar_lancamento_faia', 'Pode Editar Lançamentos na Fila', 'admin,supervisor'),
+    ('acesso_pagina_revisao_geral', 'Acesso à Página de Revisão Geral', 'admin'),
 ]
 
 # ==============================================================================
