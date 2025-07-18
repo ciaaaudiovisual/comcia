@@ -11,6 +11,7 @@ from admin_panel import show_admin_panel
 from gestao_acoes import show_gestao_acoes
 from saude import show_saude
 from assistente_ia import show_assistente_ia
+from revisao_geral import show_revisao_geral
 
 if not check_authentication():
     st.stop()
