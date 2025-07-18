@@ -10,7 +10,10 @@ from alunos import calcular_pontuacao_efetiva
 from auth import check_permission
 import pytz
 
-# --- FUNÇÕES AUXILIARES ---
+# --- ALTERAÇÃO: Importar o componente de seleção de alunos ---
+from aluno_selection_components import render_alunos_filter_and_selection
+
+# --- FUNÇÕES AUXILIARES (sem alteração) ---
 def decodificar_codigo_de_barras(upload_de_imagem):
     """Lê um arquivo de imagem e retorna uma lista de NIPs encontrados."""
     try:
@@ -97,29 +100,38 @@ def show_dashboard():
                             if 'nip' in alunos_df.columns:
                                 alunos_encontrados_df = alunos_df[alunos_df['nip'].isin(nips)]
                                 if not alunos_encontrados_df.empty:
-                                    nomes_encontrados = alunos_encontrados_df['nome_guerra'].tolist()
-                                    novos_nomes = [nome for nome in nomes_encontrados if nome not in st.session_state.alunos_escaneados_nomes]
-                                    st.session_state.alunos_escaneados_nomes.extend(novos_nomes)
-                                    if novos_nomes: st.toast(f"Alunos adicionados: {', '.join(novos_nomes)}", icon="✅")
-                                    else: st.toast("Todos os alunos escaneados já estavam na lista.", icon="ℹ️")
+                                    # Adiciona o DataFrame dos alunos encontrados ao estado da sessão
+                                    if 'alunos_escaneados_df' not in st.session_state:
+                                        st.session_state.alunos_escaneados_df = pd.DataFrame()
+                                    st.session_state.alunos_escaneados_df = pd.concat([st.session_state.alunos_escaneados_df, alunos_encontrados_df]).drop_duplicates(subset=['id'])
+                                    st.toast(f"Alunos adicionados: {', '.join(alunos_encontrados_df['nome_guerra'].tolist())}", icon="✅")
                                 else:
-                                    st.warning("Nenhum aluno encontrado no banco de dados com o(s) NIP(s) lido(s).")
+                                    st.warning("Nenhum aluno encontrado com o(s) NIP(s) lido(s).")
                             else:
                                 st.error("A coluna 'nip' não existe na tabela de Alunos para realizar a busca.")
                         else:
                             st.error(msg)
             
-            with st.form("anotacao_rapida_form"):
-                if not alunos_df.empty:
-                    alunos_opcoes_dict = {f"{aluno['nome_guerra']} (Nº: {aluno.get('numero_interno', 'S/N')})": aluno['nome_guerra'] for _, aluno in alunos_df.sort_values('nome_guerra').iterrows()}
-                    alunos_opcoes_labels = list(alunos_opcoes_dict.keys())
-                else:
-                    alunos_opcoes_dict = {}
-                    alunos_opcoes_labels = []
+            # --- ALTERAÇÃO: Substituição do seletor manual pelo componente padrão ---
+            st.subheader("Seleção de Alunos")
+            alunos_selecionados_df = render_alunos_filter_and_selection(
+                key_suffix="dashboard_quick_action",
+                include_full_name_search=True
+            )
+            
+            # Combina a seleção do filtro com os alunos escaneados
+            if 'alunos_escaneados_df' in st.session_state and not st.session_state.alunos_escaneados_df.empty:
+                alunos_selecionados_df = pd.concat([alunos_selecionados_df, st.session_state.alunos_escaneados_df]).drop_duplicates(subset=['id'])
 
-                alunos_selecionados_labels = st.multiselect("Selecione os Alunos", options=alunos_opcoes_labels, default=[label for label, nome in alunos_opcoes_dict.items() if nome in st.session_state.get('alunos_escaneados_nomes', [])])
-                alunos_selecionados = [alunos_opcoes_dict[label] for label in alunos_selecionados_labels]
+            with st.form("anotacao_rapida_form"):
                 
+                # Exibe os alunos que serão afetados pela ação
+                if not alunos_selecionados_df.empty:
+                    nomes_selecionados = ", ".join(alunos_selecionados_df['nome_guerra'].tolist())
+                    st.info(f"A ação será registrada para os seguintes alunos ({len(alunos_selecionados_df)}): **{nomes_selecionados}**")
+                else:
+                    st.warning("Nenhum aluno selecionado.")
+
                 opcoes_finais, tipos_opcoes_map = [], {}
                 if not tipos_acao_df.empty:
                     tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
@@ -135,11 +147,12 @@ def show_dashboard():
                 descricao = st.text_area("Descrição da Ação (Opcional)")
                 
                 if st.form_submit_button("Registrar Ação"):
-                    if not alunos_selecionados or not tipo_selecionado_str or tipo_selecionado_str.startswith("---"):
+                    # --- ALTERAÇÃO: Lógica para usar o DataFrame do novo componente ---
+                    if alunos_selecionados_df.empty or not tipo_selecionado_str or tipo_selecionado_str.startswith("---"):
                         st.warning("Selecione ao menos um aluno e um tipo de ação válido.")
                     else:
                         try:
-                            ids_alunos_selecionados = alunos_df[alunos_df['nome_guerra'].isin(alunos_selecionados)]['id'].tolist()
+                            ids_alunos_selecionados = alunos_selecionados_df['id'].tolist()
                             tipo_acao_info = tipos_opcoes_map[tipo_selecionado_str]
                             novas_acoes = []
                             for aluno_id in ids_alunos_selecionados:
@@ -157,13 +170,15 @@ def show_dashboard():
                             if novas_acoes:
                                 supabase.table("Acoes").insert(novas_acoes).execute()
                                 st.success(f"Ação registrada com sucesso para {len(novas_acoes)} aluno(s)!")
-                                st.session_state.alunos_escaneados_nomes = []
+                                # Limpa o estado da sessão após o registro bem-sucedido
+                                st.session_state.alunos_escaneados_df = pd.DataFrame()
                                 load_data.clear()
                                 st.rerun()
                         except Exception as e:
                             st.error(f"Falha ao salvar a(s) ação(ões): {e}")
     st.divider()
 
+    # --- O restante do arquivo continua sem alterações ---
     if alunos_df.empty or acoes_com_pontos_df.empty:
         st.info("Registre alunos e ações para visualizar os painéis de dados.")
     else:
@@ -171,11 +186,11 @@ def show_dashboard():
         acoes_com_nomes_df = pd.merge(acoes_com_pontos_df, alunos_df[['id', 'nome_guerra']], left_on='aluno_id', right_on='id', how='left')
         acoes_com_nomes_df['nome_guerra'].fillna('N/A', inplace=True)
         
-        hoje = datetime.now().date()
+        hoje = datetime.now(pytz.timezone('America/Sao_Paulo')).date()
         data_limite = hoje - timedelta(days=2)
 
         df_filtrado = acoes_com_nomes_df[
-            (acoes_com_nomes_df['data'].dt.date >= data_limite) &
+            (acoes_com_nomes_df['data'].dt.tz_convert('America/Sao_Paulo').dt.date >= data_limite) &
             (acoes_com_nomes_df['pontuacao_efetiva'] != 0) &
             (acoes_com_nomes_df['status'] != 'Arquivado')
         ].copy()
@@ -190,7 +205,7 @@ def show_dashboard():
             if dataframe.empty:
                 st.info("Nenhum registro para exibir.")
                 return
-            grouped_by_day = dataframe.groupby(dataframe['data'].dt.date)
+            grouped_by_day = dataframe.groupby(dataframe['data'].dt.tz_convert('America/Sao_Paulo').dt.date)
             sorted_days = sorted(grouped_by_day.groups.keys(), reverse=True)
             is_first_iteration = True
             for day in sorted_days:
@@ -215,7 +230,7 @@ def show_dashboard():
         
         st.subheader("Análise de Desempenho por Pelotão")
         
-        pelotoes_para_exibir = ["MIKE-1", "MIKE-2", "MIKE-3", "MIKE-4", "MIKE-5", "QTPA"]
+        pelotoes_para_exibir = sorted(alunos_df['pelotao'].dropna().unique().tolist())
         
         chart_mode = st.radio(
             "Selecione o modo de visualização do gráfico:",
@@ -257,7 +272,7 @@ def show_dashboard():
                 contagem_negativas = df_negativas.groupby('pelotao').size().reset_index(name='Negativas')
                 contagem_df = pd.merge(contagem_positivas, contagem_negativas, on='pelotao', how='outer').fillna(0)
                 df_melted = pd.melt(contagem_df, id_vars=['pelotao'], value_vars=['Positivas', 'Negativas'], var_name='Tipo de Anotação', value_name='Quantidade')
-                fig = px.bar(df_melted, x='pelotao', y='Quantidade', color='Tipo de Anotação', barmode='group', title='Quantidade de Anotações por Pelotão', labels={'pelotao': 'Pelotão', 'Quantidade': 'Nº de Anotações'}, color_discrete_map={'Positivas': 'green', 'Negativas': 'red'}, text_auto=True)
+                fig = px.bar(df_melted, x='pelotao', y='Quantidade', color='Tipo de Anotação', barmode='group', title='Quantidade de Anotações por Pelotão', labels={'pelotao': 'Pelotão', 'Quantidade': 'Nº de Anotações'}, color_discrete_map={'Positivas': 'green', 'Negativos': 'red'}, text_auto=True)
                 st.plotly_chart(fig, use_container_width=True)
 
 
@@ -265,11 +280,13 @@ def show_dashboard():
         if not alunos_df.empty and 'data_nascimento' in alunos_df.columns:
             alunos_df['data_nascimento'] = pd.to_datetime(alunos_df['data_nascimento'], errors='coerce')
             alunos_nasc_validos = alunos_df.dropna(subset=['data_nascimento'])
-            hoje = datetime.now().date()
+            
+            fuso_horario_local = pytz.timezone('America/Sao_Paulo')
+            hoje = datetime.now(fuso_horario_local).date()
             
             dia_da_semana_hoje = hoje.weekday() 
 
-            domingo_semana_atual = hoje - timedelta(days=dia_da_semana_hoje) + timedelta(days=6)
+            domingo_semana_atual = hoje - timedelta(days=dia_da_semana_hoje) + timedelta(days=6 if dia_da_semana_hoje != 6 else 0))
             
             inicio_do_periodo_de_busca = domingo_semana_atual - timedelta(days=13) 
 
@@ -282,8 +299,6 @@ def show_dashboard():
                 aniversariantes_df['dia_mes'] = aniversariantes_df['data_nascimento'].dt.strftime('%m-%d')
                 aniversariantes_df = aniversariantes_df.sort_values(by='dia_mes')
                 for _, aluno in aniversariantes_df.iterrows():
-                    # ALTERAÇÃO AQUI: Incluindo numero_interno, nome_guerra e data
                     st.success(f"**{aluno.get('numero_interno', 'N/A')}** - **{aluno['nome_guerra']}** - {aluno['data_nascimento'].strftime('%d/%m')}")
             else:
                 st.info("Nenhum aniversariante no período.")
-
