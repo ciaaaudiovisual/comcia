@@ -44,7 +44,7 @@ menu_options = {
     "Lançamento de Ações": show_gestao_acoes,
     "Saúde": show_saude,
     "Parada Diária": show_parada_diaria,
-    "Revisão Geral" = show_revisao_geral
+    "Revisão Geral": show_revisao_geral
 }
 
 if check_permission('acesso_pagina_relatorios'):
