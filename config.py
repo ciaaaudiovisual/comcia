@@ -21,7 +21,9 @@ FEATURES_LIST = [
     ('pode_ver_conceito_final', 'Pode Visualizar o Conceito Final do Aluno', 'admin,supervisor,comcia'),
     ('pode_editar_lancamento_faia', 'Pode Editar Lançamentos na Fila', 'admin,supervisor'),
     ('acesso_pagina_revisao_geral', 'Acesso à Página de Revisão Geral', 'admin'),
+    ('acesso_pagina_geracao_documentos', 'Acesso à Página de Geração de Documentos', 'admin'),
 ]
+
 
 # ==============================================================================
 # FUNÇÕES DE CALLBACK E DIÁLOGOS
