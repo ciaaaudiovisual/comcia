@@ -5,7 +5,7 @@ from pypdf import PdfReader, PdfWriter
 from database import load_data, init_supabase_client
 from auth import check_permission
 import json
-import re # Importa a biblioteca de expressões regulares para "limpar" o nome do ficheiro
+import re # Importa a biblioteca de expressões regulares
 
 # --- Funções de Lógica (Backend) ---
 
@@ -39,10 +39,8 @@ def fill_pdf(template_bytes: bytes, student_data: pd.Series, mapping: dict) -> B
     fill_data = {}
     for pdf_field, config in mapping.items():
         if config['type'] == 'db' and config['value']:
-            # Pega o dado do banco de dados
             fill_data[pdf_field] = str(student_data.get(config['value'], ''))
         elif config['type'] == 'static':
-            # Usa o texto fixo
             fill_data[pdf_field] = config['value']
 
     if writer.pages:
@@ -69,9 +67,12 @@ def merge_pdfs(pdf_buffers: list) -> BytesIO:
 # --- Seções da Interface do Usuário ---
 
 def manage_templates_section(supabase, aluno_columns):
-    """Renderiza a UI para gerenciamento de modelos com validação e debug integrados."""
+    """
+    Renderiza a UI para gerenciamento de modelos.
+    ESTA VERSÃO CONTÉM O CÓDIGO PARA O TESTE DE ISOLAMENTO.
+    """
     with st.container(border=True):
-        st.subheader("1. Cadastrar ou Atualizar um Modelo")
+        st.subheader("1. Cadastrar ou Atualizar um Modelo (MODO DE TESTE)")
         
         uploaded_file = st.file_uploader("Carregue um modelo de PDF com campos de formulário", type="pdf")
 
@@ -86,84 +87,63 @@ def manage_templates_section(supabase, aluno_columns):
             st.info(f"Campos encontrados no PDF: {', '.join(pdf_fields)}")
 
             with st.form("template_mapping_form"):
-                st.markdown("##### Mapeie os campos do PDF:")
+                st.markdown("##### Mapeie os campos do PDF (apenas para simular o formulário):")
                 
                 mapping = {}
                 for field in pdf_fields:
                     st.markdown(f"--- \n**Campo PDF:** `{field}`")
-                    
                     map_type = st.radio(
-                        "Tipo de preenchimento:",
-                        ("Mapear da Coluna do Aluno", "Inserir Texto Fixo"),
-                        key=f"type_{field}",
-                        horizontal=True,
-                        label_visibility="collapsed"
+                        "Tipo de preenchimento:", ("Mapear da Coluna do Aluno", "Inserir Texto Fixo"),
+                        key=f"type_{field}", horizontal=True, label_visibility="collapsed"
                     )
-
                     if map_type == "Mapear da Coluna do Aluno":
-                        db_column = st.selectbox("Coluna do Aluno:", options=aluno_columns, key=f"map_{field}")
-                        mapping[field] = {'type': 'db', 'value': db_column}
+                        mapping[field] = {'type': 'db', 'value': ''}
                     else:
-                        static_text = st.text_area("Texto Fixo:", key=f"static_{field}")
-                        mapping[field] = {'type': 'static', 'value': static_text}
+                        mapping[field] = {'type': 'static', 'value': ''}
                 
-                template_name = st.text_input("Dê um nome para este modelo (ex: Papeleta de Pagamento)*")
+                template_name = st.text_input("Dê um nome para este modelo (apenas para simular o formulário)")
                 
-                if st.form_submit_button("Salvar Modelo"):
-                    if not template_name:
-                        st.error("O nome do modelo é obrigatório.")
-                    else:
-                        # --- ETAPA 1: VERIFICAÇÃO DE AUTENTICAÇÃO ---
-                        # Garante que o usuário está logado ANTES de qualquer outra coisa.
-                        try:
-                            user_session = supabase.auth.get_session()
-                            if not (user_session and user_session.user):
-                                st.error("❌ ERRO DE AUTENTICAÇÃO: Sua sessão expirou ou você não está logado. A política de segurança irá bloquear a ação. Por favor, faça login novamente.")
-                                st.stop()
-                            st.info(f"✔️ DEBUG: Tentando salvar como usuário: {user_session.user.email}")
-                        except Exception as auth_e:
-                            st.error(f"❌ ERRO DE AUTENTICAÇÃO: Não foi possível verificar a sessão. Erro: {auth_e}")
+                if st.form_submit_button("Salvar Modelo (Executar Teste)"):
+                    # Verifica a autenticação primeiro
+                    try:
+                        user_session = supabase.auth.get_session()
+                        if not (user_session and user_session.user):
+                            st.error("❌ ERRO DE AUTENTICAÇÃO: Sessão não encontrada. Faça login novamente.")
                             st.stop()
+                        st.info(f"✔️ DEBUG: Usuário autenticado como: {user_session.user.email}")
+                    except Exception as auth_e:
+                        st.error(f"❌ ERRO DE AUTENTICAÇÃO: Não foi possível verificar a sessão. Erro: {auth_e}")
+                        st.stop()
 
-                        with st.spinner("Salvando modelo..."):
-                            try:
-                                # --- ETAPA 2: VALIDAÇÃO ROBUSTA DO NOME DO ARQUIVO ---
-                                bucket_name = "modelos-pdf"
-                                temp_name = template_name.replace(' ', '_')
-                                sanitized_name = re.sub(r'[^\w-]', '', temp_name)
-                                sanitized_name = sanitized_name[:100]
+                    with st.spinner("Realizando teste de isolamento..."):
+                        try:
+                            # --- INÍCIO DO TESTE DE ISOLAMENTO ---
+                            st.info("--- TENTANDO INSERIR DADOS NA TABELA 'teste_rls' ---")
+                            
+                            # A lógica original foi comentada para o teste.
+                            # bucket_name = "modelos-pdf"
+                            # temp_name = template_name.replace(' ', '_')
+                            # sanitized_name = re.sub(r'[^\w-]', '', temp_name)
+                            # sanitized_name = sanitized_name[:100]
+                            # file_path = f"{sanitized_name}.pdf"
+                            # supabase.storage.from_(bucket_name).upload(...)
+                            # supabase.table("documento_modelos").upsert({ ... }).execute()
+                            
+                            # Adiciona a nova linha para inserir na tabela de teste
+                            supabase.table("teste_rls").insert({"texto": f"Teste bem-sucedido do usuário {user_session.user.email}"}).execute()
+                            
+                            st.success("✅ SUCESSO NO TESTE! A inserção na tabela 'teste_rls' funcionou!")
+                            st.info("Isso confirma que o problema está em alguma configuração específica da tabela 'documento_modelos'.")
+                            st.stop()
+                            # --- FIM DO TESTE DE ISOLAMENTO ---
 
-                                if not sanitized_name:
-                                    st.error("O nome do modelo fornecido é inválido. Por favor, use letras e/ou números.")
-                                    st.stop() # Aborta a execução
-
-                                file_path = f"{sanitized_name}.pdf"
-
-                                # --- ETAPA 3: OPERAÇÕES COM O SUPABASE ---
-                                supabase.storage.from_(bucket_name).upload(
-                                    file=st.session_state.uploaded_pdf_bytes,
-                                    path=file_path,
-                                    file_options={"content-type": "application/pdf", "x-upsert": "true"}
-                                )
-                                
-                                supabase.table("documento_modelos").upsert({
-                                    "nome_modelo": template_name,
-                                    "mapeamento": json.dumps(mapping),
-                                    "path_pdf_storage": file_path
-                                }).execute()
-                                
-                                st.success(f"Modelo '{template_name}' salvo com sucesso!")
-                                # Limpa o cache para recarregar a lista de modelos na próxima vez
-                                load_data.clear()
-                                st.rerun()
-
-                            except Exception as e:
-                                # --- ETAPA 4: LOG DE ERRO DETALHADO ---
-                                # Imprime o erro completo no console do terminal onde o Streamlit está rodando
-                                print("--- ERRO DETALHADO DO SUPABASE ---")
-                                print(e)
-                                print("-----------------------------------")
-                                st.error(f"Erro ao salvar o modelo. Verifique as permissões de RLS no Supabase. Detalhe do erro: {e}")
+                        except Exception as e:
+                            st.error("❌ FALHA NO TESTE! A inserção na tabela 'teste_rls' também falhou.")
+                            st.warning("Isso indica um problema mais profundo no projeto ou na autenticação.")
+                            print("--- ERRO DETALHADO DO TESTE DE ISOLAMENTO ---")
+                            print(e)
+                            print("---------------------------------------------")
+                            st.error(f"Detalhe do erro no teste: {e}")
 
 def generate_documents_section(supabase):
     """Renderiza a UI para a geração de documentos em massa."""
