@@ -26,7 +26,6 @@ def get_aluno_columns() -> list:
         return [""] + sorted(alunos_df.columns.tolist())
     return [""]
 
-# CORREÇÃO: Função fill_pdf corrigida para evitar o erro 'No /AcroForm'
 def fill_pdf(template_bytes: bytes, student_data: pd.Series, mapping: dict) -> BytesIO:
     """Preenche um único PDF com os dados de um aluno ou textos fixos usando o mapeamento."""
     reader = PdfReader(BytesIO(template_bytes))
@@ -67,7 +66,7 @@ def generate_pdf_previews(pdf_bytes: bytes) -> list:
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         for page in doc:
-            pix = page.get_pixmap(dpi=150) # Aumentar DPI para melhor qualidade
+            pix = page.get_pixmap(dpi=150)
             img_bytes = pix.tobytes("png")
             images.append(img_bytes)
         doc.close()
@@ -142,8 +141,12 @@ def show_geracao_documentos_final():
             
             with col1:
                 # Filtro por Pelotão
+                # CORREÇÃO APLICADA AQUI:
                 pelotoes_unicos = alunos_df['pelotao'].unique()
                 lista_pelotoes = sorted([str(p) for p in pelotoes_unicos if pd.notna(p)])
+                
+                pelotoes_selecionados = st.multiselect("Filtrar por Pelotão:", options=lista_pelotoes)
+
             with col2:
                 # Filtro por Nome ou Número
                 termo_busca = st.text_input("Buscar por Nome de Guerra ou Nº Interno:")
