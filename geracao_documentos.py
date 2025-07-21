@@ -67,12 +67,9 @@ def merge_pdfs(pdf_buffers: list) -> BytesIO:
 # --- Seções da Interface do Usuário ---
 
 def manage_templates_section(supabase, aluno_columns):
-    """
-    Renderiza a UI para gerenciamento de modelos.
-    ESTA VERSÃO CONTÉM O CÓDIGO PARA O TESTE DE ISOLAMENTO.
-    """
+    """Renderiza a UI para gerenciamento de modelos."""
     with st.container(border=True):
-        st.subheader("1. Cadastrar ou Atualizar um Modelo (MODO DE TESTE)")
+        st.subheader("1. Cadastrar ou Atualizar um Modelo")
         
         uploaded_file = st.file_uploader("Carregue um modelo de PDF com campos de formulário", type="pdf")
 
@@ -87,63 +84,66 @@ def manage_templates_section(supabase, aluno_columns):
             st.info(f"Campos encontrados no PDF: {', '.join(pdf_fields)}")
 
             with st.form("template_mapping_form"):
-                st.markdown("##### Mapeie os campos do PDF (apenas para simular o formulário):")
+                st.markdown("##### Mapeie os campos do PDF:")
                 
                 mapping = {}
                 for field in pdf_fields:
                     st.markdown(f"--- \n**Campo PDF:** `{field}`")
+                    
                     map_type = st.radio(
-                        "Tipo de preenchimento:", ("Mapear da Coluna do Aluno", "Inserir Texto Fixo"),
-                        key=f"type_{field}", horizontal=True, label_visibility="collapsed"
+                        "Tipo de preenchimento:",
+                        ("Mapear da Coluna do Aluno", "Inserir Texto Fixo"),
+                        key=f"type_{field}",
+                        horizontal=True,
+                        label_visibility="collapsed"
                     )
+
                     if map_type == "Mapear da Coluna do Aluno":
-                        mapping[field] = {'type': 'db', 'value': ''}
+                        db_column = st.selectbox("Coluna do Aluno:", options=aluno_columns, key=f"map_{field}")
+                        mapping[field] = {'type': 'db', 'value': db_column}
                     else:
-                        mapping[field] = {'type': 'static', 'value': ''}
+                        static_text = st.text_area("Texto Fixo:", key=f"static_{field}")
+                        mapping[field] = {'type': 'static', 'value': static_text}
                 
-                template_name = st.text_input("Dê um nome para este modelo (apenas para simular o formulário)")
+                template_name = st.text_input("Dê um nome para este modelo (ex: Papeleta de Pagamento)*")
                 
-                if st.form_submit_button("Salvar Modelo (Executar Teste)"):
-                    # Verifica a autenticação primeiro
-                    try:
-                        user_session = supabase.auth.get_session()
-                        if not (user_session and user_session.user):
-                            st.error("❌ ERRO DE AUTENTICAÇÃO: Sessão não encontrada. Faça login novamente.")
-                            st.stop()
-                        st.info(f"✔️ DEBUG: Usuário autenticado como: {user_session.user.email}")
-                    except Exception as auth_e:
-                        st.error(f"❌ ERRO DE AUTENTICAÇÃO: Não foi possível verificar a sessão. Erro: {auth_e}")
-                        st.stop()
+                if st.form_submit_button("Salvar Modelo"):
+                    if not template_name:
+                        st.error("O nome do modelo é obrigatório.")
+                    else:
+                        with st.spinner("Salvando modelo..."):
+                            try:
+                                bucket_name = "modelos-pdf"
+                                
+                                temp_name = template_name.replace(' ', '_')
+                                sanitized_name = re.sub(r'[^\w-]', '', temp_name)
+                                sanitized_name = sanitized_name[:100]
 
-                    with st.spinner("Realizando teste de isolamento..."):
-                        try:
-                            # --- INÍCIO DO TESTE DE ISOLAMENTO ---
-                            st.info("--- TENTANDO INSERIR DADOS NA TABELA 'teste_rls' ---")
-                            
-                            # A lógica original foi comentada para o teste.
-                            # bucket_name = "modelos-pdf"
-                            # temp_name = template_name.replace(' ', '_')
-                            # sanitized_name = re.sub(r'[^\w-]', '', temp_name)
-                            # sanitized_name = sanitized_name[:100]
-                            # file_path = f"{sanitized_name}.pdf"
-                            # supabase.storage.from_(bucket_name).upload(...)
-                            # supabase.table("documento_modelos").upsert({ ... }).execute()
-                            
-                            # Adiciona a nova linha para inserir na tabela de teste
-                            supabase.table("teste_rls").insert({"texto": f"Teste bem-sucedido do usuário {user_session.user.email}"}).execute()
-                            
-                            st.success("✅ SUCESSO NO TESTE! A inserção na tabela 'teste_rls' funcionou!")
-                            st.info("Isso confirma que o problema está em alguma configuração específica da tabela 'documento_modelos'.")
-                            st.stop()
-                            # --- FIM DO TESTE DE ISOLAMENTO ---
+                                if not sanitized_name:
+                                    st.error("O nome do modelo resultou em um nome de arquivo inválido. Por favor, use letras e números.")
+                                    st.stop()
+                                
+                                file_path = f"{sanitized_name}.pdf"
 
-                        except Exception as e:
-                            st.error("❌ FALHA NO TESTE! A inserção na tabela 'teste_rls' também falhou.")
-                            st.warning("Isso indica um problema mais profundo no projeto ou na autenticação.")
-                            print("--- ERRO DETALHADO DO TESTE DE ISOLAMENTO ---")
-                            print(e)
-                            print("---------------------------------------------")
-                            st.error(f"Detalhe do erro no teste: {e}")
+                                supabase.storage.from_(bucket_name).upload(
+                                    file=st.session_state.uploaded_pdf_bytes,
+                                    path=file_path,
+                                    file_options={"content-type": "application/pdf", "x-upsert": "true"}
+                                )
+                                
+                                supabase.table("documento_modelos").upsert({
+                                    "nome_modelo": template_name,
+                                    "mapeamento": json.dumps(mapping),
+                                    "path_pdf_storage": file_path
+                                }).execute()
+                                
+                                st.success(f"Modelo '{template_name}' salvo com sucesso!")
+                                load_data.clear() # Limpa o cache para recarregar dados
+                                st.rerun()
+
+                            except Exception as e:
+                                print(f"Erro detalhado ao salvar: {e}")
+                                st.error(f"Erro ao salvar o modelo: {e}")
 
 def generate_documents_section(supabase):
     """Renderiza a UI para a geração de documentos em massa."""
@@ -190,9 +190,9 @@ def generate_documents_section(supabase):
                             template_pdf_bytes = supabase.storage.from_(bucket_name).download(path_pdf)
 
                             filled_pdfs = []
-                            ids_selecionados = alunos_df.loc[alunos_df.index.isin(alunos_selecionados_df.index[edited_df['selecionar']]), 'id'].tolist()
-                            dados_completos_alunos_df = load_data("Alunos")
-                            dados_completos_alunos_df = dados_completos_alunos_df[dados_completos_alunos_df['id'].isin(ids_selecionados)]
+                            # Correção para garantir que estamos usando o índice correto para filtrar os dados completos
+                            ids_selecionados = alunos_df[edited_df['selecionar']].index
+                            dados_completos_alunos_df = load_data("Alunos").loc[ids_selecionados]
 
                             for _, aluno_row in dados_completos_alunos_df.iterrows():
                                 filled_pdf = fill_pdf(template_pdf_bytes, aluno_row, mapeamento)
