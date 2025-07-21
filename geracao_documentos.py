@@ -142,9 +142,8 @@ def show_geracao_documentos_final():
             
             with col1:
                 # Filtro por Pelotão
-                lista_pelotoes = sorted(alunos_df['pelotao'].unique())
-                pelotoes_selecionados = st.multiselect("Filtrar por Pelotão:", options=lista_pelotoes)
-
+                pelotoes_unicos = alunos_df['pelotao'].unique()
+                lista_pelotoes = sorted([str(p) for p in pelotoes_unicos if pd.notna(p)])
             with col2:
                 # Filtro por Nome ou Número
                 termo_busca = st.text_input("Buscar por Nome de Guerra ou Nº Interno:")
