@@ -12,6 +12,7 @@ from gestao_acoes import show_gestao_acoes
 from saude import show_saude
 from assistente_ia import show_assistente_ia
 from revisao_geral import show_revisao_geral
+from geracao_documentos import show_geracao_documentos
 
 if not check_authentication():
     st.stop()
