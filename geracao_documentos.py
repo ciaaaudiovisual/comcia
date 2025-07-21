@@ -113,6 +113,27 @@ def manage_templates_section(supabase, aluno_columns):
                     if not template_name:
                         st.error("O nome do modelo é obrigatório.")
                     else:
+
+            if st.form_submit_button("Salvar Modelo"):
+                if not template_name:
+                    st.error("O nome do modelo é obrigatório.")
+                else:
+                    # --- ADICIONE ESTE BLOCO DE DEPURAÇÃO ---
+                    try:
+                        user_session = supabase.auth.get_session()
+                        if user_session and user_session.user:
+                            st.info(f"✔️ DEBUG: Ação realizada como usuário autenticado: {user_session.user.email}")
+                        else:
+                            st.error("❌ DEBUG: FALHA! Nenhuma sessão de usuário ativa encontrada. A RLS irá bloquear.")
+                            st.stop() # Para a execução aqui mesmo
+                    except Exception as auth_e:
+                        st.error(f"❌ DEBUG: Erro ao verificar a autenticação: {auth_e}")
+                        st.stop()
+                    # --- FIM DO BLOCO DE DEPURAÇÃO ---
+            
+                    with st.spinner("Salvando modelo..."):
+                        try:
+                        
                         with st.spinner("Salvando modelo..."):
                             try:
                                 bucket_name = "modelos-pdf"
