@@ -7,6 +7,8 @@ from auth import check_permission
 import json
 import re
 
+# --- Funções de Lógica (Backend) ---
+
 def extract_pdf_fields(pdf_bytes: bytes) -> list:
     """Lê um arquivo PDF em bytes e extrai os nomes dos campos de formulário."""
     try:
@@ -61,6 +63,8 @@ def merge_pdfs(pdf_buffers: list) -> BytesIO:
     merger.write(merged_pdf_buffer)
     merged_pdf_buffer.seek(0)
     return merged_pdf_buffer
+
+# --- Seções da Interface do Usuário ---
 
 def manage_templates_section(supabase, aluno_columns):
     """Renderiza a UI para gerenciamento de modelos."""
@@ -127,7 +131,8 @@ def manage_templates_section(supabase, aluno_columns):
                                     file_options={"content-type": "application/pdf", "x-upsert": "true"}
                                 )
                                 
-                                supabase.table("documento_modelos").upsert({
+                                # ALTERAÇÃO AQUI: Apontando para a nova tabela que funciona
+                                supabase.table("teste_rls").upsert({
                                     "nome_modelo": template_name,
                                     "mapeamento": json.dumps(mapping),
                                     "path_pdf_storage": file_path
@@ -145,8 +150,9 @@ def generate_documents_section(supabase):
     """Renderiza a UI para a geração de documentos em massa."""
     with st.container(border=True):
         st.subheader("2. Gerar Documentos em Massa")
-
-        modelos_df = load_data("documento_modelos")
+        
+        # ALTERAÇÃO AQUI: Lendo os dados da nova tabela que funciona
+        modelos_df = load_data("teste_rls")
         if modelos_df.empty:
             st.info("Nenhum modelo cadastrado. Cadastre um na seção acima.")
             return
@@ -210,6 +216,7 @@ def generate_documents_section(supabase):
                 )
                 st.session_state.final_pdf_bytes = None
 
+# --- Função Principal da Página ---
 def show_geracao_documentos():
     st.title("📄 Gerador de Documentos")
     
