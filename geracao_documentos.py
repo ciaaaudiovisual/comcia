@@ -12,9 +12,10 @@ def extract_pdf_fields(pdf_bytes: bytes) -> list:
     """Lê um arquivo PDF em bytes e extrai os nomes dos campos de formulário."""
     try:
         reader = PdfReader(BytesIO(pdf_bytes))
-        if reader.get_form_text_fields() is None:
+        fields = reader.get_form_text_fields()
+        if fields is None:
             return []
-        return list(reader.get_form_text_fields().keys())
+        return list(fields.keys())
     except Exception as e:
         st.error(f"Erro ao ler o PDF: {e}")
         return []
@@ -23,26 +24,29 @@ def get_aluno_columns() -> list:
     """Carrega os dados dos alunos e retorna a lista de colunas disponíveis."""
     alunos_df = load_data("Alunos")
     if not alunos_df.empty:
-        # Adiciona uma opção em branco para desmapear um campo
         return [""] + sorted(alunos_df.columns.tolist())
     return [""]
 
 def fill_pdf(template_bytes: bytes, student_data: pd.Series, mapping: dict) -> BytesIO:
-    """Preenche um único PDF com os dados de um aluno usando o mapeamento."""
+    """Preenche um único PDF com os dados de um aluno ou textos fixos usando o mapeamento."""
     reader = PdfReader(BytesIO(template_bytes))
     writer = PdfWriter()
     
-    # Copia todas as páginas do modelo original
     for page in reader.pages:
         writer.add_page(page)
 
-    # Preenche os campos do formulário
-    writer.update_page_form_field_values(writer.pages[0], {
-        pdf_field: str(student_data.get(db_column, ''))
-        for pdf_field, db_column in mapping.items()
-    })
+    fill_data = {}
+    for pdf_field, config in mapping.items():
+        if config['type'] == 'db' and config['value']:
+            # Pega o dado do banco de dados
+            fill_data[pdf_field] = str(student_data.get(config['value'], ''))
+        elif config['type'] == 'static':
+            # Usa o texto fixo
+            fill_data[pdf_field] = config['value']
+
+    if writer.pages:
+        writer.update_page_form_field_values(writer.pages[0], fill_data)
     
-    # Salva o PDF preenchido em um objeto BytesIO na memória
     filled_pdf_buffer = BytesIO()
     writer.write(filled_pdf_buffer)
     filled_pdf_buffer.seek(0)
@@ -66,7 +70,7 @@ def merge_pdfs(pdf_buffers: list) -> BytesIO:
 def manage_templates_section(supabase, aluno_columns):
     """Renderiza a UI para gerenciamento de modelos."""
     with st.container(border=True):
-        st.subheader("1. Cadastrar Novo Modelo")
+        st.subheader("1. Cadastrar ou Atualizar um Modelo")
         
         uploaded_file = st.file_uploader("Carregue um modelo de PDF com campos de formulário", type="pdf")
 
@@ -75,24 +79,32 @@ def manage_templates_section(supabase, aluno_columns):
             pdf_fields = extract_pdf_fields(st.session_state.uploaded_pdf_bytes)
             
             if not pdf_fields:
-                st.warning("Nenhum campo de formulário editável foi encontrado neste PDF. Por favor, carregue um PDF válido.")
+                st.warning("Nenhum campo de formulário editável foi encontrado neste PDF.")
                 return
 
             st.info(f"Campos encontrados no PDF: {', '.join(pdf_fields)}")
 
             with st.form("template_mapping_form"):
-                st.markdown("##### Mapeie os campos do PDF para as colunas do banco de dados:")
+                st.markdown("##### Mapeie os campos do PDF:")
                 
                 mapping = {}
-                cols = st.columns(2)
-                for i, field in enumerate(pdf_fields):
-                    # Distribui os campos entre as colunas para uma UI mais compacta
-                    with cols[i % 2]:
-                        mapping[field] = st.selectbox(
-                            f"Campo PDF: `{field}`", 
-                            options=aluno_columns,
-                            key=f"map_{field}"
-                        )
+                for field in pdf_fields:
+                    st.markdown(f"--- \n**Campo PDF:** `{field}`")
+                    
+                    map_type = st.radio(
+                        "Tipo de preenchimento:",
+                        ("Mapear da Coluna do Aluno", "Inserir Texto Fixo"),
+                        key=f"type_{field}",
+                        horizontal=True,
+                        label_visibility="collapsed"
+                    )
+
+                    if map_type == "Mapear da Coluna do Aluno":
+                        db_column = st.selectbox("Coluna do Aluno:", options=aluno_columns, key=f"map_{field}")
+                        mapping[field] = {'type': 'db', 'value': db_column}
+                    else:
+                        static_text = st.text_input("Texto Fixo:", key=f"static_{field}")
+                        mapping[field] = {'type': 'static', 'value': static_text}
                 
                 template_name = st.text_input("Dê um nome para este modelo (ex: Papeleta de Pagamento)*")
                 
@@ -102,15 +114,15 @@ def manage_templates_section(supabase, aluno_columns):
                     else:
                         with st.spinner("Salvando modelo..."):
                             try:
-                                # 1. Upload do PDF para o Supabase Storage
+                                # CORREÇÃO: Usar o nome do bucket com hífen
+                                bucket_name = "modelos-pdf"
                                 file_path = f"{template_name.replace(' ', '_')}.pdf"
-                                supabase.storage.from_("modelos_pdf").upload(
+                                supabase.storage.from_(bucket_name).upload(
                                     file=st.session_state.uploaded_pdf_bytes,
                                     path=file_path,
                                     file_options={"content-type": "application/pdf", "x-upsert": "true"}
                                 )
                                 
-                                # 2. Salva os metadados na tabela do banco de dados
                                 supabase.table("documento_modelos").upsert({
                                     "nome_modelo": template_name,
                                     "mapeamento": json.dumps(mapping),
@@ -118,7 +130,7 @@ def manage_templates_section(supabase, aluno_columns):
                                 }).execute()
                                 
                                 st.success(f"Modelo '{template_name}' salvo com sucesso!")
-                                load_data.clear() # Limpa o cache para recarregar os modelos
+                                load_data.clear()
                             except Exception as e:
                                 st.error(f"Erro ao salvar o modelo: {e}")
 
@@ -129,7 +141,7 @@ def generate_documents_section(supabase):
 
         modelos_df = load_data("documento_modelos")
         if modelos_df.empty:
-            st.info("Nenhum modelo de documento cadastrado. Cadastre um modelo na seção acima para começar.")
+            st.info("Nenhum modelo cadastrado. Cadastre um na seção acima.")
             return
 
         modelo_selecionado_nome = st.selectbox("Selecione um modelo", options=modelos_df['nome_modelo'].tolist())
@@ -141,19 +153,14 @@ def generate_documents_section(supabase):
 
             st.markdown("##### Selecione os alunos para a geração:")
             
-            # Lógica para o checkbox "Selecionar Todos"
             select_all = st.checkbox("Selecionar Todos/Nenhum")
             if select_all:
                 alunos_df['selecionar'] = True
-            else:
-                # Mantém a seleção manual se "Selecionar Todos" não estiver marcado
-                pass
-
+            
             edited_df = st.data_editor(
                 alunos_df[['selecionar', 'numero_interno', 'nome_guerra', 'pelotao']],
-                use_container_width=True,
-                hide_index=True,
-                key="aluno_selector"
+                use_container_width=True, hide_index=True, key="aluno_selector",
+                disabled=['numero_interno', 'nome_guerra', 'pelotao']
             )
             
             alunos_selecionados_df = edited_df[edited_df['selecionar']]
@@ -162,27 +169,25 @@ def generate_documents_section(supabase):
                 if alunos_selecionados_df.empty:
                     st.warning("Nenhum aluno foi selecionado.")
                 else:
-                    with st.spinner("Baixando modelo e gerando documentos..."):
+                    with st.spinner("Gerando documentos..."):
                         try:
-                            # Busca o modelo selecionado
                             modelo_info = modelos_df[modelos_df['nome_modelo'] == modelo_selecionado_nome].iloc[0]
                             path_pdf = modelo_info['path_pdf_storage']
                             mapeamento = json.loads(modelo_info['mapeamento'])
+                            
+                            # CORREÇÃO: Usar o nome do bucket com hífen
+                            bucket_name = "modelos-pdf"
+                            template_pdf_bytes = supabase.storage.from_(bucket_name).download(path_pdf)
 
-                            # Baixa o PDF do modelo do Supabase Storage
-                            template_pdf_bytes = supabase.storage.from_("modelos_pdf").download(path_pdf)
-
-                            # Gera um PDF para cada aluno selecionado
                             filled_pdfs = []
-                            # Busca os dados completos dos alunos selecionados
-                            ids_selecionados = alunos_selecionados_df['id'].tolist()
-                            dados_completos_alunos_df = alunos_df[alunos_df['id'].isin(ids_selecionados)]
+                            ids_selecionados = alunos_df.loc[alunos_selecionados_df.index.isin(alunos_selecionados_df.index[edited_df['selecionar']]), 'id'].tolist()
+                            dados_completos_alunos_df = load_data("Alunos")
+                            dados_completos_alunos_df = dados_completos_alunos_df[dados_completos_alunos_df['id'].isin(ids_selecionados)]
 
                             for _, aluno_row in dados_completos_alunos_df.iterrows():
                                 filled_pdf = fill_pdf(template_pdf_bytes, aluno_row, mapeamento)
                                 filled_pdfs.append(filled_pdf)
                             
-                            # Unifica todos os PDFs em um só
                             final_pdf_buffer = merge_pdfs(filled_pdfs)
                             
                             st.session_state.final_pdf_bytes = final_pdf_buffer.getvalue()
@@ -190,7 +195,7 @@ def generate_documents_section(supabase):
                         except Exception as e:
                             st.error(f"Ocorreu um erro durante a geração: {e}")
             
-            if "final_pdf_bytes" in st.session_state:
+            if "final_pdf_bytes" in st.session_state and st.session_state.final_pdf_bytes:
                 st.success("Documento consolidado gerado com sucesso!")
                 st.download_button(
                     label="📥 Baixar Documento Final",
@@ -198,7 +203,7 @@ def generate_documents_section(supabase):
                     file_name=st.session_state.final_pdf_filename,
                     mime="application/pdf"
                 )
-
+                st.session_state.final_pdf_bytes = None
 
 # --- Função Principal da Página ---
 def show_geracao_documentos():
