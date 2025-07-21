@@ -6,11 +6,11 @@ from database import load_data, init_supabase_client
 from auth import check_permission
 import json
 import fitz  # PyMuPDF
+import textwrap # NOVO: Importado para quebra de linha
 
 # --- Funções de Lógica (Backend) ---
 
 def extract_pdf_fields(pdf_bytes: bytes) -> list:
-    """Lê um arquivo PDF em bytes e extrai os nomes dos campos de formulário."""
     try:
         reader = PdfReader(BytesIO(pdf_bytes))
         fields = reader.get_form_text_fields()
@@ -20,23 +20,35 @@ def extract_pdf_fields(pdf_bytes: bytes) -> list:
         return []
 
 def get_aluno_columns() -> list:
-    """Carrega os dados dos alunos e retorna a lista de colunas disponíveis."""
     alunos_df = load_data("Alunos")
     if not alunos_df.empty:
         return [""] + sorted(alunos_df.columns.tolist())
     return [""]
 
+# NOVO: Função auxiliar para quebrar o texto
+def wrap_text(text, width=40):
+    """Quebra um texto longo em várias linhas com um limite de caracteres."""
+    return '\n'.join(textwrap.wrap(text, width=width))
+
 def fill_pdf(template_bytes: bytes, student_data: pd.Series, mapping: dict) -> BytesIO:
-    """Preenche um único PDF com os dados de um aluno ou textos fixos usando o mapeamento."""
     reader = PdfReader(BytesIO(template_bytes))
     writer = PdfWriter(clone_from=reader)
     
     fill_data = {}
     for pdf_field, config in mapping.items():
+        value = ""
         if config['type'] == 'db' and config['value']:
-            fill_data[pdf_field] = str(student_data.get(config['value'], ''))
+            value = str(student_data.get(config['value'], ''))
         elif config['type'] == 'static':
-            fill_data[pdf_field] = config['value']
+            value = config['value']
+
+        # ALTERAÇÃO: Aplica a quebra de linha se o valor for grande
+        # O campo 'SOLICITAÇÃO' terá uma quebra de linha a cada 80 caracteres.
+        # Ajuste o 'width' conforme necessário para outros campos.
+        if pdf_field == 'SOLICITAÇÃO':
+             fill_data[pdf_field] = wrap_text(value, width=80)
+        else:
+             fill_data[pdf_field] = value
 
     if writer.get_form_text_fields():
         for page in writer.pages:
@@ -48,20 +60,17 @@ def fill_pdf(template_bytes: bytes, student_data: pd.Series, mapping: dict) -> B
     return filled_pdf_buffer
 
 def merge_pdfs(pdf_buffers: list) -> BytesIO:
-    """Unifica uma lista de PDFs (em BytesIO) em um único arquivo."""
     merger = PdfWriter()
     for buffer in pdf_buffers:
         reader = PdfReader(buffer)
         for page in reader.pages:
             merger.add_page(page)
-            
     merged_pdf_buffer = BytesIO()
     merger.write(merged_pdf_buffer)
     merged_pdf_buffer.seek(0)
     return merged_pdf_buffer
 
 def generate_pdf_previews(pdf_bytes: bytes) -> list:
-    """Converte as páginas de um PDF em imagens para pré-visualização."""
     images = []
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -74,20 +83,18 @@ def generate_pdf_previews(pdf_bytes: bytes) -> list:
         st.error(f"Erro ao gerar pré-visualização do PDF: {e}")
     return images
 
-# --- Função Principal da Página (Fluxo Final e Corrigido) ---
+# --- Função Principal da Página ---
 
 def show_geracao_documentos_final():
     st.title("📄 Gerador de Documentos")
 
     if not check_permission('acesso_pagina_geracao_documentos'):
-        st.error("Acesso negado. Apenas administradores podem acessar esta página.")
+        st.error("Acesso negado.")
         return
 
-    # Inicializa clientes e dados
     supabase = init_supabase_client()
     aluno_columns = get_aluno_columns()
 
-    # --- Passo 1: Upload do Modelo ---
     st.header("1. Carregue o Modelo de PDF")
     uploaded_file = st.file_uploader(
         "Selecione um arquivo PDF com campos de formulário", 
@@ -105,7 +112,6 @@ def show_geracao_documentos_final():
             st.warning("Nenhum campo de formulário editável foi encontrado neste PDF.")
             st.stop()
 
-        # --- Passo 2: Mapeamento dos Campos ---
         st.header("2. Mapeie os Campos do PDF")
         st.info(f"Campos encontrados: {', '.join(pdf_fields)}")
 
@@ -129,29 +135,22 @@ def show_geracao_documentos_final():
                 st.session_state.field_mapping = mapping
                 st.success("Mapeamento confirmado!")
 
-        # --- Passo 3: Seleção dos Alunos e Geração ---
         if 'field_mapping' in st.session_state:
             st.header("3. Selecione os Alunos e Gere o Documento")
             
             alunos_df = load_data("Alunos")
             
-            # --- MELHORIA: Filtros Avançados ---
             st.subheader("Filtros")
             col1, col2 = st.columns(2)
             
             with col1:
-                # Filtro por Pelotão
-                # CORREÇÃO APLICADA AQUI:
                 pelotoes_unicos = alunos_df['pelotao'].unique()
                 lista_pelotoes = sorted([str(p) for p in pelotoes_unicos if pd.notna(p)])
-                
                 pelotoes_selecionados = st.multiselect("Filtrar por Pelotão:", options=lista_pelotoes)
 
             with col2:
-                # Filtro por Nome ou Número
                 termo_busca = st.text_input("Buscar por Nome de Guerra ou Nº Interno:")
 
-            # Aplica os filtros ao dataframe
             alunos_filtrados_df = alunos_df.copy()
             if pelotoes_selecionados:
                 alunos_filtrados_df = alunos_filtrados_df[alunos_filtrados_df['pelotao'].isin(pelotoes_selecionados)]
@@ -162,15 +161,12 @@ def show_geracao_documentos_final():
                 ]
 
             st.subheader("Seleção de Alunos")
-            # Adiciona a coluna 'selecionar' aos dados filtrados
             if 'selecionar' not in alunos_filtrados_df.columns:
                 alunos_filtrados_df.insert(0, 'selecionar', False)
 
-            # MELHORIA: "Selecionar Todos" agora considera apenas os alunos filtrados
             if st.checkbox("Selecionar Todos/Nenhum (visíveis na tabela)"):
                 alunos_filtrados_df['selecionar'] = True
             
-            # Mostra o data_editor com os dados já filtrados
             edited_df = st.data_editor(
                 alunos_filtrados_df[['selecionar', 'numero_interno', 'nome_guerra', 'pelotao']],
                 use_container_width=True, hide_index=True, key="aluno_selector"
@@ -186,9 +182,7 @@ def show_geracao_documentos_final():
                         try:
                             template_bytes = st.session_state.uploaded_pdf_bytes
                             current_mapping = st.session_state.field_mapping
-
                             filled_pdfs = []
-                            # Usa os índices do dataframe editado para pegar os dados completos
                             ids_selecionados = alunos_para_gerar_df.index
                             dados_completos_alunos_df = alunos_df.loc[ids_selecionados]
 
@@ -200,12 +194,10 @@ def show_geracao_documentos_final():
                             
                             st.session_state.final_pdf_bytes = final_pdf_buffer.getvalue()
                             st.session_state.final_pdf_filename = f"{uploaded_file.name.replace('.pdf', '')}_gerado.pdf"
-
                         except Exception as e:
                             st.error(f"Ocorreu um erro durante a geração: {e}")
                             print(f"Erro detalhado na geração: {e}")
 
-            # --- Passo 4: Pré-visualização e Download ---
             if 'final_pdf_bytes' in st.session_state and st.session_state.final_pdf_bytes:
                 st.header("4. Pré-visualização e Download")
                 st.success("Documento consolidado gerado!")
@@ -224,6 +216,7 @@ def show_geracao_documentos_final():
                     tabs = st.tabs([f"Página {i+1}" for i in range(len(preview_images))])
                     for i, tab in enumerate(tabs):
                         with tab:
+                            # CORREÇÃO: Parâmetro obsoleto trocado
                             st.image(preview_images[i], caption=f"Página {i+1}", use_container_width=True)
                 else:
                     st.warning("Não foi possível gerar a pré-visualização.")
