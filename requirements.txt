@@ -19,3 +19,4 @@ streamlit-audiorec
 google-generativeai
 PyPDF2
 pypdf
+PyMuPDF
