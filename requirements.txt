@@ -18,3 +18,4 @@ streamlit-webrtc
 streamlit-audiorec
 google-generativeai
 PyPDF2
+pypdf
