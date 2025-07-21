@@ -224,6 +224,6 @@ def show_geracao_documentos_final():
                     tabs = st.tabs([f"Página {i+1}" for i in range(len(preview_images))])
                     for i, tab in enumerate(tabs):
                         with tab:
-                            st.image(preview_images[i], caption=f"Página {i+1}", use_column_width=True)
+                            st.image(preview_images[i], caption=f"Página {i+1}", use_container_width=True)
                 else:
                     st.warning("Não foi possível gerar a pré-visualização.")
