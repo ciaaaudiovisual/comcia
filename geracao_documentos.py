@@ -69,7 +69,7 @@ def merge_pdfs(pdf_buffers: list) -> BytesIO:
 # --- Seções da Interface do Usuário ---
 
 def manage_templates_section(supabase, aluno_columns):
-    """Renderiza a UI para gerenciamento de modelos."""
+    """Renderiza a UI para gerenciamento de modelos com validação e debug integrados."""
     with st.container(border=True):
         st.subheader("1. Cadastrar ou Atualizar um Modelo")
         
@@ -113,41 +113,33 @@ def manage_templates_section(supabase, aluno_columns):
                     if not template_name:
                         st.error("O nome do modelo é obrigatório.")
                     else:
-
-            if st.form_submit_button("Salvar Modelo"):
-                if not template_name:
-                    st.error("O nome do modelo é obrigatório.")
-                else:
-                    # --- ADICIONE ESTE BLOCO DE DEPURAÇÃO ---
-                    try:
-                        user_session = supabase.auth.get_session()
-                        if user_session and user_session.user:
-                            st.info(f"✔️ DEBUG: Ação realizada como usuário autenticado: {user_session.user.email}")
-                        else:
-                            st.error("❌ DEBUG: FALHA! Nenhuma sessão de usuário ativa encontrada. A RLS irá bloquear.")
-                            st.stop() # Para a execução aqui mesmo
-                    except Exception as auth_e:
-                        st.error(f"❌ DEBUG: Erro ao verificar a autenticação: {auth_e}")
-                        st.stop()
-                    # --- FIM DO BLOCO DE DEPURAÇÃO ---
-            
-                    with st.spinner("Salvando modelo..."):
+                        # --- ETAPA 1: VERIFICAÇÃO DE AUTENTICAÇÃO ---
+                        # Garante que o usuário está logado ANTES de qualquer outra coisa.
                         try:
-                        
+                            user_session = supabase.auth.get_session()
+                            if not (user_session and user_session.user):
+                                st.error("❌ ERRO DE AUTENTICAÇÃO: Sua sessão expirou ou você não está logado. A política de segurança irá bloquear a ação. Por favor, faça login novamente.")
+                                st.stop()
+                            st.info(f"✔️ DEBUG: Tentando salvar como usuário: {user_session.user.email}")
+                        except Exception as auth_e:
+                            st.error(f"❌ ERRO DE AUTENTICAÇÃO: Não foi possível verificar a sessão. Erro: {auth_e}")
+                            st.stop()
+
                         with st.spinner("Salvando modelo..."):
                             try:
+                                # --- ETAPA 2: VALIDAÇÃO ROBUSTA DO NOME DO ARQUIVO ---
                                 bucket_name = "modelos-pdf"
-                                
-                                # --- CORREÇÃO: Limpa o nome do modelo para criar um nome de ficheiro válido ---
-                                # Substitui espaços por underscores
                                 temp_name = template_name.replace(' ', '_')
-                                # Remove todos os caracteres que não são letras, números, underscore ou hífen
                                 sanitized_name = re.sub(r'[^\w-]', '', temp_name)
-                                # Limita o comprimento do nome do ficheiro para 100 caracteres
                                 sanitized_name = sanitized_name[:100]
-                                file_path = f"{sanitized_name}.pdf"
-                                # --- FIM DA CORREÇÃO ---
 
+                                if not sanitized_name:
+                                    st.error("O nome do modelo fornecido é inválido. Por favor, use letras e/ou números.")
+                                    st.stop() # Aborta a execução
+
+                                file_path = f"{sanitized_name}.pdf"
+
+                                # --- ETAPA 3: OPERAÇÕES COM O SUPABASE ---
                                 supabase.storage.from_(bucket_name).upload(
                                     file=st.session_state.uploaded_pdf_bytes,
                                     path=file_path,
@@ -155,15 +147,23 @@ def manage_templates_section(supabase, aluno_columns):
                                 )
                                 
                                 supabase.table("documento_modelos").upsert({
-                                    "nome_modelo": template_name, # Salva o nome original e amigável
+                                    "nome_modelo": template_name,
                                     "mapeamento": json.dumps(mapping),
-                                    "path_pdf_storage": file_path # Salva o nome do ficheiro "limpo"
+                                    "path_pdf_storage": file_path
                                 }).execute()
                                 
                                 st.success(f"Modelo '{template_name}' salvo com sucesso!")
+                                # Limpa o cache para recarregar a lista de modelos na próxima vez
                                 load_data.clear()
+                                st.rerun()
+
                             except Exception as e:
-                                st.error(f"Erro ao salvar o modelo: {e}")
+                                # --- ETAPA 4: LOG DE ERRO DETALHADO ---
+                                # Imprime o erro completo no console do terminal onde o Streamlit está rodando
+                                print("--- ERRO DETALHADO DO SUPABASE ---")
+                                print(e)
+                                print("-----------------------------------")
+                                st.error(f"Erro ao salvar o modelo. Verifique as permissões de RLS no Supabase. Detalhe do erro: {e}")
 
 def generate_documents_section(supabase):
     """Renderiza a UI para a geração de documentos em massa."""
