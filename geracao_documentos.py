@@ -27,13 +27,10 @@ def get_aluno_columns() -> list:
     return [""]
 
 def fill_pdf(template_bytes: bytes, student_data: pd.Series, mapping: dict) -> BytesIO:
-    """Preenche um único PDF com os dados de um aluno ou textos fixos usando o mapeamento."""
     reader = PdfReader(BytesIO(template_bytes))
-    writer = PdfWriter()
+    # Cria um writer já clonando a estrutura inteira do leitor (incluindo o AcroForm)
+    writer = PdfWriter(clone_from=reader) 
     
-    for page in reader.pages:
-        writer.add_page(page)
-
     fill_data = {}
     for pdf_field, config in mapping.items():
         if config['type'] == 'db' and config['value']:
@@ -41,8 +38,9 @@ def fill_pdf(template_bytes: bytes, student_data: pd.Series, mapping: dict) -> B
         elif config['type'] == 'static':
             fill_data[pdf_field] = config['value']
 
-    if writer.pages:
-        writer.update_page_form_field_values(writer.pages[0], fill_data)
+    # Preenche os campos para todas as páginas do formulário
+    for page in writer.pages:
+        writer.update_page_form_field_values(page, fill_data)
     
     filled_pdf_buffer = BytesIO()
     writer.write(filled_pdf_buffer)
