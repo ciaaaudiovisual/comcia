@@ -104,7 +104,8 @@ def manage_templates_section(supabase, aluno_columns):
                         db_column = st.selectbox("Coluna do Aluno:", options=aluno_columns, key=f"map_{field}")
                         mapping[field] = {'type': 'db', 'value': db_column}
                     else:
-                        static_text = st.text_input("Texto Fixo:", key=f"static_{field}")
+                        # --- CORREÇÃO: Usar st.text_area para textos longos ---
+                        static_text = st.text_area("Texto Fixo:", key=f"static_{field}")
                         mapping[field] = {'type': 'static', 'value': static_text}
                 
                 template_name = st.text_input("Dê um nome para este modelo (ex: Papeleta de Pagamento)*")
@@ -117,15 +118,10 @@ def manage_templates_section(supabase, aluno_columns):
                             try:
                                 bucket_name = "modelos-pdf"
                                 
-                                # --- CORREÇÃO: Limpa o nome do modelo para criar um nome de ficheiro válido ---
-                                # Substitui espaços por underscores
                                 temp_name = template_name.replace(' ', '_')
-                                # Remove todos os caracteres que não são letras, números, underscore ou hífen
                                 sanitized_name = re.sub(r'[^\w-]', '', temp_name)
-                                # Limita o comprimento do nome do ficheiro para 100 caracteres
                                 sanitized_name = sanitized_name[:100]
                                 file_path = f"{sanitized_name}.pdf"
-                                # --- FIM DA CORREÇÃO ---
 
                                 supabase.storage.from_(bucket_name).upload(
                                     file=st.session_state.uploaded_pdf_bytes,
@@ -134,9 +130,9 @@ def manage_templates_section(supabase, aluno_columns):
                                 )
                                 
                                 supabase.table("documento_modelos").upsert({
-                                    "nome_modelo": template_name, # Salva o nome original e amigável
+                                    "nome_modelo": template_name,
                                     "mapeamento": json.dumps(mapping),
-                                    "path_pdf_storage": file_path # Salva o nome do ficheiro "limpo"
+                                    "path_pdf_storage": file_path
                                 }).execute()
                                 
                                 st.success(f"Modelo '{template_name}' salvo com sucesso!")
