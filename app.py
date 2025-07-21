@@ -39,7 +39,7 @@ if st.sidebar.button("🔄 Recarregar Dados"):
 
 menu_options = {
     "Dashboard": show_dashboard,
-    "Assistente IA": show_assistente_ia, # <-- ADICIONE ESTA LINHA
+    "Assistente IA": show_assistente_ia, 
     "Programação": show_programacao,
     "Cadastro de Alunos": show_alunos,
     "Lançamento de Ações": show_gestao_acoes,
@@ -56,6 +56,9 @@ if check_permission('acesso_pagina_painel_admin'):
     menu_options["Painel do Admin"] = show_admin_panel
 if check_permission('acesso_pagina_revisao_geral'):
     menu_options["Revisão Geral"] = show_revisao_geral
+if check_permission('acesso_pagina_geracao_documentos'):
+    menu_options["Geração de Documentos"] = show_geracao_documentos # <-- ADICIONE ESTA LINHA
+
 
 selected_page = st.sidebar.radio(
     "Ir para:", 
