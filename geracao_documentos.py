@@ -5,9 +5,7 @@ from pypdf import PdfReader, PdfWriter
 from database import load_data, init_supabase_client
 from auth import check_permission
 import json
-import re # Importa a biblioteca de expressões regulares
-
-# --- Funções de Lógica (Backend) ---
+import re
 
 def extract_pdf_fields(pdf_bytes: bytes) -> list:
     """Lê um arquivo PDF em bytes e extrai os nomes dos campos de formulário."""
@@ -63,8 +61,6 @@ def merge_pdfs(pdf_buffers: list) -> BytesIO:
     merger.write(merged_pdf_buffer)
     merged_pdf_buffer.seek(0)
     return merged_pdf_buffer
-
-# --- Seções da Interface do Usuário ---
 
 def manage_templates_section(supabase, aluno_columns):
     """Renderiza a UI para gerenciamento de modelos."""
@@ -138,7 +134,7 @@ def manage_templates_section(supabase, aluno_columns):
                                 }).execute()
                                 
                                 st.success(f"Modelo '{template_name}' salvo com sucesso!")
-                                load_data.clear() # Limpa o cache para recarregar dados
+                                load_data.clear()
                                 st.rerun()
 
                             except Exception as e:
@@ -190,7 +186,6 @@ def generate_documents_section(supabase):
                             template_pdf_bytes = supabase.storage.from_(bucket_name).download(path_pdf)
 
                             filled_pdfs = []
-                            # Correção para garantir que estamos usando o índice correto para filtrar os dados completos
                             ids_selecionados = alunos_df[edited_df['selecionar']].index
                             dados_completos_alunos_df = load_data("Alunos").loc[ids_selecionados]
 
@@ -215,7 +210,6 @@ def generate_documents_section(supabase):
                 )
                 st.session_state.final_pdf_bytes = None
 
-# --- Função Principal da Página ---
 def show_geracao_documentos():
     st.title("📄 Gerador de Documentos")
     
