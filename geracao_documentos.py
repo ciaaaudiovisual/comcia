@@ -5,6 +5,7 @@ from pypdf import PdfReader, PdfWriter
 from database import load_data, init_supabase_client
 from auth import check_permission
 import json
+import re # Importa a biblioteca de expressões regulares para "limpar" o nome do ficheiro
 
 # --- Funções de Lógica (Backend) ---
 
@@ -114,9 +115,18 @@ def manage_templates_section(supabase, aluno_columns):
                     else:
                         with st.spinner("Salvando modelo..."):
                             try:
-                                # CORREÇÃO: Usar o nome do bucket com hífen
                                 bucket_name = "modelos-pdf"
-                                file_path = f"{template_name.replace(' ', '_')}.pdf"
+                                
+                                # --- CORREÇÃO: Limpa o nome do modelo para criar um nome de ficheiro válido ---
+                                # Substitui espaços por underscores
+                                temp_name = template_name.replace(' ', '_')
+                                # Remove todos os caracteres que não são letras, números, underscore ou hífen
+                                sanitized_name = re.sub(r'[^\w-]', '', temp_name)
+                                # Limita o comprimento do nome do ficheiro para 100 caracteres
+                                sanitized_name = sanitized_name[:100]
+                                file_path = f"{sanitized_name}.pdf"
+                                # --- FIM DA CORREÇÃO ---
+
                                 supabase.storage.from_(bucket_name).upload(
                                     file=st.session_state.uploaded_pdf_bytes,
                                     path=file_path,
@@ -124,9 +134,9 @@ def manage_templates_section(supabase, aluno_columns):
                                 )
                                 
                                 supabase.table("documento_modelos").upsert({
-                                    "nome_modelo": template_name,
+                                    "nome_modelo": template_name, # Salva o nome original e amigável
                                     "mapeamento": json.dumps(mapping),
-                                    "path_pdf_storage": file_path
+                                    "path_pdf_storage": file_path # Salva o nome do ficheiro "limpo"
                                 }).execute()
                                 
                                 st.success(f"Modelo '{template_name}' salvo com sucesso!")
@@ -175,12 +185,11 @@ def generate_documents_section(supabase):
                             path_pdf = modelo_info['path_pdf_storage']
                             mapeamento = json.loads(modelo_info['mapeamento'])
                             
-                            # CORREÇÃO: Usar o nome do bucket com hífen
                             bucket_name = "modelos-pdf"
                             template_pdf_bytes = supabase.storage.from_(bucket_name).download(path_pdf)
 
                             filled_pdfs = []
-                            ids_selecionados = alunos_df.loc[alunos_selecionados_df.index.isin(alunos_selecionados_df.index[edited_df['selecionar']]), 'id'].tolist()
+                            ids_selecionados = alunos_df.loc[alunos_df.index.isin(alunos_selecionados_df.index[edited_df['selecionar']]), 'id'].tolist()
                             dados_completos_alunos_df = load_data("Alunos")
                             dados_completos_alunos_df = dados_completos_alunos_df[dados_completos_alunos_df['id'].isin(ids_selecionados)]
 
