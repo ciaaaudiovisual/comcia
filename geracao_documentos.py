@@ -5,7 +5,7 @@ from pypdf import PdfReader, PdfWriter
 from database import load_data, init_supabase_client
 from auth import check_permission
 import json
-import fitz  # Importa a PyMuPDF
+import fitz  # PyMuPDF
 
 # --- Funções de Lógica (Backend) ---
 
@@ -26,10 +26,11 @@ def get_aluno_columns() -> list:
         return [""] + sorted(alunos_df.columns.tolist())
     return [""]
 
+# CORREÇÃO: Função fill_pdf corrigida para evitar o erro 'No /AcroForm'
 def fill_pdf(template_bytes: bytes, student_data: pd.Series, mapping: dict) -> BytesIO:
+    """Preenche um único PDF com os dados de um aluno ou textos fixos usando o mapeamento."""
     reader = PdfReader(BytesIO(template_bytes))
-    # Cria um writer já clonando a estrutura inteira do leitor (incluindo o AcroForm)
-    writer = PdfWriter(clone_from=reader) 
+    writer = PdfWriter(clone_from=reader)
     
     fill_data = {}
     for pdf_field, config in mapping.items():
@@ -38,9 +39,9 @@ def fill_pdf(template_bytes: bytes, student_data: pd.Series, mapping: dict) -> B
         elif config['type'] == 'static':
             fill_data[pdf_field] = config['value']
 
-    # Preenche os campos para todas as páginas do formulário
-    for page in writer.pages:
-        writer.update_page_form_field_values(page, fill_data)
+    if writer.get_form_text_fields():
+        for page in writer.pages:
+            writer.update_page_form_field_values(page, fill_data)
     
     filled_pdf_buffer = BytesIO()
     writer.write(filled_pdf_buffer)
@@ -66,7 +67,7 @@ def generate_pdf_previews(pdf_bytes: bytes) -> list:
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         for page in doc:
-            pix = page.get_pixmap()
+            pix = page.get_pixmap(dpi=150) # Aumentar DPI para melhor qualidade
             img_bytes = pix.tobytes("png")
             images.append(img_bytes)
         doc.close()
@@ -92,7 +93,6 @@ def show_geracao_documentos_final():
     uploaded_file = st.file_uploader(
         "Selecione um arquivo PDF com campos de formulário", 
         type="pdf",
-        # Limpa o estado da sessão se um novo arquivo for carregado
         on_change=lambda: st.session_state.clear() if 'uploaded_pdf_bytes' in st.session_state else None
     )
 
@@ -110,19 +110,15 @@ def show_geracao_documentos_final():
         st.header("2. Mapeie os Campos do PDF")
         st.info(f"Campos encontrados: {', '.join(pdf_fields)}")
 
-        mapping = {}
-        # Usar um formulário garante que o mapeamento seja "submetido" de uma vez
         with st.form("mapping_form"):
+            mapping = {}
             for field in pdf_fields:
-                # CORREÇÃO: Isola cada bloco de mapeamento em um container para evitar bugs de UI
                 with st.container(border=True):
                     st.markdown(f"**Campo PDF:** `{field}`")
                     map_type = st.radio(
-                        "Fonte dos dados:",
-                        ("Coluna do Aluno", "Texto Fixo"),
+                        "Fonte dos dados:", ("Coluna do Aluno", "Texto Fixo"),
                         key=f"type_{field}", horizontal=True, label_visibility="collapsed"
                     )
-
                     if map_type == "Coluna do Aluno":
                         db_column = st.selectbox("Selecione a Coluna:", options=aluno_columns, key=f"map_{field}")
                         mapping[field] = {'type': 'db', 'value': db_column}
@@ -130,7 +126,6 @@ def show_geracao_documentos_final():
                         static_text = st.text_area("Digite o Texto Fixo:", key=f"static_{field}", height=100)
                         mapping[field] = {'type': 'static', 'value': static_text}
             
-            # Botão para confirmar o mapeamento e mostrar os próximos passos
             if st.form_submit_button("Confirmar Mapeamento", type="primary"):
                 st.session_state.field_mapping = mapping
                 st.success("Mapeamento confirmado!")
@@ -140,30 +135,60 @@ def show_geracao_documentos_final():
             st.header("3. Selecione os Alunos e Gere o Documento")
             
             alunos_df = load_data("Alunos")
-            if 'selecionar' not in alunos_df.columns:
-                alunos_df.insert(0, 'selecionar', False)
+            
+            # --- MELHORIA: Filtros Avançados ---
+            st.subheader("Filtros")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Filtro por Pelotão
+                lista_pelotoes = sorted(alunos_df['pelotao'].unique())
+                pelotoes_selecionados = st.multiselect("Filtrar por Pelotão:", options=lista_pelotoes)
 
+            with col2:
+                # Filtro por Nome ou Número
+                termo_busca = st.text_input("Buscar por Nome de Guerra ou Nº Interno:")
+
+            # Aplica os filtros ao dataframe
+            alunos_filtrados_df = alunos_df.copy()
+            if pelotoes_selecionados:
+                alunos_filtrados_df = alunos_filtrados_df[alunos_filtrados_df['pelotao'].isin(pelotoes_selecionados)]
+            if termo_busca:
+                alunos_filtrados_df = alunos_filtrados_df[
+                    alunos_filtrados_df['nome_guerra'].str.contains(termo_busca, case=False, na=False) |
+                    alunos_filtrados_df['numero_interno'].astype(str).str.contains(termo_busca, case=False, na=False)
+                ]
+
+            st.subheader("Seleção de Alunos")
+            # Adiciona a coluna 'selecionar' aos dados filtrados
+            if 'selecionar' not in alunos_filtrados_df.columns:
+                alunos_filtrados_df.insert(0, 'selecionar', False)
+
+            # MELHORIA: "Selecionar Todos" agora considera apenas os alunos filtrados
+            if st.checkbox("Selecionar Todos/Nenhum (visíveis na tabela)"):
+                alunos_filtrados_df['selecionar'] = True
+            
+            # Mostra o data_editor com os dados já filtrados
             edited_df = st.data_editor(
-                alunos_df[['selecionar', 'numero_interno', 'nome_guerra', 'pelotao']],
-                use_container_width=True, hide_index=True, key="aluno_selector",
-                disabled=['numero_interno', 'nome_guerra', 'pelotao']
+                alunos_filtrados_df[['selecionar', 'numero_interno', 'nome_guerra', 'pelotao']],
+                use_container_width=True, hide_index=True, key="aluno_selector"
             )
             
-            alunos_selecionados_df = edited_df[edited_df['selecionar']]
+            alunos_para_gerar_df = edited_df[edited_df['selecionar']]
             
-            if st.button(f"Gerar Documento para {len(alunos_selecionados_df)} Aluno(s)"):
-                if alunos_selecionados_df.empty:
+            if st.button(f"Gerar Documento para {len(alunos_para_gerar_df)} Aluno(s)"):
+                if alunos_para_gerar_df.empty:
                     st.warning("Nenhum aluno foi selecionado.")
                 else:
                     with st.spinner("Gerando documentos..."):
                         try:
-                            # Pega os dados da sessão atual
                             template_bytes = st.session_state.uploaded_pdf_bytes
                             current_mapping = st.session_state.field_mapping
 
                             filled_pdfs = []
-                            ids_selecionados = alunos_df[edited_df['selecionar']].index
-                            dados_completos_alunos_df = load_data("Alunos").loc[ids_selecionados]
+                            # Usa os índices do dataframe editado para pegar os dados completos
+                            ids_selecionados = alunos_para_gerar_df.index
+                            dados_completos_alunos_df = alunos_df.loc[ids_selecionados]
 
                             for _, aluno_row in dados_completos_alunos_df.iterrows():
                                 filled_pdf = fill_pdf(template_bytes, aluno_row, current_mapping)
@@ -171,19 +196,18 @@ def show_geracao_documentos_final():
                             
                             final_pdf_buffer = merge_pdfs(filled_pdfs)
                             
-                            # Salva os bytes do PDF final e o nome do arquivo na sessão
                             st.session_state.final_pdf_bytes = final_pdf_buffer.getvalue()
                             st.session_state.final_pdf_filename = f"{uploaded_file.name.replace('.pdf', '')}_gerado.pdf"
+
                         except Exception as e:
                             st.error(f"Ocorreu um erro durante a geração: {e}")
-                            print(f"Erro detalhado na geração: {e}") # Log no console
+                            print(f"Erro detalhado na geração: {e}")
 
             # --- Passo 4: Pré-visualização e Download ---
             if 'final_pdf_bytes' in st.session_state and st.session_state.final_pdf_bytes:
                 st.header("4. Pré-visualização e Download")
                 st.success("Documento consolidado gerado!")
                 
-                # Botão de download fica em destaque no topo da seção
                 st.download_button(
                     label="📥 Baixar Documento Final (.pdf)",
                     data=st.session_state.final_pdf_bytes,
@@ -191,12 +215,10 @@ def show_geracao_documentos_final():
                     mime="application/pdf"
                 )
 
-                # Gera e exibe a pré-visualização
                 with st.spinner("Carregando pré-visualização..."):
                     preview_images = generate_pdf_previews(st.session_state.final_pdf_bytes)
                 
                 if preview_images:
-                    # Cria abas para cada página, permitindo a navegação
                     tabs = st.tabs([f"Página {i+1}" for i in range(len(preview_images))])
                     for i, tab in enumerate(tabs):
                         with tab:
