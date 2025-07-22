@@ -211,6 +211,9 @@ def bulk_update_status(ids_to_update, new_status, supabase):
 # ==============================================================================
 # PÁGINA PRINCIPAL
 # ==============================================================================
+# ==============================================================================
+# PÁGINA PRINCIPAL (SUBSTITUA ESTA FUNÇÃO INTEIRA)
+# ==============================================================================
 def show_gestao_acoes():
     st.title("Lançamentos de Ações dos Alunos")
     supabase = init_supabase_client()
@@ -387,29 +390,42 @@ def show_gestao_acoes():
 
     st.divider()
 
+    # --- SEÇÃO DE REVISÃO E AÇÕES (MODIFICADA) ---
     st.subheader("Fila de Revisão e Ações")
 
     if df_filtrado_final.empty:
         st.info("Nenhuma ação encontrada para os filtros selecionados.")
     else:
+        # Primeiro, verifica a permissão de edição
+        can_edit = check_permission('pode_editar_lancamento_faia')
+
         with st.container(border=True):
-            # Adicionado uma coluna extra para o botão de editar em massa
-            col_botoes1, col_botoes2, col_botoes3, col_check = st.columns([2, 2, 2, 3])
-            
+            # Define as colunas dinamicamente com base na permissão de edição
+            if can_edit:
+                # Se pode editar, mostra 3 botões + checkbox
+                col_lancar, col_editar, col_arquivar, col_check = st.columns([2, 2, 2, 3])
+            else:
+                # Senão, mostra apenas 2 botões + checkbox
+                col_lancar, col_arquivar, col_check = st.columns([2, 2, 3])
+
             ids_visiveis = df_filtrado_final['id_x'].dropna().astype(int).tolist()
             selected_ids = [acao_id for acao_id, is_selected in st.session_state.action_selection.items() if is_selected and acao_id in ids_visiveis]
             
-            with col_botoes1:
+            # Botão Lançar
+            with col_lancar:
                 st.button(f"🚀 Lançar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Lançado', supabase), disabled=not selected_ids, use_container_width=True)
-            with col_botoes2:
-                st.button(f"🗑️ Arquivar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Arquivado', supabase), disabled=not selected_ids, use_container_width=True)
-            
-            # --- NOVO BOTÃO DE EDIÇÃO EM MASSA ---
-            with col_botoes3:
-                if st.button(f"✏️ Editar Selecionados ({len(selected_ids)})", disabled=not selected_ids, use_container_width=True, key="bulk_edit_button"):
-                    # Chama o novo diálogo de edição em massa
-                    bulk_edit_dialog(selected_ids, tipos_acao_df, supabase)
 
+            # Botão Editar (só é criado se o usuário tiver permissão)
+            if can_edit:
+                with col_editar:
+                    if st.button(f"✏️ Editar Selecionados ({len(selected_ids)})", disabled=not selected_ids, use_container_width=True, key="bulk_edit_button"):
+                        bulk_edit_dialog(selected_ids, tipos_acao_df, supabase)
+
+            # Botão Arquivar
+            with col_arquivar:
+                st.button(f"🗑️ Arquivar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Arquivado', supabase), disabled=not selected_ids, use_container_width=True)
+
+            # Checkbox para selecionar todos
             def toggle_all_visible():
                 new_state = st.session_state.get('select_all_toggle', False)
                 for acao_id in ids_visiveis:
@@ -443,7 +459,7 @@ def show_gestao_acoes():
                     status_atual = acao.get('status', 'Pendente')
                     can_launch = check_permission('acesso_pagina_lancamentos_faia')
                     can_delete = check_permission('pode_excluir_lancamento_faia')
-                    can_edit = check_permission('pode_editar_lancamento_faia')
+                    # A permissão 'can_edit' já foi checada lá em cima
                     
                     if status_atual == 'Pendente' and can_launch:
                         if st.button("🚀 Lançar", key=f"launch_{acao_id}", use_container_width=True, type="primary"):
