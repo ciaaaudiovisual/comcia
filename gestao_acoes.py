@@ -7,15 +7,15 @@ from acoes import calcular_pontuacao_efetiva
 from io import BytesIO
 import zipfile
 # Importar o componente de seleção de alunos
-from aluno_selection_components import render_alunos_filter_and_selection # 
+from aluno_selection_components import render_alunos_filter_and_selection
 
 # ==============================================================================
-# DIÁLOGOS E POPUPS (mantidos inalterados)
+# DIÁLOGOS E POPUPS (Função de edição em massa adicionada)
 # ==============================================================================
 @st.dialog("✏️ Editar Ação")
 def edit_acao_dialog(acao_selecionada, tipos_acao_df, supabase):
     st.write(f"Editando ação para: **{acao_selecionada.get('nome_guerra', 'N/A')}**")
-    
+
     with st.form(key=f"edit_form_{acao_selecionada['id_x']}"):
         opcoes_tipo_acao = tipos_acao_df['nome'].unique().tolist()
         try:
@@ -44,6 +44,65 @@ def edit_acao_dialog(acao_selecionada, tipos_acao_df, supabase):
                 st.rerun()
             except Exception as e:
                 st.error(f"Erro ao salvar as alterações: {e}")
+
+@st.dialog("✏️ Editar Ações em Massa")
+def bulk_edit_dialog(ids_to_update, tipos_acao_df, supabase):
+    """
+    Diálogo para editar o 'Tipo de Ação' de múltiplos registros de uma só vez.
+    """
+    st.write(f"Editando **{len(ids_to_update)}** ações selecionadas.")
+
+    with st.form(key="bulk_edit_form"):
+        # Lógica para criar opções de ações categorizadas e ordenadas
+        tipos_acao_df['pontuacao'] = pd.to_numeric(tipos_acao_df['pontuacao'], errors='coerce').fillna(0)
+        positivas_df = tipos_acao_df[tipos_acao_df['pontuacao'] > 0].sort_values('nome')
+        neutras_df = tipos_acao_df[tipos_acao_df['pontuacao'] == 0].sort_values('nome')
+        negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
+
+        opcoes_categorizadas = []
+        tipos_opcoes_map = {}
+
+        if not positivas_df.empty:
+            opcoes_categorizadas.append("--- AÇÕES POSITIVAS ---")
+            for _, r in positivas_df.iterrows():
+                label = f"{r['nome']} ({r['pontuacao']:+.1f} pts)"
+                opcoes_categorizadas.append(label)
+                tipos_opcoes_map[label] = r
+        if not neutras_df.empty:
+            opcoes_categorizadas.append("--- AÇÕES NEUTRAS ---")
+            for _, r in neutras_df.iterrows():
+                label = f"{r['nome']} ({r['pontuacao']:.1f} pts)"
+                opcoes_categorizadas.append(label)
+                tipos_opcoes_map[label] = r
+        if not negativas_df.empty:
+            opcoes_categorizadas.append("--- AÇÕES NEGATIVAS ---")
+            for _, r in negativas_df.iterrows():
+                label = f"{r['nome']} ({r['pontuacao']:+.1f} pts)"
+                opcoes_categorizadas.append(label)
+                tipos_opcoes_map[label] = r
+        
+        opcoes_categorizadas.insert(0, "Selecione um novo tipo de ação")
+
+        novo_tipo_acao_str = st.selectbox("Selecione o novo Tipo de Ação para todos os itens", options=opcoes_categorizadas, index=0)
+
+        if st.form_submit_button("Aplicar Alteração em Massa"):
+            if novo_tipo_acao_str.startswith("---") or novo_tipo_acao_str == "Selecione um novo tipo de ação":
+                st.warning("Por favor, selecione um tipo de ação válido.")
+            else:
+                try:
+                    tipo_acao_info = tipos_opcoes_map[novo_tipo_acao_str]
+                    update_data = {
+                        'tipo_acao_id': str(tipo_acao_info['id']),
+                        'tipo': tipo_acao_info['nome'],
+                    }
+                    supabase.table("Acoes").update(update_data).in_('id', ids_to_update).execute()
+                    st.toast(f"{len(ids_to_update)} ações foram atualizadas com sucesso!", icon="✅")
+                    st.session_state.action_selection = {}
+                    st.session_state.select_all_toggle = False
+                    load_data.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar as alterações em massa: {e}")
 
 @st.dialog("Pré-visualização da FAIA")
 def preview_faia_dialog(aluno_info, acoes_aluno_df):
@@ -97,13 +156,13 @@ def render_export_section(df_acoes_para_exportar, alunos_df, pelotao_selecionado
         return
     with st.container(border=True):
         st.subheader("📥 Exportar Relatórios FAIA")
-        
+
         # Filtro de alunos para exportação (opcional, para exibir apenas os alunos relevantes)
         alunos_elegivel_exportacao_df = alunos_df.copy()
 
         if pelotao_selecionado != "Todos":
             alunos_elegivel_exportacao_df = alunos_elegivel_exportacao_df[alunos_elegivel_exportacao_df['pelotao'] == pelotao_selecionado]
-        
+
         # O botão de exportação individual só é ativado se um aluno específico estiver selecionado
         if aluno_selecionado != "Nenhum" and aluno_selecionado != "Todos":
             st.info(f"Pré-visualize e exporte o relatório individual para **{aluno_selecionado}**. Serão incluídas apenas as ações com status 'Lançado'.")
@@ -157,9 +216,7 @@ def show_gestao_acoes():
     supabase = init_supabase_client()
 
     if 'action_selection' not in st.session_state: st.session_state.action_selection = {}
-    # Removidos os st.session_state.search_results_df_gestao e selected_student_id_gestao
-    # pois a gestão da seleção será feita pelo componente render_alunos_filter_and_selection.
-
+    
     alunos_df = load_data("Alunos")
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
@@ -169,9 +226,6 @@ def show_gestao_acoes():
     with st.expander("➕ Registrar Nova Ação", expanded=True):
         st.subheader("Passo 1: Selecionar Aluno")
         
-        # Usa o componente de seleção de alunos
-        # Inclui busca por nome completo, pois é útil para encontrar o aluno para registro
-        # Adicione um unique key para este uso específico do componente
         selected_alunos_for_new_action = render_alunos_filter_and_selection(
             key_suffix="new_action_student_selector", 
             include_full_name_search=True
@@ -179,13 +233,9 @@ def show_gestao_acoes():
 
         aluno_selecionado_para_registro = None
         if not selected_alunos_for_new_action.empty:
-            # Se múltiplos alunos forem selecionados, o Streamlit multi-select permite.
-            # Para registro de uma AÇÃO, geralmente é um aluno por vez.
-            # Se você quer permitir múltiplos registros em massa, a lógica abaixo precisaria mudar.
-            # Por simplicidade, vamos pegar o primeiro aluno selecionado para registro.
             if len(selected_alunos_for_new_action) > 1:
                 st.warning("Por favor, selecione apenas UM aluno para registrar uma nova ação.")
-                aluno_selecionado_para_registro = None # Reseta a seleção para forçar um único aluno
+                aluno_selecionado_para_registro = None
             else:
                 aluno_selecionado_para_registro = selected_alunos_for_new_action.iloc[0]
                 st.info(f"Aluno selecionado: **{aluno_selecionado_para_registro.get('nome_guerra', 'N/A')}**")
@@ -204,9 +254,8 @@ def show_gestao_acoes():
                 negativas_df = tipos_acao_df[tipos_acao_df['pontuacao'] < 0].sort_values('nome')
                 
                 opcoes_categorizadas = []
-                tipos_opcoes_map = {} # Mapeia o label exibido para o row completo do tipo de ação
+                tipos_opcoes_map = {}
 
-                # Adiciona as categorias e os tipos de ação
                 if not positivas_df.empty:
                     opcoes_categorizadas.append("--- AÇÕES POSITIVAS ---")
                     for _, r in positivas_df.iterrows():
@@ -344,7 +393,8 @@ def show_gestao_acoes():
         st.info("Nenhuma ação encontrada para os filtros selecionados.")
     else:
         with st.container(border=True):
-            col_botoes1, col_botoes2, col_check = st.columns([2, 2, 3])
+            # Adicionado uma coluna extra para o botão de editar em massa
+            col_botoes1, col_botoes2, col_botoes3, col_check = st.columns([2, 2, 2, 3])
             
             ids_visiveis = df_filtrado_final['id_x'].dropna().astype(int).tolist()
             selected_ids = [acao_id for acao_id, is_selected in st.session_state.action_selection.items() if is_selected and acao_id in ids_visiveis]
@@ -353,6 +403,12 @@ def show_gestao_acoes():
                 st.button(f"🚀 Lançar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Lançado', supabase), disabled=not selected_ids, use_container_width=True)
             with col_botoes2:
                 st.button(f"🗑️ Arquivar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Arquivado', supabase), disabled=not selected_ids, use_container_width=True)
+            
+            # --- NOVO BOTÃO DE EDIÇÃO EM MASSA ---
+            with col_botoes3:
+                if st.button(f"✏️ Editar Selecionados ({len(selected_ids)})", disabled=not selected_ids, use_container_width=True, key="bulk_edit_button"):
+                    # Chama o novo diálogo de edição em massa
+                    bulk_edit_dialog(selected_ids, tipos_acao_df, supabase)
 
             def toggle_all_visible():
                 new_state = st.session_state.get('select_all_toggle', False)
