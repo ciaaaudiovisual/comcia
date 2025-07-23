@@ -13,7 +13,8 @@ from saude import show_saude
 from assistente_ia import show_assistente_ia
 from revisao_geral import show_revisao_geral
 from geracao_documentos import show_geracao_documentos
-from rancho_pernoite import show_rancho_pernoite
+from controle_pernoite import show_controle_pernoite
+from previa_rancho import show_previa_rancho
 
 
 if not check_authentication():
@@ -64,8 +65,11 @@ if check_permission('acesso_pagina_configuracoes'):
 if check_permission('acesso_pagina_painel_admin'):
     menu_options["Painel do Admin"] = show_admin_panel
 
+if check_permission('acesso_pagina_pernoite'):
+    menu_options["Controle de Pernoite"] = show_controle_pernoite
+
 if check_permission('acesso_pagina_rancho_pernoite'):
-    menu_options["Relatórios de Rancho"] = show_rancho_pernoite
+    menu_options["Prévia de Rancho (Sheets)"] = show_previa_rancho
 
 selected_page = st.sidebar.radio(
     "Ir para:", 
