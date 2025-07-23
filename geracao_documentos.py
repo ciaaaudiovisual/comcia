@@ -85,7 +85,7 @@ def generate_pdf_previews(pdf_bytes: bytes) -> list:
 
 # --- Função Principal da Página ---
 
-def show_geracao_documentos_final():
+def show_geracao_documentos():
     st.title("📄 Gerador de Documentos")
 
     if not check_permission('acesso_pagina_geracao_documentos'):
