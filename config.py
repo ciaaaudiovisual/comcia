@@ -22,7 +22,8 @@ FEATURES_LIST = [
     ('pode_editar_lancamento_faia', 'Pode Editar Lançamentos na Fila', 'admin,supervisor'),
     ('acesso_pagina_revisao_geral', 'Acesso à Página de Revisão Geral', 'admin'),
     ('acesso_pagina_geracao_documentos', 'Acesso à Página de Geração de Documentos', 'admin'),
-    ('acesso_pagina_rancho_pernoite', 'Acesso aos Relatórios de Rancho', 'admin,supervisor,comcia,rancho_viewer'), # <-- ADICIONE ESTA LINHA
+    # --- CORREÇÃO: A vírgula foi adicionada na linha acima ---
+    ('acesso_pagina_rancho_pernoite', 'Acesso aos Relatórios de Rancho', 'admin,comcia,rancho_viewer'), 
 ]
 
 
