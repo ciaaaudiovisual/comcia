@@ -24,7 +24,7 @@ FEATURES_LIST = [
     ('acesso_pagina_geracao_documentos', 'Acesso à Página de Geração de Documentos', 'admin'),
     ('acesso_pagina_rancho_pernoite', 'Acesso aos Relatórios de Rancho', 'admin,supervisor,comcia,rancho_viewer'), # <-- ADICIONE ESTA LINHA
 ]
-]
+
 
 
 # ==============================================================================
