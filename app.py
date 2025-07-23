@@ -64,6 +64,9 @@ if check_permission('acesso_pagina_configuracoes'):
 if check_permission('acesso_pagina_painel_admin'):
     menu_options["Painel do Admin"] = show_admin_panel
 
+if check_permission('acesso_pagina_rancho_pernoite'):
+    menu_options["Relatórios de Rancho"] = show_rancho_pernoite
+
 selected_page = st.sidebar.radio(
     "Ir para:", 
     list(menu_options.keys()), 
