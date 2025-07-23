@@ -15,6 +15,7 @@ from revisao_geral import show_revisao_geral
 from geracao_documentos import show_geracao_documentos
 from rancho_pernoite import show_rancho_pernoite
 
+
 if not check_authentication():
     st.stop()
 
@@ -48,9 +49,6 @@ menu_options = {
     "Parada Diária": show_parada_diaria,
 }
 
-if check_permission('acesso_pagina_rancho_pernoite'):
-    menu_options["Relatórios de Rancho"] = show_rancho_pernoite
-
 if check_permission('acesso_pagina_geracao_documentos'):
     menu_options["Geração de Documentos"] = show_geracao_documentos
 
@@ -76,3 +74,4 @@ if selected_page in menu_options:
     menu_options[selected_page]()
 else:
     st.error("Página não encontrada ou você não tem permissão para acessá-la.")
+
