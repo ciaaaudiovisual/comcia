@@ -13,6 +13,7 @@ from saude import show_saude
 from assistente_ia import show_assistente_ia
 from revisao_geral import show_revisao_geral
 from geracao_documentos import show_geracao_documentos_final
+from rancho_pernoite import show_rancho_pernoite
 
 if not check_authentication():
     st.stop()
@@ -59,6 +60,9 @@ if check_permission('acesso_pagina_revisao_geral'):
     menu_options["Revisão Geral"] = show_revisao_geral
 if check_permission('acesso_pagina_'):
     menu_options["Geração de Documentos"] = show_geracao_documentos_final # <-- ADICIONE ESTA LINHA
+if check_permission('acesso_pagina_rancho_pernoite'):
+    menu_options["Relatórios de Rancho"] = show_rancho_pernoite # <-- ADICIONE ESTA LINHA
+
 
 
 selected_page = st.sidebar.radio(
