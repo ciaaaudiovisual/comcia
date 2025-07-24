@@ -5,9 +5,10 @@ import pandas as pd
 from datetime import datetime
 from database import load_data, init_supabase_client
 from io import BytesIO
+# Usaremos FPDF para gerar um PDF simples. Adicione 'fpdf' ao seu requirements.txt
 from fpdf import FPDF
 
-# --- FUNÇÃO PARA GERAR PDF (sem alterações) ---
+# --- FUNÇÃO PARA GERAR PDF ---
 def gerar_pdf_pernoite(cabecalho_texto, data_selecionada, lista_alunos):
     pdf = FPDF()
     pdf.add_page()
@@ -22,18 +23,18 @@ def gerar_pdf_pernoite(cabecalho_texto, data_selecionada, lista_alunos):
     # Corpo com a lista de alunos
     pdf.set_font("Arial", '', 12)
     for aluno in lista_alunos:
-        pdf.cell(0, 8, f"- {aluno}", 0, 1)
+        # A biblioteca FPDF espera strings, então garantimos a conversão
+        pdf.cell(0, 8, f"- {str(aluno)}", 0, 1)
         
     pdf.ln(5)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, f"Total de Militares em Pernoite: {len(lista_alunos)}", 0, 1)
 
-    pdf_buffer = BytesIO()
-    # FPDF precisa de um encoding para o output em Bytes
+    # O output precisa de ser encodado para o st.download_button
     return pdf.output(dest='S').encode('latin-1')
 
 
-# --- PÁGINA PRINCIPAL DO MÓDULO (REFEITA) ---
+# --- PÁGINA PRINCIPAL DO MÓDULO (VERSÃO CORRIGIDA E MELHORADA) ---
 def show_controle_pernoite():
     st.title("Controle de Pernoite (Base de Dados)")
 
@@ -57,7 +58,6 @@ def show_controle_pernoite():
     if pelotao_selecionado != "Todos":
         alunos_filtrados_df = alunos_filtrados_df[alunos_filtrados_df['pelotao'] == pelotao_selecionado]
     
-    # Garante que os IDs dos alunos visíveis estão em formato de string
     alunos_visiveis_ids = [str(id) for id in alunos_filtrados_df['id'].tolist()]
 
     st.markdown("---")
@@ -76,77 +76,73 @@ def show_controle_pernoite():
         st.session_state.pernoite_status = {}
     
     # Carrega o estado atual para os checkboxes visíveis
+    # Esta parte agora é apenas para a exibição inicial
     for aluno_id in alunos_visiveis_ids:
-        st.session_state.pernoite_status[aluno_id] = aluno_id in alunos_presentes_ids
-
-    # --- NOVA FUNCIONALIDADE: Botões de Ação em Massa ---
+        # Só atualiza se a chave ainda não existir para não perder as marcações do usuário
+        if aluno_id not in st.session_state.pernoite_status:
+            st.session_state.pernoite_status[aluno_id] = aluno_id in alunos_presentes_ids
+    
+    # Botões de Ação em Massa
     col_b1, col_b2, col_b3 = st.columns([1, 1, 2])
     if col_b1.button("Marcar Todos Visíveis"):
         for aluno_id in alunos_visiveis_ids:
             st.session_state.pernoite_status[aluno_id] = True
+        st.rerun() # Reroda para a UI refletir a mudança
     
     if col_b2.button("Desmarcar Todos Visíveis"):
         for aluno_id in alunos_visiveis_ids:
             st.session_state.pernoite_status[aluno_id] = False
+        st.rerun() # Reroda para a UI refletir a mudança
     
-    st.write("") # Espaçamento
+    st.write("") 
 
-    # Exibe a lista de alunos com checkboxes (sem o `on_change` para evitar recarregamento)
+    # Exibe a lista de alunos com checkboxes que manipulam o session_state
     for _, aluno in alunos_filtrados_df.sort_values('nome_guerra').iterrows():
         aluno_id_str = str(aluno['id'])
-        st.checkbox(
+        st.session_state.pernoite_status[aluno_id_str] = st.checkbox(
             label=f"**{aluno['nome_guerra']}** ({aluno.get('numero_interno', 'S/N')})",
-            key=f"check_{aluno_id_str}",
             value=st.session_state.pernoite_status.get(aluno_id_str, False),
-            on_change=lambda status, aid=aluno_id_str: st.session_state.pernoite_status.update({aid: status}),
-            args=(st.session_state.get(f"check_{aluno_id_str}", False),)
+            key=f"check_{aluno_id_str}"
         )
 
-    st.write("") # Espaçamento
-    # --- NOVO BOTÃO DE SALVAR ---
+    st.write("") 
+    # Botão Único para Salvar
     if st.button("Salvar Alterações", type="primary", use_container_width=True):
         with st.spinner("A gravar as alterações..."):
             registos_para_salvar = []
-            for aluno_id, presente in st.session_state.pernoite_status.items():
-                # Apenas salva os alunos que estão visíveis no filtro atual
-                if aluno_id in alunos_visiveis_ids:
-                    registos_para_salvar.append({
-                        'aluno_id': aluno_id,
-                        'data': data_selecionada.strftime('%Y-%m-%d'),
-                        'presente': presente
-                    })
+            for aluno_id in alunos_visiveis_ids:
+                registos_para_salvar.append({
+                    'aluno_id': aluno_id,
+                    'data': data_selecionada.strftime('%Y-%m-%d'),
+                    'presente': st.session_state.pernoite_status.get(aluno_id, False)
+                })
             
             if registos_para_salvar:
                 try:
-                    # Usa upsert para inserir ou atualizar todos os registos de uma vez
                     supabase.table("pernoite").upsert(registos_para_salvar, on_conflict='aluno_id,data').execute()
                     st.success("Alterações salvas com sucesso!")
-                    load_data.clear() # Limpa o cache para a próxima leitura ser fresca
+                    load_data.clear()
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao salvar: {e}")
     
     st.markdown("---")
     st.subheader("3. Gerar Relatório em PDF")
 
-    # Obter o cabeçalho salvo ou usar um padrão
     config_df = load_data("Config")
     cabecalho_salvo = config_df[config_df['chave'] == 'cabecalho_pernoite_pdf']['valor'].iloc[0] if 'cabecalho_pernoite_pdf' in config_df['chave'].values else "Relação de Militares em Pernoite"
-
-    cabecalho_editado = st.text_area("Cabeçalho do PDF", value=cabecalho_salvo, key="cabecalho_pdf")
+    cabecalho_editado = st.text_area("Cabeçalho do PDF", value=cabecalho_salvo)
     
     if st.button("Salvar Cabeçalho Padrão"):
         supabase.table("Config").upsert({'chave': 'cabecalho_pernoite_pdf', 'valor': cabecalho_editado}).execute()
-        st.success("Cabeçalho padrão salvo com sucesso!")
-        load_data.clear()
+        st.success("Cabeçalho padrão salvo!"); load_data.clear()
 
-    # Preparar dados para o PDF a partir dos dados JÁ SALVOS na base de dados
-    # CORREÇÃO DO BUG: A lista para o PDF é gerada a partir dos IDs que foram confirmados como 'presente'
+    # Preparar dados para o PDF a partir dos dados já salvos
     alunos_para_pdf_df = alunos_df[alunos_df['id'].isin(alunos_presentes_ids)]
     lista_nomes_pdf = sorted(alunos_para_pdf_df['nome_guerra'].tolist())
 
     st.write(f"**Total de militares em pernoite (salvo no banco de dados):** {len(lista_nomes_pdf)}")
 
-    # O botão de gerar PDF agora funciona com base nos dados salvos, resolvendo o bug.
     if st.button("Gerar PDF", type="secondary"):
         if not lista_nomes_pdf:
             st.warning("Nenhum aluno em pernoite salvo para esta data.")
