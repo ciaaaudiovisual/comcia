@@ -1,4 +1,4 @@
-# controle_pernoite.py (v7 - Ordenação por número interno)
+# controle_pernoite.py (v8 - Correção na geração do PDF)
 
 import streamlit as st
 import pandas as pd
@@ -209,7 +209,7 @@ def show_controle_pernoite():
     
     st.write("") 
 
-    # CORREÇÃO: Ordena a lista de alunos pelo número interno
+    # Ordena a lista de alunos pelo número interno
     for _, aluno in alunos_filtrados_df.sort_values('numero_interno').iterrows():
         aluno_id_str = str(aluno['id'])
         tipo_str = f" ({aluno.get(COLUNA_TIPO_ALUNO, 'N/A')})"
@@ -312,8 +312,10 @@ def show_controle_pernoite():
                 textos_m={'esquerda': texto_esq_m_editado, 'direita': texto_dir_m_editado},
                 textos_q={'esquerda': texto_esq_q_editado, 'direita': texto_dir_q_editado}
             )
+            # CORREÇÃO: Passa os dados do PDF para o parâmetro 'data' e o nome do ficheiro para 'file_name'
             st.download_button(
                 label="✅ Baixar Relatório de Pernoite",
-                data=f"pernoite_{data_selecionada.strftime('%Y-%m-%d')}.pdf",
+                data=pdf_bytes,
+                file_name=f"pernoite_{data_selecionada.strftime('%Y-%m-%d')}.pdf",
                 mime="application/pdf"
             )
