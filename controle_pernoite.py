@@ -6,21 +6,18 @@ from datetime import datetime
 from database import load_data, init_supabase_client
 from io import BytesIO
 from fpdf import FPDF
+import math # Importado para cálculos de arredondamento
 
-# --- NOVA FUNÇÃO PARA GERAR PDF FORMATADO COMO TABELA ---
-def gerar_pdf_pernoite(data_selecionada, lista_numeros_internos):
+# --- NOVA FUNÇÃO PARA GERAR PDF (COM AS SUAS SOLICITAÇÕES) ---
+def gerar_pdf_pernoite(data_selecionada, alunos_df_sorted):
     class PDF(FPDF):
         def header(self):
-            # Título principal mesclado
-            self.set_font("Arial", 'B', 14)
+            self.set_font("Arial", 'B', 16)
             self.cell(0, 10, "RELAÇÃO DE MILITARES EM PERNOITE", 0, 1, 'C')
             self.set_font("Arial", '', 12)
             self.cell(0, 10, f"Data: {data_selecionada.strftime('%d/%m/%Y')}", 0, 1, 'C')
             self.ln(5)
-
-            # Cabeçalho da tabela "NUMERO INTERNO"
             self.set_font("Arial", 'B', 12)
-            # A largura 0 ocupa a página inteira, a borda 1 desenha a caixa
             self.cell(0, 10, "NÚMERO INTERNO", 1, 1, 'C')
 
         def footer(self):
@@ -30,37 +27,33 @@ def gerar_pdf_pernoite(data_selecionada, lista_numeros_internos):
 
     pdf = PDF('P', 'mm', 'A4')
     pdf.add_page()
-    pdf.set_font("Arial", '', 11)
+    # FONTE REDUZIDA para os números internos
+    pdf.set_font("Arial", '', 10) 
 
-    # Prepara os dados para a tabela
+    lista_numeros_internos = alunos_df_sorted['numero_interno'].tolist()
     total_militares = len(lista_numeros_internos)
     num_colunas = 5
-    # Força a tabela a ter exatamente 35 linhas
-    num_linhas = 35 
-    
-    # Organiza os números internos na estrutura de 35 linhas x 5 colunas
-    # A lógica de preenchimento é vertical (coluna por coluna)
-    tabela_dados = [['' for _ in range(num_colunas)] for _ in range(num_linhas)]
-    
-    idx_militar = 0
-    for c in range(num_colunas):
-        for r in range(num_linhas):
-            if idx_militar < total_militares:
-                tabela_dados[r][c] = str(lista_numeros_internos[idx_militar])
-                idx_militar += 1
 
-    # Calcula a largura das colunas
+    # CÁLCULO DINÂMICO DE LINHAS com 3 linhas extras
+    num_linhas = math.ceil(total_militares / num_colunas) + 3
+
     largura_pagina = pdf.w - 2 * pdf.l_margin
     largura_coluna = largura_pagina / num_colunas
+    altura_linha = 8
 
-    # Desenha a tabela com o grid
+    # PREENCHIMENTO HORIZONTAL
+    idx_militar = 0
     for r in range(num_linhas):
         for c in range(num_colunas):
-            # A borda '1' desenha o grid
-            pdf.cell(largura_coluna, 8, tabela_dados[r][c], 1, 0, 'C')
+            if idx_militar < total_militares:
+                numero = str(lista_numeros_internos[idx_militar])
+                idx_militar += 1
+            else:
+                numero = "" # Deixa a célula vazia se não houver mais militares
+            
+            pdf.cell(largura_coluna, altura_linha, numero, 1, 0, 'C')
         pdf.ln()
 
-    # Adiciona o quantitativo no final
     pdf.ln(5)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, f"Total de Militares em Pernoite: {total_militares}", 0, 1)
@@ -68,18 +61,16 @@ def gerar_pdf_pernoite(data_selecionada, lista_numeros_internos):
     return pdf.output(dest='S').encode('latin-1')
 
 
-# --- PÁGINA PRINCIPAL DO MÓDULO (REFEITA) ---
+# --- PÁGINA PRINCIPAL DO MÓDULO (COM PEQUENOS AJUSTES) ---
 def show_controle_pernoite():
     st.title("Controle de Pernoite")
     st.caption("Marque os alunos e, ao final, clique em 'Salvar Alterações' para gravar os dados.")
 
     supabase = init_supabase_client()
     
-    # Carregar dados
     alunos_df = load_data("Alunos")
     pernoite_df = load_data("pernoite")
 
-    # --- Interface de Seleção ---
     st.subheader("1. Selecione a Data e o Pelotão")
     col1, col2 = st.columns(2)
     with col1:
@@ -168,8 +159,7 @@ def show_controle_pernoite():
     
     st.markdown("---")
     st.subheader("3. Gerar Relatório em PDF")
-
-    # A geração do PDF agora usa o estado atual da tela (session_state)
+    
     ids_selecionados_na_tela = [
         aluno_id for aluno_id, marcado in st.session_state.pernoite_status.items() 
         if marcado and aluno_id in alunos_visiveis_ids
@@ -177,17 +167,17 @@ def show_controle_pernoite():
     
     alunos_para_pdf_df = alunos_filtrados_df[alunos_filtrados_df['id'].astype(str).isin(ids_selecionados_na_tela)]
     
-    # ALTERAÇÃO: Passar a lista de NÚMEROS INTERNOS para o PDF
-    lista_numeros_internos_pdf = sorted(alunos_para_pdf_df['numero_interno'].dropna().tolist())
+    # NOVA ORDENAÇÃO ALFANUMÉRICA por número interno
+    alunos_para_pdf_df_sorted = alunos_para_pdf_df.sort_values('numero_interno')
 
-    st.write(f"**Total de militares marcados para pernoite (nesta tela):** {len(lista_numeros_internos_pdf)}")
+    st.write(f"**Total de militares marcados para pernoite (nesta tela):** {len(alunos_para_pdf_df_sorted)}")
 
     if st.button("Gerar PDF", type="secondary"):
-        if not lista_numeros_internos_pdf:
+        if alunos_para_pdf_df_sorted.empty:
             st.warning("Nenhum aluno está marcado como 'pernoite' na tela.")
         else:
             # Chama a nova função de gerar PDF
-            pdf_bytes = gerar_pdf_pernoite(data_selecionada, lista_numeros_internos_pdf)
+            pdf_bytes = gerar_pdf_pernoite(data_selecionada, alunos_para_pdf_df_sorted)
             st.download_button(
                 label="✅ Baixar Relatório de Pernoite",
                 data=pdf_bytes,
