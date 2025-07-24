@@ -1,4 +1,4 @@
-# controle_pernoite.py (v4 - Separação de Alunos M e Q)
+# controle_pernoite.py (v5 - Separação M/Q baseada no 'numero_interno')
 
 import streamlit as st
 import pandas as pd
@@ -105,7 +105,7 @@ def gerar_pdf_pernoite(
 
     # Desenha a seção para Alunos M
     pdf.desenhar_corpo_tabela(
-        "NÚMERO INTERNO DE ALUNOS (M)",
+        "NÚMERO INTERNO DE ALUNOS (CAP)",
         textos_m['esquerda'],
         textos_m['direita'],
         alunos_m_df
@@ -113,7 +113,7 @@ def gerar_pdf_pernoite(
 
     # Desenha a seção para Alunos Q
     pdf.desenhar_corpo_tabela(
-        "NÚMERO INTERNO DE ALUNOS (Q)",
+        "NÚMERO INTERNO DE ALUNOS (QTPA)",
         textos_q['esquerda'],
         textos_q['direita'],
         alunos_q_df
@@ -132,12 +132,22 @@ def show_controle_pernoite():
     alunos_df = load_data("Alunos")
     pernoite_df = load_data("pernoite")
 
-    # AJUSTE IMPORTANTE: Verifique se a coluna 'tipo_aluno' existe.
-    # Se o nome da sua coluna for diferente, altere "tipo_aluno" aqui.
-    COLUNA_TIPO_ALUNO = "tipo_aluno"
-    if COLUNA_TIPO_ALUNO not in alunos_df.columns:
-        st.error(f"Erro Crítico: A coluna '{COLUNA_TIPO_ALUNO}' não foi encontrada na tabela 'Alunos'. A separação M/Q não pode ser feita.")
-        return
+    # --- CORREÇÃO: Cria a coluna 'tipo_aluno' dinamicamente ---
+    # Garante que a coluna 'numero_interno' seja do tipo string para a verificação
+    alunos_df['numero_interno'] = alunos_df['numero_interno'].astype(str)
+    
+    # Define uma função para aplicar a lógica de identificação
+    def identificar_tipo(numero):
+        if numero.strip().upper().startswith('M'):
+            return 'M'
+        elif numero.strip().upper().startswith('Q'):
+            return 'Q'
+        else:
+            return 'Outro' # Categoria para números que não se encaixam no padrão
+
+    # Aplica a função para criar a coluna 'tipo_aluno' no DataFrame
+    alunos_df['tipo_aluno'] = alunos_df['numero_interno'].apply(identificar_tipo)
+    COLUNA_TIPO_ALUNO = "tipo_aluno" # Mantém a variável para o resto do código
 
     st.subheader("1. Selecione a Data e o Pelotão")
     col1, col2 = st.columns(2)
@@ -217,31 +227,30 @@ def show_controle_pernoite():
     def get_config_value(key, default):
         return config_df[config_df['chave'] == key]['valor'].iloc[0] if key in config_df['chave'].values else default
 
-    # Carrega todos os textos personalizáveis
     cabecalho_salvo = get_config_value('cabecalho_pernoite_pdf', "Relação de Militares em Pernoite")
     rodape_salvo = get_config_value('rodape_pernoite_pdf', "Texto do rodapé padrão.")
     
-    texto_esq_m_salvo = get_config_value('texto_sup_esq_m_pdf', "Apresentação (Alunos M):")
-    texto_dir_m_salvo = get_config_value('texto_sup_dir_m_pdf', "Assinatura (Alunos M):")
-    texto_esq_q_salvo = get_config_value('texto_sup_esq_q_pdf', "Apresentação (Alunos Q):")
-    texto_dir_q_salvo = get_config_value('texto_sup_dir_q_pdf', "Assinatura (Alunos Q):")
+    texto_esq_m_salvo = get_config_value('texto_sup_esq_m_pdf', "Apresentação (Alunos CAP):")
+    texto_dir_m_salvo = get_config_value('texto_sup_dir_m_pdf', "Assinatura (Alunos CAP):")
+    texto_esq_q_salvo = get_config_value('texto_sup_esq_q_pdf', "Apresentação (Alunos QTPA):")
+    texto_dir_q_salvo = get_config_value('texto_sup_dir_q_pdf', "Assinatura (Alunos QTPA):")
 
     st.info("Personalize os textos que aparecerão no relatório em PDF.")
     cabecalho_editado = st.text_area("Texto do Cabeçalho Principal (Comum)", value=cabecalho_salvo, help="Use quebras de linha (Enter) para múltiplas linhas.")
     
-    st.markdown("##### Textos para Alunos M")
+    st.markdown("##### Textos para Alunos CAP (M)")
     col_m1, col_m2 = st.columns(2)
     with col_m1:
-        texto_esq_m_editado = st.text_input("Texto Superior Esquerdo (M)", value=texto_esq_m_salvo)
+        texto_esq_m_editado = st.text_input("Texto Superior Esquerdo (CAP)", value=texto_esq_m_salvo)
     with col_m2:
-        texto_dir_m_editado = st.text_input("Texto Superior Direito (M)", value=texto_dir_m_salvo)
+        texto_dir_m_editado = st.text_input("Texto Superior Direito (CAP)", value=texto_dir_m_salvo)
 
-    st.markdown("##### Textos para Alunos Q")
+    st.markdown("##### Textos para Alunos QTPA (Q)")
     col_q1, col_q2 = st.columns(2)
     with col_q1:
-        texto_esq_q_editado = st.text_input("Texto Superior Esquerdo (Q)", value=texto_esq_q_salvo)
+        texto_esq_q_editado = st.text_input("Texto Superior Esquerdo (QTPA)", value=texto_esq_q_salvo)
     with col_q2:
-        texto_dir_q_editado = st.text_input("Texto Superior Direito (Q)", value=texto_dir_q_salvo)
+        texto_dir_q_editado = st.text_input("Texto Superior Direito (QTPA)", value=texto_dir_q_salvo)
 
     rodape_editado = st.text_area("Texto do Rodapé (Comum)", value=rodape_salvo)
 
@@ -257,7 +266,6 @@ def show_controle_pernoite():
         supabase.table("Config").upsert(configs_para_salvar).execute()
         st.success("Textos padrão salvos com sucesso!"); load_data.clear()
 
-    # Filtra e separa os alunos por tipo
     ids_selecionados_na_tela = [
         aluno_id for aluno_id, marcado in st.session_state.pernoite_status.items() 
         if marcado and aluno_id in alunos_visiveis_ids
@@ -268,7 +276,7 @@ def show_controle_pernoite():
     alunos_m_df = alunos_para_pdf_df[alunos_para_pdf_df[COLUNA_TIPO_ALUNO] == 'M'].sort_values('numero_interno')
     alunos_q_df = alunos_para_pdf_df[alunos_para_pdf_df[COLUNA_TIPO_ALUNO] == 'Q'].sort_values('numero_interno')
 
-    st.write(f"**Total de militares marcados (M):** {len(alunos_m_df)} | **Total de militares marcados (Q):** {len(alunos_q_df)}")
+    st.write(f"**Total de militares marcados (CAP):** {len(alunos_m_df)} | **Total de militares marcados (QTPA):** {len(alunos_q_df)}")
 
     if st.button("Gerar PDF", type="secondary"):
         if alunos_para_pdf_df.empty:
