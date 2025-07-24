@@ -1,4 +1,4 @@
-# controle_pernoite.py (v6 - Correção de estado e filtros)
+# controle_pernoite.py (v7 - Ordenação por número interno)
 
 import streamlit as st
 import pandas as pd
@@ -102,7 +102,7 @@ def gerar_pdf_pernoite(
     pdf.multi_cell(0, 6, pdf.cabecalho_texto, 0, 'C')
     pdf.ln(10)
 
-    # CORREÇÃO: Usa um título genérico para ambas as tabelas
+    # Usa um título genérico para ambas as tabelas
     titulo_tabela = "NÚMERO INTERNO DE ALUNOS"
 
     # Desenha a seção para Alunos M (CAP)
@@ -134,7 +134,7 @@ def show_controle_pernoite():
     alunos_df = load_data("Alunos")
     pernoite_df = load_data("pernoite")
 
-    # CORREÇÃO: Remove o pelotão 'BAIXA' da lista de alunos
+    # Remove o pelotão 'BAIXA' da lista de alunos
     if 'pelotao' in alunos_df.columns:
         alunos_df = alunos_df[alunos_df['pelotao'].str.strip().str.upper() != 'BAIXA'].copy()
 
@@ -164,7 +164,6 @@ def show_controle_pernoite():
         )
     with col2:
         pelotoes = ["Todos"] + sorted(alunos_df['pelotao'].dropna().unique().tolist())
-        # CORREÇÃO: Remove o on_change para que o estado não seja limpo ao filtrar
         pelotao_selecionado = st.selectbox(
             "Selecione o Pelotão", 
             pelotoes, 
@@ -181,11 +180,9 @@ def show_controle_pernoite():
     st.markdown("---")
     st.subheader("2. Marque os Alunos em Pernoite")
 
-    # CORREÇÃO: Lógica de carregamento de estado aprimorada
     if 'pernoite_status' not in st.session_state:
         st.session_state.pernoite_status = {}
     
-    # Carrega o estado do banco de dados APENAS se a data mudar (flag 'carregado' não existe)
     if not st.session_state.get('pernoite_status_carregado'):
         if not pernoite_df.empty and data_selecionada:
             pernoite_df['data'] = pd.to_datetime(pernoite_df['data']).dt.date
@@ -194,7 +191,6 @@ def show_controle_pernoite():
         else:
             alunos_presentes_ids = []
         
-        # Itera sobre TODOS os alunos (não apenas os visíveis) para popular o estado inicial
         for aluno_id in alunos_df['id'].astype(str).tolist():
             st.session_state.pernoite_status[aluno_id] = aluno_id in alunos_presentes_ids
         
@@ -213,8 +209,8 @@ def show_controle_pernoite():
     
     st.write("") 
 
-    # Exibe os checkboxes para os alunos filtrados, lendo do estado global
-    for _, aluno in alunos_filtrados_df.sort_values('nome_guerra').iterrows():
+    # CORREÇÃO: Ordena a lista de alunos pelo número interno
+    for _, aluno in alunos_filtrados_df.sort_values('numero_interno').iterrows():
         aluno_id_str = str(aluno['id'])
         tipo_str = f" ({aluno.get(COLUNA_TIPO_ALUNO, 'N/A')})"
         st.session_state.pernoite_status[aluno_id_str] = st.checkbox(
@@ -225,8 +221,24 @@ def show_controle_pernoite():
 
     st.write("") 
     if st.button("Salvar Alterações", type="primary", use_container_width=True):
-        # ... (código de salvar permanece o mesmo)
-        pass
+        registos_para_salvar = []
+        for aluno_id, marcado in st.session_state.pernoite_status.items():
+            if aluno_id in alunos_df['id'].astype(str).tolist():
+                registos_para_salvar.append({
+                    'aluno_id': int(aluno_id),
+                    'data': data_selecionada.strftime('%Y-%m-%d'),
+                    'presente': marcado
+                })
+        
+        if registos_para_salvar:
+            try:
+                supabase.table("pernoite").upsert(registos_para_salvar, on_conflict='aluno_id,data').execute()
+                st.success("Alterações salvas com sucesso!")
+                load_data.clear()
+                st.session_state.pop('pernoite_status_carregado', None)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao salvar: {e}")
     
     st.markdown("---")
     st.subheader("3. Gerar Relatório em PDF")
@@ -264,8 +276,16 @@ def show_controle_pernoite():
     rodape_editado = st.text_area("Texto do Rodapé (Comum)", value=rodape_salvo)
 
     if st.button("Salvar Textos Padrão do Relatório"):
-        # ... (código de salvar textos padrão permanece o mesmo)
-        pass
+        configs_para_salvar = [
+            {'chave': 'cabecalho_pernoite_pdf', 'valor': cabecalho_editado},
+            {'chave': 'rodape_pernoite_pdf', 'valor': rodape_editado},
+            {'chave': 'texto_sup_esq_m_pdf', 'valor': texto_esq_m_editado},
+            {'chave': 'texto_sup_dir_m_pdf', 'valor': texto_dir_m_editado},
+            {'chave': 'texto_sup_esq_q_pdf', 'valor': texto_esq_q_editado},
+            {'chave': 'texto_sup_dir_q_pdf', 'valor': texto_dir_q_editado},
+        ]
+        supabase.table("Config").upsert(configs_para_salvar).execute()
+        st.success("Textos padrão salvos com sucesso!"); load_data.clear()
 
     # Filtra e separa os alunos por tipo para o PDF
     ids_selecionados_na_tela = [
@@ -294,7 +314,6 @@ def show_controle_pernoite():
             )
             st.download_button(
                 label="✅ Baixar Relatório de Pernoite",
-                data=pdf_bytes,
-                file_name=f"pernoite_{data_selecionada.strftime('%Y-%m-%d')}.pdf",
+                data=f"pernoite_{data_selecionada.strftime('%Y-%m-%d')}.pdf",
                 mime="application/pdf"
             )
