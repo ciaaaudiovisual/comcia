@@ -1,4 +1,4 @@
-# controle_pernoite.py
+# controle_pernoite.py (v2 - Layout do PDF Atualizado)
 
 import streamlit as st
 import pandas as pd
@@ -8,65 +8,96 @@ from io import BytesIO
 from fpdf import FPDF
 import math
 
-# --- FUNÇÃO PARA GERAR PDF (COM CABEÇALHO CORRIGIDO) ---
-def gerar_pdf_pernoite(cabecalho_principal, data_selecionada, alunos_df_sorted):
-    # Classe interna para controlar o cabeçalho
+# --- FUNÇÃO PARA GERAR PDF (COM O NOVO LAYOUT) ---
+def gerar_pdf_pernoite(
+    cabecalho_principal,
+    texto_esquerda,
+    texto_direita,
+    rodape_texto,
+    data_selecionada,
+    alunos_df_sorted
+):
+    """
+    Gera o PDF do relatório de pernoite com o novo layout personalizado.
+    """
+    # --- Classe PDF personalizada para controlar cabeçalho e rodapé ---
     class PDF(FPDF):
-        def __init__(self, cabecalho_texto):
+        def __init__(self, cabecalho_txt, txt_esq, txt_dir, rodape_txt):
             super().__init__()
-            # Armazena o cabeçalho personalizado
-            self.cabecalho_texto = cabecalho_texto
+            # Armazena os textos personalizados
+            self.cabecalho_texto = cabecalho_txt
+            self.texto_esquerda = txt_esq
+            self.texto_direita = txt_dir
+            self.rodape_texto = rodape_txt
 
         def header(self):
-            # 1. Usa o cabeçalho personalizado que foi passado
-            self.set_font("Arial", 'B', 16)
-            self.cell(0, 10, self.cabecalho_texto, 0, 1, 'C')
-            
-            # 2. Adiciona a data
+            # 1. Cabeçalho principal com quebra de linha
+            self.set_font("Arial", 'B', 12)
+            # O multi_cell permite que o texto quebre a linha automaticamente
+            self.multi_cell(0, 6, self.cabecalho_texto, 0, 'C')
+            self.ln(2)
+
+            # 2. Data da seleção
             self.set_font("Arial", '', 12)
             self.cell(0, 10, f"Data: {data_selecionada.strftime('%d/%m/%Y')}", 0, 1, 'C')
             self.ln(5)
 
-            # 3. Adiciona o cabeçalho fixo da tabela
+            # 3. Campos de texto personalizados (esquerda e direita)
+            y_antes = self.get_y()
+            self.cell(self.w / 2, 8, self.texto_esquerda, 0, 0, 'L')
+            self.set_y(y_antes) # Reposiciona o cursor para a mesma linha
+            self.cell(0, 8, self.texto_direita, 0, 1, 'R')
+            self.ln(5)
+
+            # 4. Cabeçalho da tabela
             self.set_font("Arial", 'B', 12)
-            self.cell(0, 10, "NÚMERO INTERNO", 1, 1, 'C')
+            self.cell(0, 10, "NÚMERO INTERNO DE ALUNOS", 1, 1, 'C')
 
         def footer(self):
+            # Posiciona o cursor para o rodapé (2 cm do fundo)
+            self.set_y(-20)
+            self.set_font('Arial', 'I', 10)
+            # Rodapé personalizado com quebra de linha
+            self.multi_cell(0, 5, self.rodape_texto, 0, 'C')
+            
+            # Número da página
             self.set_y(-15)
             self.set_font('Arial', 'I', 8)
             self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
-    # Passa o cabeçalho principal ao criar a instância do PDF
-    pdf = PDF(cabecalho_principal)
+    # --- Lógica de Geração do PDF ---
+    pdf = PDF(cabecalho_principal, texto_esquerda, texto_direita, rodape_texto)
     pdf.add_page()
     pdf.set_font("Arial", '', 10) 
 
     lista_numeros_internos = alunos_df_sorted['numero_interno'].tolist()
     total_militares = len(lista_numeros_internos)
-    num_colunas = 5
-    num_linhas = math.ceil(total_militares / num_colunas) + 3
 
+    # Definição do novo layout da tabela (4 pares de colunas por linha)
+    num_pares_por_linha = 4
     largura_pagina = pdf.w - 2 * pdf.l_margin
-    largura_coluna = largura_pagina / num_colunas
+    
+    # Define a largura das colunas (20% para o N° de ordem, 80% para o N° Interno)
+    largura_par = largura_pagina / num_pares_por_linha
+    largura_col_ordem = largura_par * 0.20
+    largura_col_valor = largura_par * 0.80
     altura_linha = 8
 
-    idx_militar = 0
-    for r in range(num_linhas):
-        for c in range(num_colunas):
-            numero = str(lista_numeros_internos[idx_militar]) if idx_militar < total_militares else ""
-            pdf.cell(largura_coluna, altura_linha, numero, 1, 0, 'C')
-            if idx_militar < total_militares:
-                idx_militar += 1
-        pdf.ln()
+    for idx, numero_interno in enumerate(lista_numeros_internos):
+        # Inicia uma nova linha quando necessário
+        if idx % num_pares_por_linha == 0 and idx > 0:
+            pdf.ln()
 
-    pdf.ln(5)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, f"Total de Militares em Pernoite: {total_militares}", 0, 1)
+        # Adiciona a célula do número de ordem
+        pdf.cell(largura_col_ordem, altura_linha, str(idx + 1), 1, 0, 'C')
+        # Adiciona a célula do número interno do aluno
+        pdf.cell(largura_col_valor, altura_linha, str(numero_interno), 1, 0, 'C')
 
+    # Codifica a saída do PDF para download
     return pdf.output(dest='S').encode('latin-1')
 
 
-# --- PÁGINA PRINCIPAL DO MÓDULO (COM A LÓGICA DO CABEÇALHO REINTEGRADA) ---
+# --- PÁGINA PRINCIPAL DO MÓDULO (COM NOVOS CAMPOS) ---
 def show_controle_pernoite():
     st.title("Controle de Pernoite")
     st.caption("Marque os alunos e, ao final, clique em 'Salvar Alterações' para gravar os dados.")
@@ -146,7 +177,7 @@ def show_controle_pernoite():
             registos_para_salvar = []
             for aluno_id in alunos_visiveis_ids:
                 registos_para_salvar.append({
-                    'aluno_id': aluno_id,
+                    'aluno_id': int(aluno_id),
                     'data': data_selecionada.strftime('%Y-%m-%d'),
                     'presente': st.session_state.pernoite_status.get(aluno_id, False)
                 })
@@ -163,16 +194,40 @@ def show_controle_pernoite():
     
     st.markdown("---")
     st.subheader("3. Gerar Relatório em PDF")
-    
-    # LÓGICA DO CABEÇALHO REINTEGRADA
-    config_df = load_data("Config")
-    cabecalho_salvo = config_df[config_df['chave'] == 'cabecalho_pernoite_pdf']['valor'].iloc[0] if 'cabecalho_pernoite_pdf' in config_df['chave'].values else "Relação de Militares em Pernoite"
-    cabecalho_editado = st.text_area("Texto do Cabeçalho Principal do PDF", value=cabecalho_salvo)
-    
-    if st.button("Salvar Cabeçalho Padrão"):
-        supabase.table("Config").upsert({'chave': 'cabecalho_pernoite_pdf', 'valor': cabecalho_editado}).execute()
-        st.success("Cabeçalho padrão salvo!"); load_data.clear()
 
+    # --- NOVOS CAMPOS DE TEXTO PARA O PDF ---
+    config_df = load_data("Config")
+    
+    def get_config_value(key, default):
+        return config_df[config_df['chave'] == key]['valor'].iloc[0] if key in config_df['chave'].values else default
+
+    cabecalho_salvo = get_config_value('cabecalho_pernoite_pdf', "Relação de Militares em Pernoite")
+    texto_esq_salvo = get_config_value('texto_sup_esq_pdf', "Apresentação:")
+    texto_dir_salvo = get_config_value('texto_sup_dir_pdf', "Assinatura do Of de Dia:")
+    rodape_salvo = get_config_value('rodape_pernoite_pdf', "Texto do rodapé padrão.")
+
+    st.info("Personalize os textos que aparecerão no relatório em PDF.")
+    cabecalho_editado = st.text_area("Texto do Cabeçalho Principal", value=cabecalho_salvo, help="Use quebras de linha (Enter) para múltiplas linhas.")
+    
+    col_txt1, col_txt2 = st.columns(2)
+    with col_txt1:
+        texto_esq_editado = st.text_input("Texto Superior Esquerdo", value=texto_esq_salvo)
+    with col_txt2:
+        texto_dir_editado = st.text_input("Texto Superior Direito", value=texto_dir_salvo)
+    
+    rodape_editado = st.text_area("Texto do Rodapé", value=rodape_salvo)
+
+    if st.button("Salvar Textos Padrão do Relatório"):
+        configs_para_salvar = [
+            {'chave': 'cabecalho_pernoite_pdf', 'valor': cabecalho_editado},
+            {'chave': 'texto_sup_esq_pdf', 'valor': texto_esq_editado},
+            {'chave': 'texto_sup_dir_pdf', 'valor': texto_dir_editado},
+            {'chave': 'rodape_pernoite_pdf', 'valor': rodape_editado}
+        ]
+        supabase.table("Config").upsert(configs_para_salvar).execute()
+        st.success("Textos padrão salvos com sucesso!"); load_data.clear()
+
+    # Filtra os alunos marcados para incluir no PDF
     ids_selecionados_na_tela = [
         aluno_id for aluno_id, marcado in st.session_state.pernoite_status.items() 
         if marcado and aluno_id in alunos_visiveis_ids
@@ -187,8 +242,15 @@ def show_controle_pernoite():
         if alunos_para_pdf_df_sorted.empty:
             st.warning("Nenhum aluno está marcado como 'pernoite' na tela.")
         else:
-            # Passa o cabeçalho editado para a função
-            pdf_bytes = gerar_pdf_pernoite(cabecalho_editado, data_selecionada, alunos_para_pdf_df_sorted)
+            # Passa todos os textos personalizados para a função de geração de PDF
+            pdf_bytes = gerar_pdf_pernoite(
+                cabecalho_principal=cabecalho_editado,
+                texto_esquerda=texto_esq_editado,
+                texto_direita=texto_dir_editado,
+                rodape_texto=rodape_editado,
+                data_selecionada=data_selecionada,
+                alunos_df_sorted=alunos_para_pdf_df_sorted
+            )
             st.download_button(
                 label="✅ Baixar Relatório de Pernoite",
                 data=pdf_bytes,
