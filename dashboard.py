@@ -60,7 +60,28 @@ def display_pending_items():
         st.divider()
 
 # --- PÁGINA PRINCIPAL DO DASHBOARD ---
+def load_dashboard_data():
+    """Carrega todos os dados necessários para o dashboard e os armazena no session_state."""
+    if 'dashboard_data_loaded' not in st.session_state:
+        st.session_state.alunos_df = load_data("Alunos")
+        st.session_state.acoes_df = load_data("Acoes")
+        st.session_state.tipos_acao_df = load_data("Tipos_Acao")
+        st.session_state.config_df = load_data("Config")
+        st.session_state.ordens_df = load_data("Ordens_Diarias")
+        st.session_state.tarefas_df = load_data("Tarefas")
+        st.session_state.dashboard_data_loaded = True
+
+# --- PÁGINA PRINCIPAL DO DASHBOARD (MODIFICADA) ---
 def show_dashboard():
+    # Garante que os dados são carregados apenas uma vez por sessão
+    load_dashboard_data()
+
+    # Pega os dados do session_state em vez de chamar load_data repetidamente
+    alunos_df = st.session_state.alunos_df
+    acoes_df = st.session_state.acoes_df
+    tipos_acao_df = st.session_state.tipos_acao_df
+    config_df = st.session_state.config_df
+
     user_display_name = st.session_state.get('full_name', st.session_state.get('username', ''))
     st.title(f"Dashboard - Bem-vindo(a), {user_display_name}!")
     
@@ -70,11 +91,6 @@ def show_dashboard():
     
     if 'scanner_ativo' not in st.session_state: st.session_state.scanner_ativo = False
     if 'alunos_escaneados_df' not in st.session_state: st.session_state.alunos_escaneados_df = pd.DataFrame()
-
-    alunos_df = load_data("Alunos")
-    acoes_df = load_data("Acoes")
-    tipos_acao_df = load_data("Tipos_Acao")
-    config_df = load_data("Config")
 
     acoes_com_pontos_df = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df) if not acoes_df.empty and not tipos_acao_df.empty else pd.DataFrame()
 
@@ -135,11 +151,15 @@ def show_dashboard():
                             novas_acoes = [{'aluno_id': str(aluno_id), 'tipo_acao_id': str(tipo_info['id']), 'tipo': tipo_info['nome'], 'descricao': descricao, 'data': datetime.now().strftime('%Y-%m-%d'), 'usuario': st.session_state.username, 'status': 'Pendente', 'lancado_faia': False} for aluno_id in ids_alunos]
                             if novas_acoes:
                                 supabase.table("Acoes").insert(novas_acoes).execute()
-                                st.success(f"Ação registrada para {len(novas_acoes)} aluno(s)!"); st.session_state.alunos_escaneados_df = pd.DataFrame(); load_data.clear(); st.rerun()
+                                st.success(f"Ação registrada para {len(novas_acoes)} aluno(s)!")
+                                # Limpa os dados para forçar recarregamento na próxima vez
+                                del st.session_state.dashboard_data_loaded
+                                st.session_state.alunos_escaneados_df = pd.DataFrame()
+                                load_data.clear() 
+                                st.rerun()
                         except Exception as e:
                             st.error(f"Falha ao salvar a(s) ação(ões): {e}")
     st.divider()
-
     if alunos_df.empty or acoes_com_pontos_df.empty:
         st.info("Registre alunos e ações para visualizar os painéis de dados.")
     else:
