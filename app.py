@@ -15,6 +15,7 @@ from revisao_geral import show_revisao_geral
 from geracao_documentos import show_geracao_documentos
 from controle_pernoite import show_controle_pernoite
 from previa_rancho import show_previa_rancho
+from auxilio_transporte import show_auxilio_transporte
 
 
 if not check_authentication():
