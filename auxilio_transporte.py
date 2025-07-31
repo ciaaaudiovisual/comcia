@@ -86,25 +86,14 @@ def lancamento_individual_tab(supabase):
             c3.number_input(f"Tarifa {i} (R$) ", min_value=0.0, step=0.01, format="%.2f", value=float(dados_transporte_atuais.get(f'volta_{i}_tarifa', 0.0)), key=f'volta_{i}_tarifa_ind')
 
         if st.form_submit_button("Salvar Dados para este Aluno", type="primary"):
-            # --- CORREÇÃO: Converte os tipos de dados para o formato padrão do Python ---
-            dados_para_salvar = {
-                "aluno_id": int(aluno_atual['id']), # Converte de int64 para int
-                "dias_uteis": int(st.session_state.dias_uteis_ind), # Garante que é int
-                "endereco": st.session_state.endereco_ind, 
-                "bairro": st.session_state.bairro_ind,
-                "cidade": st.session_state.cidade_ind, 
-                "cep": st.session_state.cep_ind
-            }
+            dados_para_salvar = {"aluno_id": int(aluno_atual['id']), "dias_uteis": int(st.session_state.dias_uteis_ind),
+                                 "endereco": st.session_state.endereco_ind, "bairro": st.session_state.bairro_ind,
+                                 "cidade": st.session_state.cidade_ind, "cep": st.session_state.cep_ind}
             for i in range(1, 5):
                 dados_para_salvar.update({
-                    f'ida_{i}_empresa': st.session_state[f'ida_{i}_empresa_ind'], 
-                    f'ida_{i}_linha': st.session_state[f'ida_{i}_linha_ind'], 
-                    f'ida_{i}_tarifa': float(st.session_state[f'ida_{i}_tarifa_ind']), # Garante que é float
-                    f'volta_{i}_empresa': st.session_state[f'volta_{i}_empresa_ind'], 
-                    f'volta_{i}_linha': st.session_state[f'volta_{i}_linha_ind'], 
-                    f'volta_{i}_tarifa': float(st.session_state[f'volta_{i}_tarifa_ind']) # Garante que é float
+                    f'ida_{i}_empresa': st.session_state[f'ida_{i}_empresa_ind'], f'ida_{i}_linha': st.session_state[f'ida_{i}_linha_ind'], f'ida_{i}_tarifa': float(st.session_state[f'ida_{i}_tarifa_ind']),
+                    f'volta_{i}_empresa': st.session_state[f'volta_{i}_empresa_ind'], f'volta_{i}_linha': st.session_state[f'volta_{i}_linha_ind'], f'volta_{i}_tarifa': float(st.session_state[f'volta_{i}_tarifa_ind'])
                 })
-            # --- FIM DA CORREÇÃO ---
             try:
                 supabase.table("auxilio_transporte").upsert(dados_para_salvar, on_conflict='aluno_id').execute()
                 st.success("Dados de transporte salvos com sucesso!")
@@ -170,11 +159,9 @@ def gestao_decat_tab(supabase):
     if st.button("Salvar Alterações na Tabela"):
         with st.spinner("Salvando..."):
             try:
-                # Associa os dados editados de volta ao aluno_id usando o numero_interno como chave
                 edited_df_com_id = pd.merge(edited_df, alunos_df[['numero_interno', 'id']], on='numero_interno', how='left')
                 edited_df_com_id.rename(columns={'id': 'aluno_id'}, inplace=True)
                 
-                # Remove colunas que não pertencem à tabela de transporte antes de salvar
                 colunas_para_remover = ['numero_interno', 'nome_guerra']
                 records_to_upsert = edited_df_com_id.drop(columns=colunas_para_remover).to_dict(orient='records')
 
@@ -203,28 +190,19 @@ def importacao_massa_tab(supabase):
         try:
             df_import = pd.read_csv(uploaded_file, delimiter=';')
 
-            # Mapeamento robusto dos nomes de coluna do seu CSV para a base de dados
             column_mapping = {
                 'NÚMERO INTERNO (EX. Q-01-105 OU M-01-308)': 'numero_interno',
                 'ENDEREÇO DOMICILIAR (EXATAMENTE IGUAL AO COMPROVANTE DE RESIDÊNCIA)': 'endereco',
-                'BAIRRO': 'bairro',
-                'CIDADE': 'cidade',
-                'CEP': 'cep',
+                'BAIRRO': 'bairro', 'CIDADE': 'cidade', 'CEP': 'cep',
                 'QUANTIDADE DE DIAS (4 OU 22)': 'dias_uteis',
                 'DESPESA DIÁRIA (VALOR GASTO POR DIA, IDA E VOLTA)': 'despesa_diaria_informada',
-                'ANO DO CURSO': 'ano_do_curso',
-                'DEPARTAMENTO': 'departamento'
+                'ANO DO CURSO': 'ano_do_curso', 'DEPARTAMENTO': 'departamento'
             }
-            
-            # Mapeamento dinâmico para itinerários, lidando com colunas duplicadas
             itinerario_cols = [col for col in df_import.columns if 'TRAJETO' in col or 'EMPRESA' in col or 'TARIFA' in col]
-            
-            # Ida (primeiras 4 ocorrências de cada tipo)
             for i in range(4):
                 column_mapping[itinerario_cols[i*3 + 0]] = f'ida_{i+1}_linha'
                 column_mapping[itinerario_cols[i*3 + 1]] = f'ida_{i+1}_empresa'
                 column_mapping[itinerario_cols[i*3 + 2]] = f'ida_{i+1}_tarifa'
-            # Volta (as 4 ocorrências seguintes)
             for i in range(4):
                 column_mapping[itinerario_cols[12 + i*3 + 0]] = f'volta_{i+1}_linha'
                 column_mapping[itinerario_cols[12 + i*3 + 1]] = f'volta_{i+1}_empresa'
@@ -243,10 +221,8 @@ def importacao_massa_tab(supabase):
             else:
                 df_to_upsert.rename(columns={'id': 'aluno_id'}, inplace=True)
                 
-                # Pega a lista de colunas da tabela de destino para garantir a correspondência
                 response = supabase.table('auxilio_transporte').select('*', head=True).execute()
                 colunas_db = list(response.data[0].keys()) if response.data else []
-
                 df_final = df_to_upsert[[col for col in df_to_upsert.columns if col in colunas_db]]
 
                 for col in df_final.columns:
@@ -265,7 +241,6 @@ def importacao_massa_tab(supabase):
                         load_data.clear()
         except Exception as e:
             st.error(f"Erro ao processar o ficheiro: {e}")
-
 
 # --- Função Principal da Página ---
 def show_auxilio_transporte():
