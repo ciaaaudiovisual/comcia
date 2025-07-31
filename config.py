@@ -21,9 +21,9 @@ FEATURES_LIST = [
     ('pode_ver_conceito_final', 'Pode Visualizar o Conceito Final do Aluno', 'admin,supervisor,comcia'),
     ('pode_editar_lancamento_faia', 'Pode Editar Lançamentos na Fila', 'admin,supervisor'),
     ('acesso_pagina_revisao_geral', 'Acesso à Página de Revisão Geral', 'admin'),
-    ('acesso_pagina_geracao_documentos', 'Acesso à Página de Geração de Documentos', 'admin'),
-    # --- CORREÇÃO: A vírgula foi adicionada na linha acima ---
+    ('acesso_pagina_geracao_documentos', 'Acesso à Página de Geração de Documentos', 'admin,supervisor,comcia'),
     ('acesso_pagina_rancho_pernoite', 'Acesso aos Relatórios de Rancho', 'admin,comcia,rancho_viewer'), 
+    ('acesso_pagina_auxilio_transporte', 'Acesso à Página de Auxílio Transporte', 'admin'),
 ]
 
 # ==============================================================================
