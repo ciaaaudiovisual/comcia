@@ -7,26 +7,25 @@ from io import BytesIO
 # --- Funções de Apoio ---
 
 def create_excel_template():
-    """Cria um modelo Excel em memória para o usuário baixar."""
+    """Cria um modelo Excel em memória para o usuário baixar, seguindo a ordem do CSV."""
     template_data = {
-        'numero_interno': ['M-1-101'],
-        'dias_uteis': [22],
-        'ida_1_empresa': ['Exemplo'], 'ida_1_linha': ['100'], 'ida_1_tarifa': [4.50],
-        'ida_2_empresa': [''], 'ida_2_linha': [''], 'ida_2_tarifa': [0.00],
-        'ida_3_empresa': [''], 'ida_3_linha': [''], 'ida_3_tarifa': [0.00],
-        'ida_4_empresa': [''], 'ida_4_linha': [''], 'ida_4_tarifa': [0.00],
-        'volta_1_empresa': ['Exemplo'], 'volta_1_linha': ['100'], 'volta_1_tarifa': [4.50],
-        'volta_2_empresa': [''], 'volta_2_linha': [''], 'volta_2_tarifa': [0.00],
-        'volta_3_empresa': [''], 'volta_3_linha': [''], 'volta_3_tarifa': [0.00],
-        'volta_4_empresa': [''], 'volta_4_linha': [''], 'volta_4_tarifa': [0.00],
-        'texto_encarregado': ['Texto padrão.'],
-        'endereco': ['Rua Exemplo, 123'],
-        'bairro': ['Bairro Exemplo'],
-        'cidade': ['Cidade Exemplo'],
-        'cep': ['12345-678'],
-        'despesa_diaria_informada': [9.00],
-        'ano_do_curso': ['2025'],
-        'departamento': ['Exemplo']
+        'NÚMERO INTERNO (EX. Q-01-105 OU M-01-308)': ['M-1-101'],
+        'ENDEREÇO DOMICILIAR (EXATAMENTE IGUAL AO COMPROVANTE DE RESIDÊNCIA)': ['Rua Exemplo, 123'],
+        'BAIRRO': ['Bairro Exemplo'],
+        'CIDADE': ['Cidade Exemplo'],
+        'CEP': ['12345-678'],
+        'QUANTIDADE DE DIAS (4 OU 22)': [22],
+        'DESPESA DIÁRIA (VALOR GASTO POR DIA, IDA E VOLTA)': [9.00],
+        'ANO DO CURSO': ['2025'],
+        'DEPARTAMENTO': ['Exemplo'],
+        '1º TRAJETO': ['100'], '1ª EMPRESA': ['Empresa Exemplo'], '1ª TARIFA': [4.50],
+        '2º TRAJETO': [''], '2ª EMPRESA': [''], '2ª TARIFA': [0.00],
+        '3º TRAJETO': [''], '3ª EMPRESA': [''], '3ª TARIFA': [0.00],
+        '4º TRAJETO': [''], '4ª EMPRESA': [''], '4ª TARIFA': [0.00],
+        '1º TRAJETO (VOLTA)': ['100'], '1ª EMPRESA (VOLTA)': ['Empresa Exemplo'], '1ª TARIFA (VOLTA)': [4.50],
+        '2º TRAJETO (VOLTA)': [''], '2ª EMPRESA (VOLTA)': [''], '2ª TARIFA (VOLTA)': [0.00],
+        '3º TRAJETO (VOLTA)': [''], '3ª EMPRESA (VOLTA)': [''], '3ª TARIFA (VOLTA)': [0.00],
+        '4º TRAJETO (VOLTA)': [''], '4ª EMPRESA (VOLTA)': [''], '4ª TARIFA (VOLTA)': [0.00],
     }
     df = pd.DataFrame(template_data)
     output = BytesIO()
@@ -58,14 +57,14 @@ def gestao_soldos_tab(supabase):
 
 def gestao_decat_tab(supabase):
     """Renderiza a aba principal para visualização e edição dos dados do DeCAT."""
-    st.subheader("Dados de Transporte Cadastrados")
-    st.info("Visualize e edite os dados de transporte dos alunos que solicitaram o benefício.")
+    st.subheader("Dados de Transporte Cadastrados (Menu de Atualização)")
+    st.info("Visualize e edite os dados de transporte dos alunos que solicitaram o benefício. As alterações podem ser salvas no final da tabela.")
 
     alunos_df = load_data("Alunos")
     transporte_df = load_data("auxilio_transporte")
 
     if transporte_df.empty:
-        st.warning("Nenhum dado de auxílio transporte cadastrado. Use a aba 'Importação em Massa'.")
+        st.warning("Nenhum dado de auxílio transporte cadastrado. Utilize a aba 'Importação em Massa'.")
         return
 
     transporte_df['aluno_id'] = transporte_df['aluno_id'].astype(str)
@@ -94,9 +93,11 @@ def gestao_decat_tab(supabase):
     if st.button("Salvar Alterações na Tabela"):
         with st.spinner("Salvando..."):
             try:
+                # Associa os dados editados de volta ao aluno_id usando o numero_interno como chave
                 edited_df_com_id = pd.merge(edited_df, alunos_df[['numero_interno', 'id']], on='numero_interno', how='left')
                 edited_df_com_id.rename(columns={'id': 'aluno_id'}, inplace=True)
                 
+                # Remove colunas que não pertencem à tabela de transporte antes de salvar
                 colunas_para_remover = ['numero_interno', 'nome_guerra']
                 records_to_upsert = edited_df_com_id.drop(columns=colunas_para_remover).to_dict(orient='records')
 
@@ -116,7 +117,7 @@ def importacao_massa_tab(supabase):
         label="Baixar Modelo de Preenchimento (.xlsx)",
         data=excel_modelo_bytes,
         file_name="modelo_auxilio_transporte.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        mime="application/vnd.openxmlformats-officedocument-spreadsheetml.sheet"
     )
     
     uploaded_file = st.file_uploader("Escolha o ficheiro CSV exportado do Google Forms", type=["csv"])
@@ -165,7 +166,10 @@ def importacao_massa_tab(supabase):
             else:
                 df_to_upsert.rename(columns={'id': 'aluno_id'}, inplace=True)
                 
-                colunas_db = [col.name for col in supabase.table('auxilio_transporte').select('*').execute().data[0].keys()] if supabase.table('auxilio_transporte').select('*').execute().data else []
+                # Pega a lista de colunas da tabela de destino para garantir a correspondência
+                response = supabase.table('auxilio_transporte').select('*', head=True).execute()
+                colunas_db = list(response.data[0].keys()) if response.data else []
+
                 df_final = df_to_upsert[[col for col in df_to_upsert.columns if col in colunas_db]]
 
                 for col in df_final.columns:
