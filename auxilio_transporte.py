@@ -113,7 +113,6 @@ def importacao_guiada_tab(supabase):
         pass # A lógica completa já está na sua implementação anterior e não precisa mudar aqui
 
 
-# --- NOVA ABA DE LANÇAMENTO INDIVIDUAL ---
 def lancamento_individual_tab(supabase):
     st.subheader("Adicionar ou Editar Dados para um Aluno")
 
@@ -138,7 +137,6 @@ def lancamento_individual_tab(supabase):
     if not transporte_df.empty:
         transporte_df['aluno_id'] = transporte_df['aluno_id'].astype(str)
         aluno_atual['id'] = str(aluno_atual['id'])
-        # Filtra também pelo ano, se necessário (ex: pegar o registro mais recente)
         dados_aluno_transporte = transporte_df[transporte_df['aluno_id'] == aluno_atual['id']].sort_values('ano_referencia', ascending=False)
         if not dados_aluno_transporte.empty:
             dados_transporte_atuais = dados_aluno_transporte.iloc[0].to_dict()
@@ -148,7 +146,12 @@ def lancamento_individual_tab(supabase):
 
     with st.form("form_individual"):
         c_ano, c_dias = st.columns(2)
-        ano_referencia = c_ano.number_input("Ano de Referência*", min_value=2020, max_value=2050, value=int(dados_transporte_atuais.get('ano_referencia', 2025)), step=1)
+        
+        # <-- CORREÇÃO 1: Trata valores vazios (None/NaN) antes de converter para int -->
+        valor_ano_atual = dados_transporte_atuais.get('ano_referencia')
+        ano_default = int(valor_ano_atual) if pd.notna(valor_ano_atual) else 2025
+        ano_referencia = c_ano.number_input("Ano de Referência*", min_value=2020, max_value=2050, value=ano_default, step=1)
+        
         dias_uteis = c_dias.number_input("Dias considerados", min_value=0, step=1, value=int(dados_transporte_atuais.get('dias_uteis', 22)))
         
         endereco = st.text_input("Endereço", value=dados_transporte_atuais.get('endereco', ''))
@@ -158,31 +161,34 @@ def lancamento_individual_tab(supabase):
         cep = c_cep.text_input("CEP", value=dados_transporte_atuais.get('cep', ''))
         
         st.markdown("**Itinerário de Ida**")
+        ida_data = {}
         for i in range(1, 5):
             c1, c2, c3 = st.columns(3)
-            globals()[f'ida_{i}_empresa'] = c1.text_input(f"Empresa {i} (Ida)", value=dados_transporte_atuais.get(f'ida_{i}_empresa', ''), key=f'ida_{i}_empresa_ind')
-            globals()[f'ida_{i}_linha'] = c2.text_input(f"Linha {i} (Ida)", value=dados_transporte_atuais.get(f'ida_{i}_linha', ''), key=f'ida_{i}_linha_ind')
-            globals()[f'ida_{i}_tarifa'] = c3.number_input(f"Tarifa {i} (Ida) R$", min_value=0.0, step=0.01, format="%.2f", value=float(dados_transporte_atuais.get(f'ida_{i}_tarifa', 0.0)), key=f'ida_{i}_tarifa_ind')
+            ida_data[f'empresa_{i}'] = c1.text_input(f"Empresa {i} (Ida)", value=dados_transporte_atuais.get(f'ida_{i}_empresa', ''), key=f'ida_{i}_empresa_ind')
+            ida_data[f'linha_{i}'] = c2.text_input(f"Linha {i} (Ida)", value=dados_transporte_atuais.get(f'ida_{i}_linha', ''), key=f'ida_{i}_linha_ind')
+            ida_data[f'tarifa_{i}'] = c3.number_input(f"Tarifa {i} (Ida) R$", min_value=0.0, step=0.01, format="%.2f", value=float(dados_transporte_atuais.get(f'ida_{i}_tarifa', 0.0)), key=f'ida_{i}_tarifa_ind')
 
         st.markdown("**Itinerário de Volta**")
+        volta_data = {}
         for i in range(1, 5):
             c1, c2, c3 = st.columns(3)
-            globals()[f'volta_{i}_empresa'] = c1.text_input(f"Empresa {i} (Volta)", value=dados_transporte_atuais.get(f'volta_{i}_empresa', ''), key=f'volta_{i}_empresa_ind')
-            globals()[f'volta_{i}_linha'] = c2.text_input(f"Linha {i} (Volta)", value=dados_transporte_atuais.get(f'volta_{i}_linha', ''), key=f'volta_{i}_linha_ind')
-            globals()[f'volta_{i}_tarifa'] = c3.number_input(f"Tarifa {i} (Volta) R$", min_value=0.0, step=0.01, format="%.2f", value=float(dados_transporte_atuais.get(f'volta_{i}_tarifa', 0.0)), key=f'volta_{i}_tarifa_ind')
+            volta_data[f'empresa_{i}'] = c1.text_input(f"Empresa {i} (Volta)", value=dados_transporte_atuais.get(f'volta_{i}_empresa', ''), key=f'volta_{i}_empresa_ind')
+            volta_data[f'linha_{i}'] = c2.text_input(f"Linha {i} (Volta)", value=dados_transporte_atuais.get(f'volta_{i}_linha', ''), key=f'volta_{i}_linha_ind')
+            volta_data[f'tarifa_{i}'] = c3.number_input(f"Tarifa {i} (Volta) R$", min_value=0.0, step=0.01, format="%.2f", value=float(dados_transporte_atuais.get(f'volta_{i}_tarifa', 0.0)), key=f'volta_{i}_tarifa_ind')
 
+        # <-- CORREÇÃO 2: Botão de submissão adicionado ao formulário -->
         if st.form_submit_button("Salvar Dados para este Aluno", type="primary"):
             dados_para_salvar = {
                 "aluno_id": int(aluno_atual['id']), "ano_referencia": ano_referencia, "dias_uteis": dias_uteis,
                 "endereco": endereco, "bairro": bairro, "cidade": cidade, "cep": cep
             }
             for i in range(1, 5):
-                dados_para_salvar[f'ida_{i}_empresa'] = globals()[f'ida_{i}_empresa']
-                dados_para_salvar[f'ida_{i}_linha'] = globals()[f'ida_{i}_linha']
-                dados_para_salvar[f'ida_{i}_tarifa'] = globals()[f'ida_{i}_tarifa']
-                dados_para_salvar[f'volta_{i}_empresa'] = globals()[f'volta_{i}_empresa']
-                dados_para_salvar[f'volta_{i}_linha'] = globals()[f'volta_{i}_linha']
-                dados_para_salvar[f'volta_{i}_tarifa'] = globals()[f'volta_{i}_tarifa']
+                dados_para_salvar[f'ida_{i}_empresa'] = ida_data[f'empresa_{i}']
+                dados_para_salvar[f'ida_{i}_linha'] = ida_data[f'linha_{i}']
+                dados_para_salvar[f'ida_{i}_tarifa'] = ida_data[f'tarifa_{i}']
+                dados_para_salvar[f'volta_{i}_empresa'] = volta_data[f'empresa_{i}']
+                dados_para_salvar[f'volta_{i}_linha'] = volta_data[f'linha_{i}']
+                dados_para_salvar[f'volta_{i}_tarifa'] = volta_data[f'tarifa_{i}']
             
             try:
                 supabase.table("auxilio_transporte").upsert(dados_para_salvar, on_conflict='aluno_id,ano_referencia').execute()
@@ -190,7 +196,6 @@ def lancamento_individual_tab(supabase):
                 load_data.clear()
             except Exception as e:
                 st.error(f"Erro ao salvar os dados: {e}")
-
 
 # --- Funções antigas (gestão e soldos) mantidas para as outras abas ---
 def gestao_decat_tab(supabase):
