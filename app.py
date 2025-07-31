@@ -72,6 +72,9 @@ if check_permission('acesso_pagina_pernoite'):
 if check_permission('acesso_pagina_rancho_pernoite'):
     menu_options["Prévia de Rancho (Sheets)"] = show_previa_rancho
 
+if check_permission('acesso_pagina_auxilio_transporte'):
+    menu_options["Auxílio Transporte"] = show_auxilio_transporte
+
 selected_page = st.sidebar.radio(
     "Ir para:", 
     list(menu_options.keys()), 
