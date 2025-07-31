@@ -19,7 +19,14 @@ def create_excel_template():
         'volta_2_empresa': [''], 'volta_2_linha': [''], 'volta_2_tarifa': [0.00],
         'volta_3_empresa': [''], 'volta_3_linha': [''], 'volta_3_tarifa': [0.00],
         'volta_4_empresa': [''], 'volta_4_linha': [''], 'volta_4_tarifa': [0.00],
-        'texto_encarregado': ['Texto padrão.']
+        'texto_encarregado': ['Texto padrão.'],
+        'endereco': ['Rua Exemplo, 123'],
+        'bairro': ['Bairro Exemplo'],
+        'cidade': ['Cidade Exemplo'],
+        'cep': ['12345-678'],
+        'despesa_diaria_informada': [9.00],
+        'ano_do_curso': ['2025'],
+        'departamento': ['Exemplo']
     }
     df = pd.DataFrame(template_data)
     output = BytesIO()
@@ -32,7 +39,7 @@ def create_excel_template():
 def gestao_soldos_tab(supabase):
     """Renderiza a aba para gerenciar os soldos."""
     st.subheader("Tabela de Soldos por Graduação")
-    st.info("Edite, adicione ou remova graduações e soldos. As alterações serão usadas nos cálculos do DeCAT.")
+    st.info("Edite, adicione ou remova graduações e soldos.")
     
     soldos_df = load_data("soldos")
     
@@ -52,16 +59,15 @@ def gestao_soldos_tab(supabase):
 def gestao_decat_tab(supabase):
     """Renderiza a aba principal para visualização e edição dos dados do DeCAT."""
     st.subheader("Dados de Transporte Cadastrados")
-    st.info("Visualize e edite os dados de transporte de todos os alunos que já solicitaram o benefício.")
+    st.info("Visualize e edite os dados de transporte dos alunos que solicitaram o benefício.")
 
     alunos_df = load_data("Alunos")
     transporte_df = load_data("auxilio_transporte")
 
     if transporte_df.empty:
-        st.warning("Nenhum dado de auxílio transporte cadastrado. Utilize a aba 'Importação em Massa' para começar.")
+        st.warning("Nenhum dado de auxílio transporte cadastrado. Use a aba 'Importação em Massa'.")
         return
 
-    # Junta os dados de transporte com os nomes dos alunos para exibição
     transporte_df['aluno_id'] = transporte_df['aluno_id'].astype(str)
     alunos_df['id'] = alunos_df['id'].astype(str)
     
@@ -73,7 +79,6 @@ def gestao_decat_tab(supabase):
         how='left'
     )
     
-    # Organiza as colunas para melhor visualização
     colunas_info_aluno = ['numero_interno', 'nome_guerra']
     colunas_transporte = [col for col in transporte_df.columns if col not in ['id', 'aluno_id', 'created_at']]
     display_df = display_df[colunas_info_aluno + colunas_transporte]
@@ -83,18 +88,15 @@ def gestao_decat_tab(supabase):
         hide_index=True,
         use_container_width=True,
         key="transporte_editor",
-        # Impede que o usuário edite as colunas de identificação do aluno
         disabled=['numero_interno', 'nome_guerra'] 
     )
 
     if st.button("Salvar Alterações na Tabela"):
         with st.spinner("Salvando..."):
             try:
-                # Prepara os dados para o upsert, associando de volta ao aluno_id
                 edited_df_com_id = pd.merge(edited_df, alunos_df[['numero_interno', 'id']], on='numero_interno', how='left')
                 edited_df_com_id.rename(columns={'id': 'aluno_id'}, inplace=True)
                 
-                # Remove colunas que não pertencem à tabela de transporte
                 colunas_para_remover = ['numero_interno', 'nome_guerra']
                 records_to_upsert = edited_df_com_id.drop(columns=colunas_para_remover).to_dict(orient='records')
 
@@ -105,9 +107,9 @@ def gestao_decat_tab(supabase):
                 st.error(f"Erro ao salvar alterações: {e}")
 
 def importacao_massa_tab(supabase):
-    """Renderiza a aba para importação de dados em massa."""
+    """Renderiza a aba para importação de dados em massa, com lógica de mapeamento."""
     st.subheader("Importar Dados em Massa do Google Forms")
-    st.info("O sistema irá associar os dados ao aluno usando a coluna 'NÚMERO INTERNO' do seu ficheiro.")
+    st.info("O sistema associará os dados ao aluno usando a coluna 'NÚMERO INTERNO' do seu ficheiro.")
     
     excel_modelo_bytes = create_excel_template()
     st.download_button(
@@ -123,24 +125,32 @@ def importacao_massa_tab(supabase):
         try:
             df_import = pd.read_csv(uploaded_file, delimiter=';')
 
-            # Mapeamento robusto dos nomes de coluna
+            # Mapeamento robusto dos nomes de coluna do seu CSV para a base de dados
             column_mapping = {
-                next(col for col in df_import.columns if 'NÚMERO INTERNO' in col): 'numero_interno',
-                next(col for col in df_import.columns if 'QUANTIDADE DE DIAS' in col): 'dias_uteis',
+                'NÚMERO INTERNO (EX. Q-01-105 OU M-01-308)': 'numero_interno',
+                'ENDEREÇO DOMICILIAR (EXATAMENTE IGUAL AO COMPROVANTE DE RESIDÊNCIA)': 'endereco',
+                'BAIRRO': 'bairro',
+                'CIDADE': 'cidade',
+                'CEP': 'cep',
+                'QUANTIDADE DE DIAS (4 OU 22)': 'dias_uteis',
+                'DESPESA DIÁRIA (VALOR GASTO POR DIA, IDA E VOLTA)': 'despesa_diaria_informada',
+                'ANO DO CURSO': 'ano_do_curso',
+                'DEPARTAMENTO': 'departamento'
             }
-            # Mapeamento dinâmico para itinerários
-            linhas_cols = [col for col in df_import.columns if 'LINHA' in col]
-            empresas_cols = [col for col in df_import.columns if 'EMPRESA' in col]
-            tarifas_cols = [col for col in df_import.columns if 'TARIFA' in col]
-
-            for i in range(4): # 4 de ida
-                column_mapping[linhas_cols[i]] = f'ida_{i+1}_linha'
-                column_mapping[empresas_cols[i]] = f'ida_{i+1}_empresa'
-                column_mapping[tarifas_cols[i]] = f'ida_{i+1}_tarifa'
-            for i in range(4): # 4 de volta
-                column_mapping[linhas_cols[i+4]] = f'volta_{i+1}_linha'
-                column_mapping[empresas_cols[i+4]] = f'volta_{i+1}_empresa'
-                column_mapping[tarifas_cols[i+4]] = f'volta_{i+1}_tarifa'
+            
+            # Mapeamento dinâmico para itinerários, lidando com colunas duplicadas
+            itinerario_cols = [col for col in df_import.columns if 'TRAJETO' in col or 'EMPRESA' in col or 'TARIFA' in col]
+            
+            # Ida (primeiras 4 ocorrências de cada tipo)
+            for i in range(4):
+                column_mapping[itinerario_cols[i*3 + 0]] = f'ida_{i+1}_linha'
+                column_mapping[itinerario_cols[i*3 + 1]] = f'ida_{i+1}_empresa'
+                column_mapping[itinerario_cols[i*3 + 2]] = f'ida_{i+1}_tarifa'
+            # Volta (as 4 ocorrências seguintes)
+            for i in range(4):
+                column_mapping[itinerario_cols[12 + i*3 + 0]] = f'volta_{i+1}_linha'
+                column_mapping[itinerario_cols[12 + i*3 + 1]] = f'volta_{i+1}_empresa'
+                column_mapping[itinerario_cols[12 + i*3 + 2]] = f'volta_{i+1}_tarifa'
 
             df_import.rename(columns=column_mapping, inplace=True)
 
@@ -155,17 +165,11 @@ def importacao_massa_tab(supabase):
             else:
                 df_to_upsert.rename(columns={'id': 'aluno_id'}, inplace=True)
                 
-                colunas_db = [
-                    'aluno_id', 'dias_uteis', 'ida_1_empresa', 'ida_1_linha', 'ida_1_tarifa',
-                    'ida_2_empresa', 'ida_2_linha', 'ida_2_tarifa', 'ida_3_empresa', 'ida_3_linha', 'ida_3_tarifa',
-                    'ida_4_empresa', 'ida_4_linha', 'ida_4_tarifa', 'volta_1_empresa', 'volta_1_linha', 'volta_1_tarifa',
-                    'volta_2_empresa', 'volta_2_linha', 'volta_2_tarifa', 'volta_3_empresa', 'volta_3_linha', 'volta_3_tarifa',
-                    'volta_4_empresa', 'volta_4_linha', 'volta_4_tarifa', 'texto_encarregado'
-                ]
-                df_final = df_to_upsert[[col for col in colunas_db if col in df_to_upsert.columns]]
+                colunas_db = [col.name for col in supabase.table('auxilio_transporte').select('*').execute().data[0].keys()] if supabase.table('auxilio_transporte').select('*').execute().data else []
+                df_final = df_to_upsert[[col for col in df_to_upsert.columns if col in colunas_db]]
 
                 for col in df_final.columns:
-                    if 'tarifa' in col:
+                    if 'tarifa' in col or 'despesa_diaria' in col:
                         df_final[col] = df_final[col].astype(str).str.replace(',', '.').astype(float)
 
                 records_to_upsert = df_final.to_dict(orient='records')
