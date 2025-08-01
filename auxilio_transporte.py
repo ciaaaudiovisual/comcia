@@ -89,6 +89,7 @@ def merge_pdfs(pdf_buffers):
 
 
 # No ficheiro auxilio_transporte.py, substitua esta função
+# No ficheiro auxilio_transporte.py, substitua esta função
 def importacao_guiada_tab(supabase):
     st.subheader("Assistente de Importação de Dados")
     st.markdown("#### Passo 1: Baixe o modelo e preencha com os dados")
@@ -261,7 +262,7 @@ def importacao_guiada_tab(supabase):
 
                 except Exception as e:
                     st.error(f"**Erro na importação final:** {e}")
-
+                    
 def lancamento_individual_tab(supabase, opcoes_posto_grad):
     st.subheader("Adicionar ou Editar Dados para um Aluno")
     aluno_selecionado_df = render_alunos_filter_and_selection(key_suffix="transporte_individual", include_full_name_search=True)
