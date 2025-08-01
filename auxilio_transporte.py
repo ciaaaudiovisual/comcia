@@ -257,14 +257,20 @@ def importacao_guiada_tab(supabase):
                     payload = st.session_state['registros_para_importar_at'].copy()
                     
                     for col in ['ano_referencia', 'dias_uteis']:
-                        if col in payload.columns: payload[col] = pd.to_numeric(payload[col], errors='coerce')
+                        if col in payload.columns: payload[col] = pd.to_numeric(payload[col], errors='coerce').fillna(0).astype(int)
                     for col in payload.columns:
                         if 'tarifa' in col: payload[col] = pd.to_numeric(payload[col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0.0)
 
+# ...
+
+# ...
+                    
                     colunas_a_remover = ['nome_guerra']
                     payload.drop(columns=colunas_a_remover, inplace=True, errors='ignore')
                     
-                    supabase.table("auxilio_transporte").upsert(
+                    supabase.table("auxilio_trans
+                    
+                                   porte").upsert(
                         payload.to_dict(orient='records'),
                         on_conflict='numero_interno,ano_referencia'
                     ).execute()
