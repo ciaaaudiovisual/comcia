@@ -93,6 +93,8 @@ def merge_pdfs(pdf_buffers):
 
 # No ficheiro auxilio_transporte.py, substitua esta função
 
+# No ficheiro auxilio_transporte.py, substitua esta função
+
 def importacao_guiada_tab(supabase):
     st.subheader("Assistente de Importação de Dados")
     st.markdown("#### Passo 1: Baixe o modelo e preencha com os dados")
@@ -196,42 +198,45 @@ def importacao_guiada_tab(supabase):
                     df_processado[system_col] = df_import[user_col]
             
             alunos_df = load_data("Alunos")[['id', 'numero_interno']]
-            df_processado['numero_interno'] = df_processado['numero_interno'].astype(str).str.strip().str.upper()
-            alunos_df['numero_interno'] = alunos_df['numero_interno'].astype(str).str.strip().str.upper()
-            df_final = pd.merge(df_processado, alunos_df, on='numero_interno', how='left')
-            df_final.rename(columns={'id': 'aluno_id'}, inplace=True)
-            sucesso_df = df_final.dropna(subset=['aluno_id'])
-            falha_df = df_final[df_final['aluno_id'].isna()]
-            st.success(f"Validação Concluída! Foram encontrados **{len(sucesso_df)}** alunos correspondentes.")
-            if not falha_df.empty:
-                st.warning(f"Não foi possível encontrar **{len(falha_df)}** alunos. Verifique os 'Números Internos' abaixo:")
-                st.dataframe(falha_df[['numero_interno']], use_container_width=True)
-            st.markdown("**Pré-visualização dos dados a serem importados:**")
-            st.dataframe(sucesso_df, use_container_width=True)
-            st.session_state['registros_para_importar_at'] = sucesso_df
+            if 'numero_interno' in df_processado.columns:
+                df_processado['numero_interno'] = df_processado['numero_interno'].astype(str).str.strip().str.upper()
+                alunos_df['numero_interno'] = alunos_df['numero_interno'].astype(str).str.strip().str.upper()
+                df_final = pd.merge(df_processado, alunos_df, on='numero_interno', how='left')
+                df_final.rename(columns={'id': 'aluno_id'}, inplace=True)
+                sucesso_df = df_final.dropna(subset=['aluno_id'])
+                falha_df = df_final[df_final['aluno_id'].isna()]
+                st.success(f"Validação Concluída! Foram encontrados **{len(sucesso_df)}** alunos correspondentes.")
+                if not falha_df.empty:
+                    st.warning(f"Não foi possível encontrar **{len(falha_df)}** alunos. Verifique os 'Números Internos' abaixo:")
+                    st.dataframe(falha_df[['numero_interno']], use_container_width=True)
+                st.markdown("**Pré-visualização dos dados a serem importados:**")
+                st.dataframe(sucesso_df, use_container_width=True)
+                st.session_state['registros_para_importar_at'] = sucesso_df
+            else:
+                st.error("A coluna 'Número Interno' não foi mapeada. Por favor, mapeie-a no Passo 3.")
 
     if 'registros_para_importar_at' in st.session_state and not st.session_state['registros_para_importar_at'].empty:
          if st.button("Confirmar e Salvar no Sistema", type="primary"):
             with st.spinner("Salvando dados..."):
                 try:
                     st.toast("Iniciando importação...", icon="⏳")
-                    registros_para_upsert = st.session_state['registros_para_importar_at'].copy()
+                    registros_a_processar = st.session_state['registros_para_importar_at'].copy()
                     
                     st.toast("Convertendo tipos de dados...", icon="⚙️")
-                    registros_para_upsert['aluno_id'] = pd.to_numeric(registros_para_upsert['aluno_id'], errors='coerce').astype('Int64')
-                    registros_para_upsert['ano_referencia'] = pd.to_numeric(registros_para_upsert['ano_referencia'], errors='coerce').astype('Int64')
-                    if 'dias_uteis' in registros_para_upsert.columns:
-                        registros_para_upsert['dias_uteis'] = pd.to_numeric(registros_para_upsert['dias_uteis'], errors='coerce').fillna(0).astype(int)
-                    for col in registros_para_upsert.columns:
+                    registros_a_processar['aluno_id'] = pd.to_numeric(registros_a_processar['aluno_id'], errors='coerce').astype('Int64')
+                    registros_a_processar['ano_referencia'] = pd.to_numeric(registros_a_processar['ano_referencia'], errors='coerce').astype('Int64')
+                    if 'dias_uteis' in registros_a_processar.columns:
+                        registros_a_processar['dias_uteis'] = pd.to_numeric(registros_a_processar['dias_uteis'], errors='coerce').fillna(0).astype(int)
+                    for col in registros_a_processar.columns:
                         if 'tarifa' in col:
-                            registros_para_upsert[col] = pd.to_numeric(
-                                registros_para_upsert[col].astype(str).str.replace(',', '.'), errors='coerce'
+                            registros_a_processar[col] = pd.to_numeric(
+                                registros_a_processar[col].astype(str).str.replace(',', '.'), errors='coerce'
                             ).fillna(0.0)
                     
-                    registros_para_upsert.dropna(subset=['aluno_id', 'ano_referencia'], inplace=True)
+                    registros_a_processar.dropna(subset=['aluno_id', 'ano_referencia'], inplace=True)
                     
                     # --- CORREÇÃO DEFINITIVA APLICADA AQUI ---
-                    # 1. Define uma lista fixa e explícita de colunas que a tabela 'auxilio_transporte' aceita.
+                    # 1. Define uma lista explícita de TODAS as colunas que a tabela 'auxilio_transporte' aceita.
                     colunas_finais_db = [
                         'aluno_id', 'ano_referencia', 'posto_grad', 'dias_uteis', 
                         'endereco', 'bairro', 'cidade', 'cep',
@@ -241,13 +246,18 @@ def importacao_guiada_tab(supabase):
                         'volta_3_empresa', 'volta_3_linha', 'volta_3_tarifa', 'volta_4_empresa', 'volta_4_linha', 'volta_4_tarifa'
                     ]
 
-                    # 2. Filtra o DataFrame para garantir que SÓ estas colunas sejam enviadas, na ordem correta.
-                    colunas_para_enviar = [col for col in colunas_finais_db if col in registros_para_upsert.columns]
-                    payload_final = registros_para_upsert[colunas_para_enviar]
+                    # 2. Cria um novo DataFrame (payload_final) contendo APENAS as colunas da lista acima que existem nos dados processados.
+                    colunas_para_enviar = [col for col in colunas_finais_db if col in registros_a_processar.columns]
+                    payload_final = registros_a_processar[colunas_para_enviar]
+
+                    # 3. Verifica se o payload final não está vazio
+                    if payload_final.empty or len(payload_final.columns) == 0:
+                        st.error("Erro de preparação: Nenhum dado válido foi encontrado para ser salvo após a limpeza final. Verifique o mapeamento e os dados do seu ficheiro.")
+                        return
 
                     st.toast(f"Enviando {len(payload_final)} registros com estrutura validada...", icon="➡️")
                     
-                    # 3. Envia o payload final e limpo
+                    # 4. Envia o payload final e limpo
                     supabase.table("auxilio_transporte").upsert(
                         payload_final.to_dict(orient='records'),
                         on_conflict='aluno_id,ano_referencia'
