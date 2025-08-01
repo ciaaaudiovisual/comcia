@@ -107,7 +107,6 @@ def importacao_guiada_tab(supabase):
     try:
         df_import = pd.read_csv(uploaded_file, delimiter=';', encoding='latin-1') if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
         st.session_state['df_import_cache_at'] = df_import
-        st.session_state['import_file_columns_at'] = df_import.columns.tolist()
     except Exception as e:
         st.error(f"Erro ao ler o ficheiro: {e}")
         return
@@ -119,18 +118,19 @@ def importacao_guiada_tab(supabase):
 
     campos_sistema = {
         "numero_interno": ("Número Interno*", (["número interno"], [])),"ano_referencia": ("Ano de Referência*", (["ano"], [])),"posto_grad": ("Posto/Graduação*", (["posto", "graduação"], [])),
-        "endereco": ("Endereço", (["endereço"], [])), "bairro": ("Bairro", (["bairro"], [])), "cidade": ("Cidade", (["cidade"], [])), "cep": ("CEP", (["cep"], [])),
-        "dias_uteis": ("Dias", (["dias"], [])),
+        "endereco": ("Endereço*", (["endereço"], [])), "bairro": ("Bairro*", (["bairro"], [])), "cidade": ("Cidade*", (["cidade"], [])), "cep": ("CEP*", (["cep"], [])),
+        "dias_uteis": ("Dias*", (["dias"], [])),
     }
     for i in range(1, 5):
-        campos_sistema[f'ida_{i}_empresa'] = (f"{i}ª Empresa (Ida)", ([f"{i}ª", "empresa"], ["volta"]))
-        campos_sistema[f'ida_{i}_linha'] = (f"{i}ª Linha (Ida)", ([f"{i}º", "trajeto"], ["volta"]))
-        campos_sistema[f'ida_{i}_tarifa'] = (f"{i}ª Tarifa (Ida)", ([f"{i}ª", "tarifa"], ["volta"]))
-        campos_sistema[f'volta_{i}_empresa'] = (f"{i}ª Empresa (Volta)", ([f"{i}ª", "empresa", "volta"], []))
-        campos_sistema[f'volta_{i}_linha'] = (f"{i}ª Linha (Volta)", ([f"{i}º", "trajeto", "volta"], []))
-        campos_sistema[f'volta_{i}_tarifa'] = (f"{i}ª Tarifa (Volta)", ([f"{i}ª", "tarifa", "volta"], []))
+        obrigatorio = "*" if i == 1 else ""
+        campos_sistema[f'ida_{i}_empresa'] = (f"{i}ª Empresa (Ida){obrigatorio}", ([f"{i}ª", "empresa"], ["volta"]))
+        campos_sistema[f'ida_{i}_linha'] = (f"{i}ª Linha (Ida){obrigatorio}", ([f"{i}º", "trajeto"], ["volta"]))
+        campos_sistema[f'ida_{i}_tarifa'] = (f"{i}ª Tarifa (Ida){obrigatorio}", ([f"{i}ª", "tarifa"], ["volta"]))
+        campos_sistema[f'volta_{i}_empresa'] = (f"{i}ª Empresa (Volta){obrigatorio}", ([f"{i}ª", "empresa", "volta"], []))
+        campos_sistema[f'volta_{i}_linha'] = (f"{i}ª Linha (Volta){obrigatorio}", ([f"{i}º", "trajeto", "volta"], []))
+        campos_sistema[f'volta_{i}_tarifa'] = (f"{i}ª Tarifa (Volta){obrigatorio}", ([f"{i}ª", "tarifa", "volta"], []))
 
-    opcoes_ficheiro = ["-- Não importar este campo --"] + st.session_state['import_file_columns_at']
+    opcoes_ficheiro = ["-- Não importar este campo --"] + df_import.columns.tolist()
 
     def get_best_match_index(search_criteria, all_options, saved_option):
         if saved_option in all_options: return all_options.index(saved_option)
@@ -148,7 +148,9 @@ def importacao_guiada_tab(supabase):
         for i, key in enumerate(campos_gerais):
             display_name, search_criteria = campos_sistema.get(key, (key, ([], [])))
             index = get_best_match_index(search_criteria, opcoes_ficheiro, mapeamento_salvo.get(key))
-            mapeamento_usuario[key] = cols_gerais[i % 3].selectbox(f"**{display_name}**", options=opcoes_ficheiro, key=f"map_at_{key}", index=index)
+            # --- ALTERAÇÃO 1 (Parte A) ---
+            label_geral = f"**{display_name}** `(Sistema: {key})`"
+            mapeamento_usuario[key] = cols_gerais[i % 3].selectbox(label_geral, options=opcoes_ficheiro, key=f"map_at_{key}", index=index)
 
         st.markdown("**Itinerários**")
         c1, c2 = st.columns(2)
@@ -160,16 +162,20 @@ def importacao_guiada_tab(supabase):
                     key = f"ida_{i}_{tipo}"
                     display_name, search_criteria = campos_sistema.get(key, (key, ([], [])))
                     index = get_best_match_index(search_criteria, opcoes_ficheiro, mapeamento_salvo.get(key))
-                    mapeamento_usuario[key] = st.selectbox(display_name, options=opcoes_ficheiro, key=f"map_at_{key}", index=index, label_visibility="collapsed")
+                    # --- ALTERAÇÃO 1 (Parte B) ---
+                    label_itinerario = f"{display_name} `(Sistema: {key})`"
+                    mapeamento_usuario[key] = st.selectbox(label_itinerario, options=opcoes_ficheiro, key=f"map_at_{key}", index=index, label_visibility="collapsed")
         with c2:
             st.markdown("**Volta**")
             for i in range(1, 5):
                 st.markdown(f"**{i}º Trajeto (Volta)**")
                 for tipo in ["empresa", "linha", "tarifa"]:
                     key = f"volta_{i}_{tipo}"
-                    display_name, search_criteria = campos_sistema.get(key, ([], [])))
+                    display_name, search_criteria = campos_sistema.get(key, (key, ([], [])))
                     index = get_best_match_index(search_criteria, opcoes_ficheiro, mapeamento_salvo.get(key))
-                    mapeamento_usuario[key] = st.selectbox(display_name, options=opcoes_ficheiro, key=f"map_at_{key}", index=index, label_visibility="collapsed")
+                    # --- ALTERAÇÃO 1 (Parte C) ---
+                    label_itinerario = f"{display_name} `(Sistema: {key})`"
+                    mapeamento_usuario[key] = st.selectbox(label_itinerario, options=opcoes_ficheiro, key=f"map_at_{key}", index=index, label_visibility="collapsed")
 
         if st.form_submit_button("Validar Mapeamento e Pré-visualizar", type="primary"):
             st.session_state['mapeamento_final_at'] = mapeamento_usuario
@@ -182,84 +188,91 @@ def importacao_guiada_tab(supabase):
     if 'mapeamento_final_at' in st.session_state:
         st.markdown("---")
         st.markdown("#### Passo 4: Valide os dados antes de importar")
-
+        
+        # --- ALTERAÇÃO 2: Bloco de validação inteiro foi reescrito ---
         with st.spinner("Processando e validando os dados..."):
-            df_import = st.session_state['df_import_cache_at'].copy()
-            mapeamento = st.session_state['mapeamento_final_at']
             df_processado = pd.DataFrame()
-            system_to_user_map = {k: v for k, v in mapeamento.items() if v != '-- Não importar este campo --'}
+            system_to_user_map = {k: v for k, v in st.session_state['mapeamento_final_at'].items() if v != '-- Não importar este campo --'}
             for system_col, user_col in system_to_user_map.items():
                 if user_col in df_import.columns:
                     df_processado[system_col] = df_import[user_col]
 
-            alunos_df = load_data("Alunos")[['id', 'numero_interno']]
-            if 'numero_interno' in df_processado.columns:
-                df_processado['numero_interno'] = df_processado['numero_interno'].astype(str).str.strip().str.upper()
-                alunos_df['numero_interno'] = alunos_df['numero_interno'].astype(str).str.strip().str.upper()
-                df_final = pd.merge(df_processado, alunos_df, on='numero_interno', how='left')
-                df_final.rename(columns={'id': 'aluno_id'}, inplace=True)
-                sucesso_df = df_final.dropna(subset=['aluno_id'])
-                falha_df = df_final[df_final['aluno_id'].isna()]
-                st.success(f"Validação Concluída! Foram encontrados **{len(sucesso_df)}** alunos correspondentes.")
-                if not falha_df.empty:
-                    st.warning(f"Não foi possível encontrar **{len(falha_df)}** alunos. Verifique os 'Números Internos' abaixo:")
-                    st.dataframe(falha_df[['numero_interno']], use_container_width=True)
-                st.markdown("**Pré-visualização dos dados a serem importados:**")
-                st.dataframe(sucesso_df, use_container_width=True)
-                st.session_state['registros_para_importar_at'] = sucesso_df
-            else:
-                st.error("A coluna 'Número Interno' não foi mapeada. Por favor, mapeie-a no Passo 3.")
+            campos_obrigatorios = [
+                'numero_interno', 'ano_referencia', 'posto_grad', 'endereco', 'bairro', 'cidade', 'cep', 'dias_uteis',
+                'ida_1_empresa', 'ida_1_linha', 'ida_1_tarifa', 'volta_1_empresa', 'volta_1_linha', 'volta_1_tarifa'
+            ]
+
+            colunas_mapeadas = df_processado.columns.tolist()
+            if not all(campo in colunas_mapeadas for campo in campos_obrigatorios):
+                campos_em_falta = [c for c in campos_obrigatorios if c not in colunas_mapeadas]
+                st.error(f"Erro: Nem todos os campos obrigatórios foram mapeados. Faltam: {', '.join(campos_em_falta)}. Por favor, volte ao Passo 3.")
+                return
+
+            # Identificar linhas com dados faltando ANTES de removê-las
+            linhas_com_dados_faltando = df_processado[df_processado[campos_obrigatorios].isnull().any(axis=1)]
+            erros_detalhados = []
+            if not linhas_com_dados_faltando.empty:
+                for index, row in linhas_com_dados_faltando.iterrows():
+                    campos_vazios = [col for col in campos_obrigatorios if pd.isnull(row[col])]
+                    num_interno = row.get('numero_interno', f"Linha {index + 2} do arquivo")
+                    erros_detalhados.append(f"- **Aluno {num_interno}:** Campos obrigatórios vazios: `{', '.join(campos_vazios)}`.")
+
+            # Manter apenas as linhas completas
+            df_completos = df_processado.dropna(subset=campos_obrigatorios).copy()
+            
+            # Cruzar com a base de alunos
+            alunos_df = load_data("Alunos")[['numero_interno', 'nome_guerra']]
+            df_completos['numero_interno'] = df_completos['numero_interno'].astype(str).str.strip().str.upper()
+            alunos_df['numero_interno'] = alunos_df['numero_interno'].astype(str).str.strip().str.upper()
+
+            registos_finais = pd.merge(df_completos, alunos_df, on='numero_interno', how='inner')
+            
+            # Identificar alunos não encontrados no sistema
+            numeros_internos_completos = set(df_completos['numero_interno'])
+            numeros_internos_finais = set(registos_finais['numero_interno'])
+            alunos_nao_encontrados = numeros_internos_completos - numeros_internos_finais
+            if alunos_nao_encontrados:
+                for num_interno in alunos_nao_encontrados:
+                     erros_detalhados.append(f"- **Aluno {num_interno}:** Não foi encontrado na base de dados de alunos do sistema.")
+
+            st.success(f"Validação Concluída! Foram encontrados **{len(registos_finais)}** registos completos e válidos para importação.")
+            
+            # Exibir erros detalhados, se houver
+            total_original = len(df_import)
+            if len(registos_finais) < total_original:
+                 st.warning(f"**Atenção:** {total_original - len(registos_finais)} de {total_original} registros não puderam ser importados.")
+                 with st.expander("Clique aqui para ver os detalhes dos erros"):
+                      st.markdown("\n".join(erros_detalhados))
+
+            if not registos_finais.empty:
+                st.markdown("**Pré-visualização dos registos a serem importados:**")
+                st.dataframe(registos_finais)
+            
+            st.session_state['registros_para_importar_at'] = registos_finais
 
     if 'registros_para_importar_at' in st.session_state and not st.session_state['registros_para_importar_at'].empty:
          if st.button("Confirmar e Salvar no Sistema", type="primary"):
             with st.spinner("Salvando dados..."):
                 try:
-                    registros_a_processar = st.session_state['registros_para_importar_at'].copy()
+                    payload = st.session_state['registros_para_importar_at'].copy()
+                    
+                    for col in ['ano_referencia', 'dias_uteis']:
+                        if col in payload.columns: payload[col] = pd.to_numeric(payload[col], errors='coerce')
+                    for col in payload.columns:
+                        if 'tarifa' in col: payload[col] = pd.to_numeric(payload[col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0.0)
 
-                    # --- NOVO PASSO DE DIAGNÓSTICO ---
-                    st.warning("INFORMAÇÃO DE DIAGNÓSTICO (pode ignorar se a importação funcionar):")
-                    st.write("Colunas encontradas nos dados ANTES da limpeza final:")
-                    st.write(registros_a_processar.columns.tolist())
-                    # --- FIM DO DIAGNÓSTICO ---
-
-                    registros_a_processar['aluno_id'] = pd.to_numeric(registros_a_processar['aluno_id'], errors='coerce').astype('Int64')
-                    registros_a_processar['ano_referencia'] = pd.to_numeric(registros_a_processar['ano_referencia'], errors='coerce').astype('Int64')
-                    if 'dias_uteis' in registros_a_processar.columns:
-                        registros_a_processar['dias_uteis'] = pd.to_numeric(registros_a_processar['dias_uteis'], errors='coerce').fillna(0).astype(int)
-                    for col in registros_a_processar.columns:
-                        if 'tarifa' in col:
-                            registros_a_processar[col] = pd.to_numeric(
-                                registros_a_processar[col].astype(str).str.replace(',', '.'), errors='coerce'
-                            ).fillna(0.0)
-
-                    registros_a_processar.dropna(subset=['aluno_id', 'ano_referencia'], inplace=True)
-
-                    colunas_finais_db = [
-                        'aluno_id', 'ano_referencia', 'posto_grad', 'dias_uteis', 
-                        'endereco', 'bairro', 'cidade', 'cep',
-                        'ida_1_empresa', 'ida_1_linha', 'ida_1_tarifa', 'ida_2_empresa', 'ida_2_linha', 'ida_2_tarifa',
-                        'ida_3_empresa', 'ida_3_linha', 'ida_3_tarifa', 'ida_4_empresa', 'ida_4_linha', 'ida_4_tarifa',
-                        'volta_1_empresa', 'volta_1_linha', 'volta_1_tarifa', 'volta_2_empresa', 'volta_2_linha', 'volta_2_tarifa',
-                        'volta_3_empresa', 'volta_3_linha', 'volta_3_tarifa', 'volta_4_empresa', 'volta_4_linha', 'volta_4_tarifa'
-                    ]
-                    colunas_para_enviar = [col for col in colunas_finais_db if col in registros_a_processar.columns]
-                    payload_final = registros_a_processar[colunas_para_enviar]
-
-                    if payload_final.empty or len(payload_final.columns) == 0:
-                        st.error("Erro de preparação: Nenhum dado válido foi encontrado para ser salvo após a limpeza final. Verifique o mapeamento e os dados do seu ficheiro.")
-                        return
-
+                    colunas_a_remover = ['nome_guerra']
+                    payload.drop(columns=colunas_a_remover, inplace=True, errors='ignore')
+                    
                     supabase.table("auxilio_transporte").upsert(
-                        payload_final.to_dict(orient='records'),
-                        on_conflict='aluno_id,ano_referencia'
+                        payload.to_dict(orient='records'),
+                        on_conflict='numero_interno,ano_referencia'
                     ).execute()
-
-                    st.success(f"**Importação Concluída!** {len(payload_final)} registros salvos.")
-
+                    
+                    st.success(f"**Importação Concluída!** {len(payload)} registros salvos.")
                     for key in ['df_import_cache_at', 'mapeamento_final_at', 'registros_para_importar_at']:
                         if key in st.session_state: del st.session_state[key]
                     load_data.clear()
-
                 except Exception as e:
                     st.error(f"**Erro na importação final:** {e}")
 
