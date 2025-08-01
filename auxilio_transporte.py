@@ -6,10 +6,8 @@ import json
 import re
 from aluno_selection_components import render_alunos_filter_and_selection
 from pypdf import PdfReader, PdfWriter
-from auxilio_transporte import show_auxilio_transporte
 
-# --- FUNÇÕES AUXILIARES E DE CÁLCULO (DEFINIDAS PRIMEIRO) ---
-
+# --- FUNÇÃO DE CÁLCULO CENTRAL ---
 def calcular_auxilio_transporte(linha):
     try:
         despesa_diaria = 0
@@ -30,6 +28,7 @@ def calcular_auxilio_transporte(linha):
     except (ValueError, TypeError):
         return pd.Series({'despesa_diaria': 0.0, 'despesa_mensal': 0.0, 'parcela_beneficiario': 0.0, 'auxilio_pago': 0.0})
 
+# --- FUNÇÕES AUXILIARES DE ARQUIVO E PDF ---
 def create_excel_template():
     template_data = {
         'NÚMERO INTERNO DO ALUNO': ['M-01-101'],'ANO DE REFERÊNCIA': [2025],'POSTO/GRADUAÇÃO': ['ALUNO'],
@@ -50,32 +49,27 @@ def fill_pdf_auxilio(template_bytes, aluno_data):
     reader = PdfReader(BytesIO(template_bytes))
     writer = PdfWriter(clone_from=reader)
     pdf_field_mapping = {
-        &#39;NOME COMPLETO&#39;: &#39;nome_completo&#39;,&#39;NIP&#39;: &#39;nip&#39;,&#39;ENDEREÇO&#39;: &#39;endereco&#39;,&#39;BAIRRO&#39;: &#39;bairro&#39;,
-        &#39;CIDADE&#39;: &#39;cidade&#39;,&#39;CEP&#39;: &#39;cep&#39;,&#39;ANO&#39;: &#39;ano_referencia&#39;,&#39;DESPESA DIARIA&#39;: &#39;despesa_diaria&#39;,
-        &#39;DESPESA MENSAL&#39;: &#39;despesa_mensal&#39;,&#39;PARCELA 6%&#39;: &#39;parcela_beneficiario&#39;,&#39;VALOR FINAL&#39;: &#39;auxilio_pago&#39;
+        'NOME COMPLETO': 'nome_completo','NIP': 'nip','ENDEREÇO': 'endereco','BAIRRO': 'bairro',
+        'CIDADE': 'cidade','CEP': 'cep','ANO': 'ano_referencia','DESPESA DIARIA': 'despesa_diaria',
+        'DESPESA MENSAL': 'despesa_mensal','PARCELA 6%': 'parcela_beneficiario','VALOR FINAL': 'auxilio_pago'
     }
     fill_data = {}
     for pdf_field, df_column in pdf_field_mapping.items():
-        valor = aluno_data.get(df_column, &#39;&#39;)
-        if df_column in [&#39;despesa_diaria&#39;, &#39;despesa_mensal&#39;, &#39;parcela_beneficiario&#39;, &#39;auxilio_pago&#39;]:
-            fill_data[pdf_field] = f&quot;R$ {float(valor):.2f}&quot;
+        valor = aluno_data.get(df_column, '')
+        if df_column in ['despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']:
+            fill_data[pdf_field] = f"R$ {float(valor):.2f}"
         else:
             fill_data[pdf_field] = str(valor)
-            
     for i in range(1, 5):
-        fill_data[f&#39;EMPRESA IDA {i}&#39;] = str(aluno_data.get(f&#39;ida_{i}_empresa&#39;, &#39;&#39;))
-        fill_data[f&#39;LINHA IDA {i}&#39;] = str(aluno_data.get(f&#39;ida_{i}_linha&#39;, &#39;&#39;))
-        fill_data[f&#39;TARIFA IDA {i}&#39;] = f&quot;R$ {aluno_data.get(f&#39;ida_{i}_tarifa&#39;, 0.0):.2f}&quot;
-        # --- CORREÇÃO APLICADA AQUI ---
-        # A variável &quot;aluna_data&quot; foi corrigida para &quot;aluno_data&quot;
-        fill_data[f&#39;EMPRESA VOLTA {i}&#39;] = str(aluno_data.get(f&#39;volta_{i}_empresa&#39;, &#39;&#39;))
-        fill_data[f&#39;LINHA VOLTA {i}&#39;] = str(aluno_data.get(f&#39;volta_{i}_linha&#39;, &#39;&#39;))
-        fill_data[f&#39;TARIFA VOLTA {i}&#39;] = f&quot;R$ {aluno_data.get(f&#39;volta_{i}_tarifa&#39;, 0.0):.2f}&quot;
-        
+        fill_data[f'EMPRESA IDA {i}'] = str(aluno_data.get(f'ida_{i}_empresa', ''))
+        fill_data[f'LINHA IDA {i}'] = str(aluno_data.get(f'ida_{i}_linha', ''))
+        fill_data[f'TARIFA IDA {i}'] = f"R$ {aluno_data.get(f'ida_{i}_tarifa', 0.0):.2f}"
+        fill_data[f'EMPRESA VOLTA {i}'] = str(aluno_data.get(f'volta_{i}_empresa', ''))
+        fill_data[f'LINHA VOLTA {i}'] = str(aluno_data.get(f'volta_{i}_linha', ''))
+        fill_data[f'TARIFA VOLTA {i}'] = f"R$ {aluno_data.get(f'volta_{i}_tarifa', 0.0):.2f}"
     if writer.get_form_text_fields():
         for page in writer.pages:
             writer.update_page_form_field_values(page, fill_data)
-            
     output_buffer = BytesIO()
     writer.write(output_buffer)
     output_buffer.seek(0)
@@ -92,7 +86,8 @@ def merge_pdfs(pdf_buffers):
     merged_pdf_buffer.seek(0)
     return merged_pdf_buffer
 
-# --- DEFINIÇÃO DAS FUNÇÕES DE CADA ABA ---
+
+# --- DEFINIÇÃO DAS FUNÇÕES DE CADA ABA (COMPLETAS) ---
 
 def importacao_guiada_tab(supabase):
     st.subheader("Assistente de Importação de Dados")
@@ -397,3 +392,9 @@ def gestao_soldos_tab(supabase):
             load_data.clear()
         except Exception as e:
             st.error(f"Erro ao salvar os soldos: {e}")
+
+# --- FUNÇÃO PRINCIPAL QUE CHAMA AS ABAS ---
+# Esta função deve ser chamada pelo app.py
+# Ela garante que as funções das abas são definidas antes de serem chamadas.
+def show_auxilio_transporte_main():
+    show_auxilio_transporte()
