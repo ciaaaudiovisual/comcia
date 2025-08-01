@@ -86,6 +86,7 @@ def merge_pdfs(pdf_buffers):
     merged_pdf_buffer.seek(0)
     return merged_pdf_buffer
 
+
 # --- DEFINIÇÃO DAS FUNÇÕES DE CADA ABA (COMPLETAS) ---
 
 def importacao_guiada_tab(supabase):
@@ -113,19 +114,23 @@ def importacao_guiada_tab(supabase):
     st.markdown("#### Passo 3: Mapeie as colunas do seu ficheiro")
     config_df = load_data("Config")
     mapeamento_salvo = json.loads(config_df[config_df['chave'] == 'mapeamento_auxilio_transporte']['valor'].iloc[0]) if 'mapeamento_auxilio_transporte' in config_df['chave'].values else {}
+    
     campos_sistema = {
         "numero_interno": ("Número Interno*", (["número interno"], [])),"ano_referencia": ("Ano de Referência*", (["ano"], [])),"posto_grad": ("Posto/Graduação*", (["posto", "graduação"], [])),
-        "endereco": ("Endereço", (["endereço"], [])), "bairro": ("Bairro", (["bairro"], [])), "cidade": ("Cidade", (["cidade"], [])), "cep": ("CEP", (["cep"], [])),
-        "dias_uteis": ("Dias", (["dias"], [])),
+        "endereco": ("Endereço*", (["endereço"], [])), "bairro": ("Bairro*", (["bairro"], [])), "cidade": ("Cidade*", (["cidade"], [])), "cep": ("CEP*", (["cep"], [])),
+        "dias_uteis": ("Dias*", (["dias"], [])),
     }
     for i in range(1, 5):
-        campos_sistema[f'ida_{i}_empresa'] = (f"{i}ª Empresa (Ida)", ([f"{i}ª", "empresa"], ["volta"]))
-        campos_sistema[f'ida_{i}_linha'] = (f"{i}ª Linha (Ida)", ([f"{i}º", "trajeto"], ["volta"]))
-        campos_sistema[f'ida_{i}_tarifa'] = (f"{i}ª Tarifa (Ida)", ([f"{i}ª", "tarifa"], ["volta"]))
-        campos_sistema[f'volta_{i}_empresa'] = (f"{i}ª Empresa (Volta)", ([f"{i}ª", "empresa", "volta"], []))
-        campos_sistema[f'volta_{i}_linha'] = (f"{i}ª Linha (Volta)", ([f"{i}º", "trajeto", "volta"], []))
-        campos_sistema[f'volta_{i}_tarifa'] = (f"{i}ª Tarifa (Volta)", ([f"{i}ª", "tarifa", "volta"], []))
-    opcoes_ficheiro = ["-- Não importar este campo --"] + st.session_state['import_file_columns_at']
+        obrigatorio = "*" if i == 1 else ""
+        campos_sistema[f'ida_{i}_empresa'] = (f"{i}ª Empresa (Ida){obrigatorio}", ([f"{i}ª", "empresa"], ["volta"]))
+        campos_sistema[f'ida_{i}_linha'] = (f"{i}ª Linha (Ida){obrigatorio}", ([f"{i}º", "trajeto"], ["volta"]))
+        campos_sistema[f'ida_{i}_tarifa'] = (f"{i}ª Tarifa (Ida){obrigatorio}", ([f"{i}ª", "tarifa"], ["volta"]))
+        campos_sistema[f'volta_{i}_empresa'] = (f"{i}ª Empresa (Volta){obrigatorio}", ([f"{i}ª", "empresa", "volta"], []))
+        campos_sistema[f'volta_{i}_linha'] = (f"{i}ª Linha (Volta){obrigatorio}", ([f"{i}º", "trajeto", "volta"], []))
+        campos_sistema[f'volta_{i}_tarifa'] = (f"{i}ª Tarifa (Volta){obrigatorio}", ([f"{i}ª", "tarifa", "volta"], []))
+    
+    opcoes_ficheiro = ["-- Não importar este campo --"] + df_import.columns.tolist()
+    
     def get_best_match_index(search_criteria, all_options, saved_option):
         if saved_option in all_options: return all_options.index(saved_option)
         must_include, must_exclude = search_criteria
@@ -133,6 +138,7 @@ def importacao_guiada_tab(supabase):
             option_lower = option.lower()
             if all(inc.lower() in option_lower for inc in must_include) and not any(exc.lower() in option_lower for exc in must_exclude): return i
         return 0
+
     with st.form("mapping_form_at"):
         mapeamento_usuario = {}
         campos_gerais = ["numero_interno", "ano_referencia", "posto_grad", "endereco", "bairro", "cidade", "cep", "dias_uteis"]
@@ -142,6 +148,7 @@ def importacao_guiada_tab(supabase):
             display_name, search_criteria = campos_sistema.get(key, (key, ([], [])))
             index = get_best_match_index(search_criteria, opcoes_ficheiro, mapeamento_salvo.get(key))
             mapeamento_usuario[key] = cols_gerais[i % 3].selectbox(f"**{display_name}**", options=opcoes_ficheiro, key=f"map_at_{key}", index=index)
+        
         st.markdown("**Itinerários**")
         c1, c2 = st.columns(2)
         with c1:
@@ -162,6 +169,7 @@ def importacao_guiada_tab(supabase):
                     display_name, search_criteria = campos_sistema.get(key, (key, ([], [])))
                     index = get_best_match_index(search_criteria, opcoes_ficheiro, mapeamento_salvo.get(key))
                     mapeamento_usuario[key] = st.selectbox(display_name, options=opcoes_ficheiro, key=f"map_at_{key}", index=index, label_visibility="collapsed")
+        
         if st.form_submit_button("Validar Mapeamento e Pré-visualizar", type="primary"):
             st.session_state['mapeamento_final_at'] = mapeamento_usuario
             try:
@@ -169,65 +177,68 @@ def importacao_guiada_tab(supabase):
                 st.toast("Mapeamento salvo!", icon="💾")
             except Exception as e:
                 st.warning(f"Não foi possível salvar o mapeamento: {e}")
+
     if 'mapeamento_final_at' in st.session_state:
         st.markdown("---")
         st.markdown("#### Passo 4: Valide os dados antes de importar")
+        
         with st.spinner("Processando e validando os dados..."):
-            df_import = st.session_state['df_import_cache_at'].copy()
-            mapeamento = st.session_state['mapeamento_final_at']
             df_processado = pd.DataFrame()
-            system_to_user_map = {k: v for k, v in mapeamento.items() if v != '-- Não importar este campo --'}
+            system_to_user_map = {k: v for k, v in st.session_state['mapeamento_final_at'].items() if v != '-- Não importar este campo --'}
             for system_col, user_col in system_to_user_map.items():
                 if user_col in df_import.columns:
                     df_processado[system_col] = df_import[user_col]
-            alunos_df = load_data("Alunos")[['id', 'numero_interno']]
-            if 'numero_interno' in df_processado.columns:
-                df_processado['numero_interno'] = df_processado['numero_interno'].astype(str).str.strip().str.upper()
-                alunos_df['numero_interno'] = alunos_df['numero_interno'].astype(str).str.strip().str.upper()
-                df_final = pd.merge(df_processado, alunos_df, on='numero_interno', how='left')
-                df_final.rename(columns={'id': 'aluno_id'}, inplace=True)
-                sucesso_df = df_final.dropna(subset=['aluno_id'])
-                falha_df = df_final[df_final['aluno_id'].isna()]
-                st.success(f"Validação Concluída! Foram encontrados **{len(sucesso_df)}** alunos correspondentes.")
-                if not falha_df.empty:
-                    st.warning(f"Não foi possível encontrar **{len(falha_df)}** alunos. Verifique os 'Números Internos' abaixo:")
-                    st.dataframe(falha_df[['numero_interno']], use_container_width=True)
-                st.markdown("**Pré-visualização dos dados a serem importados:**")
-                st.dataframe(sucesso_df, use_container_width=True)
-                st.session_state['registros_para_importar_at'] = sucesso_df
-            else:
-                st.error("A coluna 'Número Interno' não foi mapeada. Por favor, mapeie-a no Passo 3.")
+            
+            campos_obrigatorios = [
+                'numero_interno', 'ano_referencia', 'posto_grad', 'endereco', 'bairro', 'cidade', 'cep', 'dias_uteis',
+                'ida_1_empresa', 'ida_1_linha', 'ida_1_tarifa', 'volta_1_empresa', 'volta_1_linha', 'volta_1_tarifa'
+            ]
+            
+            colunas_mapeadas = df_processado.columns.tolist()
+            if not all(campo in colunas_mapeadas for campo in campos_obrigatorios):
+                campos_em_falta = [c for c in campos_obrigatorios if c not in colunas_mapeadas]
+                st.error(f"Erro: Nem todos os campos obrigatórios foram mapeados. Faltam: {', '.join(campos_em_falta)}. Por favor, volte ao Passo 3.")
+                return
+
+            df_completos = df_processado.dropna(subset=campos_obrigatorios).copy()
+            
+            alunos_df = load_data("Alunos")[['numero_interno', 'nome_guerra']]
+            df_completos['numero_interno'] = df_completos['numero_interno'].astype(str).str.strip().str.upper()
+            alunos_df['numero_interno'] = alunos_df['numero_interno'].astype(str).str.strip().str.upper()
+            
+            registos_finais = pd.merge(df_completos, alunos_df, on='numero_interno', how='inner')
+            
+            st.success(f"Validação Concluída! Foram encontrados **{len(registos_finais)}** registos completos e válidos para importação.")
+            if not registos_finais.empty:
+                st.markdown("**Pré-visualização dos registos a serem importados:**")
+                st.dataframe(registos_finais)
+            
+            total_original = len(df_import)
+            if len(registos_finais) < total_original:
+                st.warning(f"**{total_original - len(registos_finais)}** registos foram ignorados por não terem todos os campos obrigatórios preenchidos ou por o aluno não ter sido encontrado no sistema.")
+
+            st.session_state['registros_para_importar_at'] = registos_finais
+
     if 'registros_para_importar_at' in st.session_state and not st.session_state['registros_para_importar_at'].empty:
          if st.button("Confirmar e Salvar no Sistema", type="primary"):
             with st.spinner("Salvando dados..."):
                 try:
-                    st.toast("Iniciando importação...", icon="⏳")
-                    registros_a_processar = st.session_state['registros_para_importar_at'].copy()
-                    st.toast("Convertendo tipos de dados...", icon="⚙️")
-                    registros_a_processar['aluno_id'] = pd.to_numeric(registros_a_processar['aluno_id'], errors='coerce').astype('Int64')
-                    registros_a_processar['ano_referencia'] = pd.to_numeric(registros_a_processar['ano_referencia'], errors='coerce').astype('Int64')
-                    if 'dias_uteis' in registros_a_processar.columns:
-                        registros_a_processar['dias_uteis'] = pd.to_numeric(registros_a_processar['dias_uteis'], errors='coerce').fillna(0).astype(int)
-                    for col in registros_a_processar.columns:
-                        if 'tarifa' in col:
-                            registros_a_processar[col] = pd.to_numeric(registros_a_processar[col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0.0)
-                    registros_a_processar.dropna(subset=['aluno_id', 'ano_referencia'], inplace=True)
-                    colunas_finais_db = [
-                        'aluno_id', 'ano_referencia', 'posto_grad', 'dias_uteis', 
-                        'endereco', 'bairro', 'cidade', 'cep',
-                        'ida_1_empresa', 'ida_1_linha', 'ida_1_tarifa', 'ida_2_empresa', 'ida_2_linha', 'ida_2_tarifa',
-                        'ida_3_empresa', 'ida_3_linha', 'ida_3_tarifa', 'ida_4_empresa', 'ida_4_linha', 'ida_4_tarifa',
-                        'volta_1_empresa', 'volta_1_linha', 'volta_1_tarifa', 'volta_2_empresa', 'volta_2_linha', 'volta_2_tarifa',
-                        'volta_3_empresa', 'volta_3_linha', 'volta_3_tarifa', 'volta_4_empresa', 'volta_4_linha', 'volta_4_tarifa'
-                    ]
-                    colunas_para_enviar = [col for col in colunas_finais_db if col in registros_a_processar.columns]
-                    payload_final = registros_a_processar[colunas_para_enviar]
-                    if payload_final.empty or len(payload_final.columns) == 0:
-                        st.error("Erro de preparação: Nenhum dado válido foi encontrado para ser salvo após a limpeza final. Verifique o mapeamento e os dados do seu ficheiro.")
-                        return
-                    st.toast(f"Enviando {len(payload_final)} registros com estrutura validada...", icon="➡️")
-                    supabase.table("auxilio_transporte").upsert(payload_final.to_dict(orient='records'),on_conflict='aluno_id,ano_referencia').execute()
-                    st.success(f"**Importação Concluída!** {len(payload_final)} registros salvos.")
+                    payload = st.session_state['registros_para_importar_at'].copy()
+                    
+                    for col in ['ano_referencia', 'dias_uteis']:
+                        if col in payload.columns: payload[col] = pd.to_numeric(payload[col], errors='coerce')
+                    for col in payload.columns:
+                        if 'tarifa' in col: payload[col] = pd.to_numeric(payload[col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0.0)
+
+                    colunas_a_remover = ['nome_guerra']
+                    payload.drop(columns=colunas_a_remover, inplace=True, errors='ignore')
+                    
+                    supabase.table("auxilio_transporte").upsert(
+                        payload.to_dict(orient='records'),
+                        on_conflict='numero_interno,ano_referencia'
+                    ).execute()
+                    
+                    st.success(f"**Importação Concluída!** {len(payload)} registros salvos.")
                     for key in ['df_import_cache_at', 'mapeamento_final_at', 'registros_para_importar_at']:
                         if key in st.session_state: del st.session_state[key]
                     load_data.clear()
@@ -237,19 +248,15 @@ def importacao_guiada_tab(supabase):
 def lancamento_individual_tab(supabase, opcoes_posto_grad):
     st.subheader("Adicionar ou Editar Dados para um Aluno")
     aluno_selecionado_df = render_alunos_filter_and_selection(key_suffix="transporte_individual", include_full_name_search=True)
-
     if aluno_selecionado_df.empty or len(aluno_selecionado_df) > 1:
         st.info("Por favor, selecione um único aluno.")
         return
-
     aluno_atual = aluno_selecionado_df.iloc[0]
     st.success(f"Aluno selecionado: **{aluno_atual['nome_guerra']} ({aluno_atual['numero_interno']})**")
     
     transporte_df = load_data("auxilio_transporte")
     dados_atuais = {}
     if not transporte_df.empty:
-        # --- CORREÇÃO APLICADA AQUI ---
-        # Procura por 'numero_interno' em vez de 'aluno_id'
         dados_aluno = transporte_df[transporte_df['numero_interno'] == aluno_atual['numero_interno']].sort_values('ano_referencia', ascending=False)
         if not dados_aluno.empty:
             dados_atuais = dados_aluno.iloc[0].to_dict()
@@ -258,17 +265,17 @@ def lancamento_individual_tab(supabase, opcoes_posto_grad):
         c1, c2, c3 = st.columns(3)
         ano_referencia = c1.number_input("Ano*", value=int(dados_atuais.get('ano_referencia', 2025)))
         posto_grad = c2.selectbox("Posto/Graduação*", options=opcoes_posto_grad, index=opcoes_posto_grad.index(dados_atuais.get('posto_grad', '')) if dados_atuais.get('posto_grad') in opcoes_posto_grad else 0)
-        dias_uteis = c3.number_input("Dias Úteis", value=int(dados_atuais.get('dias_uteis', 22)))
+        dias_uteis = c3.number_input("Dias Úteis*", value=int(dados_atuais.get('dias_uteis', 22)))
         
-        endereco = st.text_input("Endereço", value=dados_atuais.get('endereco', ''))
+        endereco = st.text_input("Endereço*", value=dados_atuais.get('endereco', ''))
         c4,c5,c6 = st.columns(3)
-        bairro = c4.text_input("Bairro", value=dados_atuais.get('bairro', ''))
-        cidade = c5.text_input("Cidade", value=dados_atuais.get('cidade', ''))
-        cep = c6.text_input("CEP", value=dados_atuais.get('cep', ''))
+        bairro = c4.text_input("Bairro*", value=dados_atuais.get('bairro', ''))
+        cidade = c5.text_input("Cidade*", value=dados_atuais.get('cidade', ''))
+        cep = c6.text_input("CEP*", value=dados_atuais.get('cep', ''))
         
         ida_data = {}
         volta_data = {}
-        st.markdown("**Itinerários**")
+        st.markdown("**Itinerários (1º Trajeto de Ida e Volta são obrigatórios)**")
         c7, c8 = st.columns(2)
         with c7:
             st.markdown("**Ida**")
@@ -284,27 +291,30 @@ def lancamento_individual_tab(supabase, opcoes_posto_grad):
                 volta_data[f'tarifa_{i}'] = st.number_input(f"{i}ª Tarifa (Volta)", value=float(dados_atuais.get(f'volta_{i}_tarifa', 0.0)), min_value=0.0, format="%.2f", key=f'volta_tarifa_{i}')
         
         if st.form_submit_button("Salvar Dados"):
-            # --- CORREÇÃO APLICADA AQUI ---
-            # Salva o 'numero_interno' do aluno em vez do 'aluno_id'
-            dados_para_salvar = {
-                "numero_interno": aluno_atual['numero_interno'],
-                "ano_referencia": ano_referencia,
-                "posto_grad": posto_grad, "dias_uteis": dias_uteis,
-                "endereco": endereco, "bairro": bairro, "cidade": cidade, "cep": cep
+            campos_obrigatorios_check = {
+                "Posto/Graduação": posto_grad, "Endereço": endereco, "Bairro": bairro, "Cidade": cidade, "CEP": cep,
+                "Empresa Ida 1": ida_data['empresa_1'], "Linha Ida 1": ida_data['linha_1'],
+                "Empresa Volta 1": volta_data['empresa_1'], "Linha Volta 1": volta_data['linha_1']
             }
-            for i in range(1, 5):
-                dados_para_salvar[f'ida_{i}_empresa'] = ida_data[f'empresa_{i}']
-                dados_para_salvar[f'ida_{i}_linha'] = ida_data[f'linha_{i}']
-                dados_para_salvar[f'ida_{i}_tarifa'] = ida_data[f'tarifa_{i}']
-                dados_para_salvar[f'volta_{i}_empresa'] = volta_data[f'empresa_{i}']
-                dados_para_salvar[f'volta_{i}_linha'] = volta_data[f'linha_{i}']
-                dados_para_salvar[f'volta_{i}_tarifa'] = volta_data[f'tarifa_{i}']
-            try:
-                supabase.table("auxilio_transporte").upsert(dados_para_salvar, on_conflict='numero_interno,ano_referencia').execute()
-                st.success("Dados salvos com sucesso!")
-                load_data.clear()
-            except Exception as e:
-                st.error(f"Erro ao salvar: {e}")
+            campos_em_falta = [nome for nome, valor in campos_obrigatorios_check.items() if not valor]
+            if campos_em_falta:
+                st.error(f"Erro: Os seguintes campos obrigatórios devem ser preenchidos: {', '.join(campos_em_falta)}")
+            else:
+                dados_para_salvar = { "numero_interno": aluno_atual['numero_interno'], "ano_referencia": ano_referencia, "posto_grad": posto_grad, "dias_uteis": dias_uteis,
+                                      "endereco": endereco, "bairro": bairro, "cidade": cidade, "cep": cep }
+                for i in range(1, 5):
+                    dados_para_salvar[f'ida_{i}_empresa'] = ida_data[f'empresa_{i}']
+                    dados_para_salvar[f'ida_{i}_linha'] = ida_data[f'linha_{i}']
+                    dados_para_salvar[f'ida_{i}_tarifa'] = ida_data[f'tarifa_{i}']
+                    dados_para_salvar[f'volta_{i}_empresa'] = volta_data[f'empresa_{i}']
+                    dados_para_salvar[f'volta_{i}_linha'] = volta_data[f'linha_{i}']
+                    dados_para_salvar[f'volta_{i}_tarifa'] = volta_data[f'tarifa_{i}']
+                try:
+                    supabase.table("auxilio_transporte").upsert(dados_para_salvar, on_conflict='numero_interno,ano_referencia').execute()
+                    st.success("Dados salvos com sucesso!")
+                    load_data.clear()
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
 
 def gestao_decat_tab(supabase):
     st.subheader("Dados de Transporte Cadastrados (com Cálculo)")
@@ -320,17 +330,27 @@ def gestao_decat_tab(supabase):
     
     calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
     display_df = pd.concat([dados_completos_df, calculos_df], axis=1)
+    
     colunas_principais = ['numero_interno', 'nome_guerra', 'ano_referencia', 'posto_grad']
     colunas_calculadas = ['despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']
     colunas_editaveis = ['dias_uteis', 'endereco', 'bairro', 'cidade', 'cep']
     for i in range(1, 5):
         colunas_editaveis += [f'ida_{i}_empresa', f'ida_{i}_linha', f'ida_{i}_tarifa']
         colunas_editaveis += [f'volta_{i}_empresa', f'volta_{i}_linha', f'volta_{i}_tarifa']
+    
     colunas_visiveis = [col for col in colunas_principais + colunas_calculadas + colunas_editaveis if col in display_df.columns]
+    
     edited_df = st.data_editor(display_df[colunas_visiveis], hide_index=True, use_container_width=True, disabled=colunas_principais + colunas_calculadas)
+    
     if st.button("Salvar Alterações na Tabela de Gestão"):
-        st.info("A funcionalidade de salvar edições diretamente nesta tabela está em desenvolvimento.")
-        pass
+        try:
+            colunas_db = [col for col in colunas_editaveis + ['numero_interno', 'ano_referencia'] if col in edited_df.columns]
+            records_to_upsert = edited_df[colunas_db].to_dict(orient='records')
+            supabase.table("auxilio_transporte").upsert(records_to_upsert, on_conflict='numero_interno,ano_referencia').execute()
+            st.success("Alterações salvas com sucesso!")
+            load_data.clear()
+        except Exception as e:
+            st.error(f"Erro ao salvar alterações: {e}")
 
 def gerar_documento_tab(supabase):
     st.subheader("Gerador de Documentos de Solicitação")
@@ -365,18 +385,12 @@ def gerar_documento_tab(supabase):
     if transporte_df.empty:
         st.warning("Nenhum dado de transporte foi cadastrado para preencher os documentos.")
         return
-    try:
-        alunos_df['id'] = alunos_df['id'].astype(str).str.strip()
-        transporte_df['aluno_id'] = transporte_df['aluno_id'].astype(str).str.strip()
-    except Exception as e:
-        st.error(f"Ocorreu um erro ao padronizar os IDs. Verifique os dados: {e}")
-        return
-    dados_completos_df = pd.merge(alunos_df, transporte_df, left_on='id', right_on='aluno_id', how='left')
+    
+    dados_completos_df = pd.merge(transporte_df, alunos_df, on='numero_interno', how='left')
     dados_completos_df = pd.merge(dados_completos_df, soldos_df, left_on='posto_grad', right_on='graduacao', how='left')
     calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
     dados_completos_df = pd.concat([dados_completos_df, calculos_df], axis=1)
-    if 'id_x' in dados_completos_df.columns:
-        dados_completos_df.rename(columns={'id_x': 'id'}, inplace=True)
+    
     alunos_selecionados_df = render_alunos_filter_and_selection(key_suffix="docgen_transporte", include_full_name_search=True)
     if alunos_selecionados_df.empty:
         st.info("Use os filtros para selecionar os alunos.")
@@ -390,16 +404,14 @@ def gerar_documento_tab(supabase):
             except Exception as e:
                 st.error(f"Falha ao carregar o modelo de PDF: {e}. Faça o upload na seção acima.")
                 return
-            ids_selecionados = alunos_selecionados_df['id'].astype(str).str.strip().tolist()
-            dados_completos_df['id'] = dados_completos_df['id'].astype(str).str.strip()
-            dados_alunos_selecionados_df = dados_completos_df[dados_completos_df['id'].isin(ids_selecionados)]
-            dados_para_gerar_df = dados_alunos_selecionados_df.dropna(subset=['aluno_id'])
-            alunos_sem_dados_df = dados_alunos_selecionados_df[dados_alunos_selecionados_df['aluno_id'].isna()]
-            if not alunos_sem_dados_df.empty:
-                st.warning(f"Aviso: {len(alunos_sem_dados_df)} alunos foram ignorados por não terem dados de transporte.")
+            
+            numeros_internos_selecionados = alunos_selecionados_df['numero_interno'].tolist()
+            dados_para_gerar_df = dados_completos_df[dados_completos_df['numero_interno'].isin(numeros_internos_selecionados)]
+            
             if dados_para_gerar_df.empty:
                 st.error("Nenhum dos alunos selecionados possui dados de transporte cadastrados.")
                 return
+
             filled_pdfs = []
             progress_bar = st.progress(0, text=f"Gerando {len(dados_para_gerar_df)} documentos...")
             for i, (_, aluno_row) in enumerate(dados_para_gerar_df.iterrows()):
@@ -407,6 +419,7 @@ def gerar_documento_tab(supabase):
                 progress_bar.progress((i + 1) / len(dados_para_gerar_df), text=f"Gerando: {aluno_row['nome_guerra']}")
             final_pdf_buffer = merge_pdfs(filled_pdfs)
             st.session_state['final_pdf_auxilio'] = final_pdf_buffer.getvalue()
+
     if 'final_pdf_auxilio' in st.session_state:
         st.balloons()
         st.download_button(label="✅ Baixar Documento Consolidado (.pdf)", data=st.session_state['final_pdf_auxilio'], file_name="solicitacoes_auxilio_transporte.pdf", mime="application/pdf")
@@ -430,7 +443,8 @@ def show_auxilio_transporte():
     supabase = init_supabase_client()
     
     tab_importacao, tab_individual, tab_gestao, tab_soldos, tab_gerar_doc = st.tabs([
-        "1. Importação Guiada", "2. Lançamento Individual", "3. Gerenciar Dados", "4. Gerenciar Soldos", "5. Gerar Documento"
+        "1. Importação Guiada", "2. Lançamento Individual", 
+        "3. Gerenciar Dados", "4. Gerenciar Soldos", "5. Gerar Documento"
     ])
 
     soldos_df = load_data("soldos")
