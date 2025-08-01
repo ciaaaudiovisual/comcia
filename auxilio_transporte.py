@@ -89,7 +89,6 @@ def merge_pdfs(pdf_buffers):
 
 # --- DEFINIÇÃO DAS FUNÇÕES DE CADA ABA (COMPLETAS) ---
 
-# No ficheiro auxilio_transporte.py, substitua esta função
 def importacao_guiada_tab(supabase):
     st.subheader("Assistente de Importação de Dados")
     st.markdown("#### Passo 1: Baixe o modelo e preencha com os dados")
@@ -148,7 +147,6 @@ def importacao_guiada_tab(supabase):
         for i, key in enumerate(campos_gerais):
             display_name, search_criteria = campos_sistema.get(key, (key, ([], [])))
             index = get_best_match_index(search_criteria, opcoes_ficheiro, mapeamento_salvo.get(key))
-            # --- ALTERAÇÃO 1 (Parte A) ---
             label_geral = f"**{display_name}** `(Sistema: {key})`"
             mapeamento_usuario[key] = cols_gerais[i % 3].selectbox(label_geral, options=opcoes_ficheiro, key=f"map_at_{key}", index=index)
 
@@ -162,7 +160,6 @@ def importacao_guiada_tab(supabase):
                     key = f"ida_{i}_{tipo}"
                     display_name, search_criteria = campos_sistema.get(key, (key, ([], [])))
                     index = get_best_match_index(search_criteria, opcoes_ficheiro, mapeamento_salvo.get(key))
-                    # --- ALTERAÇÃO 1 (Parte B) ---
                     label_itinerario = f"{display_name} `(Sistema: {key})`"
                     mapeamento_usuario[key] = st.selectbox(label_itinerario, options=opcoes_ficheiro, key=f"map_at_{key}", index=index, label_visibility="collapsed")
         with c2:
@@ -173,7 +170,6 @@ def importacao_guiada_tab(supabase):
                     key = f"volta_{i}_{tipo}"
                     display_name, search_criteria = campos_sistema.get(key, (key, ([], [])))
                     index = get_best_match_index(search_criteria, opcoes_ficheiro, mapeamento_salvo.get(key))
-                    # --- ALTERAÇÃO 1 (Parte C) ---
                     label_itinerario = f"{display_name} `(Sistema: {key})`"
                     mapeamento_usuario[key] = st.selectbox(label_itinerario, options=opcoes_ficheiro, key=f"map_at_{key}", index=index, label_visibility="collapsed")
 
@@ -188,8 +184,7 @@ def importacao_guiada_tab(supabase):
     if 'mapeamento_final_at' in st.session_state:
         st.markdown("---")
         st.markdown("#### Passo 4: Valide os dados antes de importar")
-        
-        # --- ALTERAÇÃO 2: Bloco de validação inteiro foi reescrito ---
+
         with st.spinner("Processando e validando os dados..."):
             df_processado = pd.DataFrame()
             system_to_user_map = {k: v for k, v in st.session_state['mapeamento_final_at'].items() if v != '-- Não importar este campo --'}
@@ -208,7 +203,6 @@ def importacao_guiada_tab(supabase):
                 st.error(f"Erro: Nem todos os campos obrigatórios foram mapeados. Faltam: {', '.join(campos_em_falta)}. Por favor, volte ao Passo 3.")
                 return
 
-            # Identificar linhas com dados faltando ANTES de removê-las
             linhas_com_dados_faltando = df_processado[df_processado[campos_obrigatorios].isnull().any(axis=1)]
             erros_detalhados = []
             if not linhas_com_dados_faltando.empty:
@@ -217,17 +211,14 @@ def importacao_guiada_tab(supabase):
                     num_interno = row.get('numero_interno', f"Linha {index + 2} do arquivo")
                     erros_detalhados.append(f"- **Aluno {num_interno}:** Campos obrigatórios vazios: `{', '.join(campos_vazios)}`.")
 
-            # Manter apenas as linhas completas
             df_completos = df_processado.dropna(subset=campos_obrigatorios).copy()
-            
-            # Cruzar com a base de alunos
+
             alunos_df = load_data("Alunos")[['numero_interno', 'nome_guerra']]
             df_completos['numero_interno'] = df_completos['numero_interno'].astype(str).str.strip().str.upper()
             alunos_df['numero_interno'] = alunos_df['numero_interno'].astype(str).str.strip().str.upper()
 
             registos_finais = pd.merge(df_completos, alunos_df, on='numero_interno', how='inner')
-            
-            # Identificar alunos não encontrados no sistema
+
             numeros_internos_completos = set(df_completos['numero_interno'])
             numeros_internos_finais = set(registos_finais['numero_interno'])
             alunos_nao_encontrados = numeros_internos_completos - numeros_internos_finais
@@ -236,8 +227,7 @@ def importacao_guiada_tab(supabase):
                      erros_detalhados.append(f"- **Aluno {num_interno}:** Não foi encontrado na base de dados de alunos do sistema.")
 
             st.success(f"Validação Concluída! Foram encontrados **{len(registos_finais)}** registos completos e válidos para importação.")
-            
-            # Exibir erros detalhados, se houver
+
             total_original = len(df_import)
             if len(registos_finais) < total_original:
                  st.warning(f"**Atenção:** {total_original - len(registos_finais)} de {total_original} registros não puderam ser importados.")
@@ -247,34 +237,31 @@ def importacao_guiada_tab(supabase):
             if not registos_finais.empty:
                 st.markdown("**Pré-visualização dos registos a serem importados:**")
                 st.dataframe(registos_finais)
-            
+
             st.session_state['registros_para_importar_at'] = registos_finais
 
     if 'registros_para_importar_at' in st.session_state and not st.session_state['registros_para_importar_at'].empty:
-         if st.button("Confirmar e Salvar no Sistema", type="primary"):
+        if st.button("Confirmar e Salvar no Sistema", type="primary"):
             with st.spinner("Salvando dados..."):
                 try:
                     payload = st.session_state['registros_para_importar_at'].copy()
-                    
+
                     for col in ['ano_referencia', 'dias_uteis']:
-                        if col in payload.columns: payload[col] = pd.to_numeric(payload[col], errors='coerce').fillna(0).astype(int)
+                        if col in payload.columns:
+                            payload[col] = pd.to_numeric(payload[col], errors='coerce').fillna(0).astype(int)
+
                     for col in payload.columns:
-                        if 'tarifa' in col: payload[col] = pd.to_numeric(payload[col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0.0)
+                        if 'tarifa' in col:
+                            payload[col] = pd.to_numeric(payload[col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0.0)
 
-# ...
-
-# ...
-                    
                     colunas_a_remover = ['nome_guerra']
                     payload.drop(columns=colunas_a_remover, inplace=True, errors='ignore')
-                    
-                    supabase.table("auxilio_trans
-                    
-                                   porte").upsert(
+
+                    supabase.table("auxilio_transporte").upsert(
                         payload.to_dict(orient='records'),
                         on_conflict='numero_interno,ano_referencia'
                     ).execute()
-                    
+
                     st.success(f"**Importação Concluída!** {len(payload)} registros salvos.")
                     for key in ['df_import_cache_at', 'mapeamento_final_at', 'registros_para_importar_at']:
                         if key in st.session_state: del st.session_state[key]
@@ -290,7 +277,7 @@ def lancamento_individual_tab(supabase, opcoes_posto_grad):
         return
     aluno_atual = aluno_selecionado_df.iloc[0]
     st.success(f"Aluno selecionado: **{aluno_atual['nome_guerra']} ({aluno_atual['numero_interno']})**")
-    
+
     transporte_df = load_data("auxilio_transporte")
     dados_atuais = {}
     if not transporte_df.empty:
@@ -303,13 +290,13 @@ def lancamento_individual_tab(supabase, opcoes_posto_grad):
         ano_referencia = c1.number_input("Ano*", value=int(dados_atuais.get('ano_referencia', 2025)))
         posto_grad = c2.selectbox("Posto/Graduação*", options=opcoes_posto_grad, index=opcoes_posto_grad.index(dados_atuais.get('posto_grad', '')) if dados_atuais.get('posto_grad') in opcoes_posto_grad else 0)
         dias_uteis = c3.number_input("Dias Úteis*", value=int(dados_atuais.get('dias_uteis', 22)))
-        
+
         endereco = st.text_input("Endereço*", value=dados_atuais.get('endereco', ''))
         c4,c5,c6 = st.columns(3)
         bairro = c4.text_input("Bairro*", value=dados_atuais.get('bairro', ''))
         cidade = c5.text_input("Cidade*", value=dados_atuais.get('cidade', ''))
         cep = c6.text_input("CEP*", value=dados_atuais.get('cep', ''))
-        
+
         ida_data = {}
         volta_data = {}
         st.markdown("**Itinerários (1º Trajeto de Ida e Volta são obrigatórios)**")
@@ -326,7 +313,7 @@ def lancamento_individual_tab(supabase, opcoes_posto_grad):
                 volta_data[f'empresa_{i}'] = st.text_input(f"{i}ª Empresa (Volta)", value=dados_atuais.get(f'volta_{i}_empresa', ''), key=f'volta_empresa_{i}')
                 volta_data[f'linha_{i}'] = st.text_input(f"{i}ª Linha (Volta)", value=dados_atuais.get(f'volta_{i}_linha', ''), key=f'volta_linha_{i}')
                 volta_data[f'tarifa_{i}'] = st.number_input(f"{i}ª Tarifa (Volta)", value=float(dados_atuais.get(f'volta_{i}_tarifa', 0.0)), min_value=0.0, format="%.2f", key=f'volta_tarifa_{i}')
-        
+
         if st.form_submit_button("Salvar Dados"):
             campos_obrigatorios_check = {
                 "Posto/Graduação": posto_grad, "Endereço": endereco, "Bairro": bairro, "Cidade": cidade, "CEP": cep,
@@ -361,24 +348,24 @@ def gestao_decat_tab(supabase):
     if transporte_df.empty:
         st.warning("Nenhum dado de auxílio transporte cadastrado.")
         return
-    
+
     dados_completos_df = pd.merge(transporte_df, alunos_df, on='numero_interno', how='left')
     dados_completos_df = pd.merge(dados_completos_df, soldos_df, left_on='posto_grad', right_on='graduacao', how='left')
-    
+
     calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
     display_df = pd.concat([dados_completos_df, calculos_df], axis=1)
-    
+
     colunas_principais = ['numero_interno', 'nome_guerra', 'ano_referencia', 'posto_grad']
     colunas_calculadas = ['despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']
     colunas_editaveis = ['dias_uteis', 'endereco', 'bairro', 'cidade', 'cep']
     for i in range(1, 5):
         colunas_editaveis += [f'ida_{i}_empresa', f'ida_{i}_linha', f'ida_{i}_tarifa']
         colunas_editaveis += [f'volta_{i}_empresa', f'volta_{i}_linha', f'volta_{i}_tarifa']
-    
+
     colunas_visiveis = [col for col in colunas_principais + colunas_calculadas + colunas_editaveis if col in display_df.columns]
-    
+
     edited_df = st.data_editor(display_df[colunas_visiveis], hide_index=True, use_container_width=True, disabled=colunas_principais + colunas_calculadas)
-    
+
     if st.button("Salvar Alterações na Tabela de Gestão"):
         try:
             colunas_db = [col for col in colunas_editaveis + ['numero_interno', 'ano_referencia'] if col in edited_df.columns]
@@ -422,12 +409,12 @@ def gerar_documento_tab(supabase):
     if transporte_df.empty:
         st.warning("Nenhum dado de transporte foi cadastrado para preencher os documentos.")
         return
-    
+
     dados_completos_df = pd.merge(transporte_df, alunos_df, on='numero_interno', how='left')
     dados_completos_df = pd.merge(dados_completos_df, soldos_df, left_on='posto_grad', right_on='graduacao', how='left')
     calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
     dados_completos_df = pd.concat([dados_completos_df, calculos_df], axis=1)
-    
+
     alunos_selecionados_df = render_alunos_filter_and_selection(key_suffix="docgen_transporte", include_full_name_search=True)
     if alunos_selecionados_df.empty:
         st.info("Use os filtros para selecionar os alunos.")
@@ -441,10 +428,10 @@ def gerar_documento_tab(supabase):
             except Exception as e:
                 st.error(f"Falha ao carregar o modelo de PDF: {e}. Faça o upload na seção acima.")
                 return
-            
+
             numeros_internos_selecionados = alunos_selecionados_df['numero_interno'].tolist()
             dados_para_gerar_df = dados_completos_df[dados_completos_df['numero_interno'].isin(numeros_internos_selecionados)]
-            
+
             if dados_para_gerar_df.empty:
                 st.error("Nenhum dos alunos selecionados possui dados de transporte cadastrados.")
                 return
@@ -478,9 +465,9 @@ def gestao_soldos_tab(supabase):
 def show_auxilio_transporte():
     st.title("🚌 Gestão de Auxílio Transporte (DeCAT)")
     supabase = init_supabase_client()
-    
+
     tab_importacao, tab_individual, tab_gestao, tab_soldos, tab_gerar_doc = st.tabs([
-        "1. Importação Guiada", "2. Lançamento Individual", 
+        "1. Importação Guiada", "2. Lançamento Individual",
         "3. Gerenciar Dados", "4. Gerenciar Soldos", "5. Gerar Documento"
     ])
 
