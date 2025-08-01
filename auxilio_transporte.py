@@ -105,14 +105,18 @@ def gerar_documento_tab(supabase):
         st.warning("Nenhum dado de transporte foi cadastrado para preencher os documentos.")
         return
 
-    alunos_df['id'] = alunos_df['id'].astype(str)
-    transporte_df['aluno_id'] = transporte_df['aluno_id'].astype(str)
-    
-    # Junta as informações dos alunos com os dados de transporte
-    dados_completos_df = pd.merge(alunos_df, transporte_df, left_on='id', right_on='aluno_id', how='inner')
-
     # --- CORREÇÃO APLICADA AQUI ---
-    # Renomeia a coluna 'id_x' (ID do aluno) para 'id' para evitar o KeyError.
+    # Força a limpeza e a padronização dos campos de ligação para evitar erros de tipo de dado ou espaços.
+    try:
+        alunos_df['id'] = alunos_df['id'].astype(str).str.strip()
+        transporte_df['aluno_id'] = transporte_df['aluno_id'].astype(str).str.strip()
+    except Exception as e:
+        st.error(f"Ocorreu um erro ao padronizar os IDs. Verifique os dados: {e}")
+        return
+    
+    # Usa 'left' merge para manter todos os alunos na lista, mesmo que não tenham dados de transporte.
+    dados_completos_df = pd.merge(alunos_df, transporte_df, left_on='id', right_on='aluno_id', how='left')
+
     if 'id_x' in dados_completos_df.columns:
         dados_completos_df.rename(columns={'id_x': 'id'}, inplace=True)
 
@@ -138,17 +142,24 @@ def gerar_documento_tab(supabase):
                 st.warning("Por favor, faça o upload do modelo na seção 'Configurar Modelo de PDF' acima.")
                 return
 
-            # Filtra os dados completos para incluir apenas os alunos selecionados
-            # Agora esta linha funciona, pois a coluna 'id' existe.
-            ids_selecionados = alunos_selecionados_df['id'].tolist()
-            dados_para_gerar_df = dados_completos_df[dados_completos_df['id'].isin(ids_selecionados)]
+            ids_selecionados = alunos_selecionados_df['id'].astype(str).str.strip().tolist()
+            dados_completos_df['id'] = dados_completos_df['id'].astype(str).str.strip()
+            
+            dados_alunos_selecionados_df = dados_completos_df[dados_completos_df['id'].isin(ids_selecionados)]
+
+            dados_para_gerar_df = dados_alunos_selecionados_df.dropna(subset=['aluno_id'])
+            alunos_sem_dados_df = dados_alunos_selecionados_df[dados_alunos_selecionados_df['aluno_id'].isna()]
+
+            if not alunos_sem_dados_df.empty:
+                nomes_sem_dados = ", ".join(alunos_sem_dados_df['nome_guerra'].tolist())
+                st.warning(f"**Aviso:** Os seguintes alunos foram ignorados por não possuírem dados de transporte cadastrados: **{nomes_sem_dados}**")
 
             if dados_para_gerar_df.empty:
                 st.error("Nenhum dos alunos selecionados possui dados de transporte cadastrados para preencher o documento.")
                 return
 
             filled_pdfs = []
-            progress_bar = st.progress(0, text="Gerando documentos...")
+            progress_bar = st.progress(0, text=f"Gerando {len(dados_para_gerar_df)} documentos...")
             total_alunos = len(dados_para_gerar_df)
 
             for i, (_, aluno_row) in enumerate(dados_para_gerar_df.iterrows()):
@@ -161,7 +172,7 @@ def gerar_documento_tab(supabase):
     if 'final_pdf_auxilio' in st.session_state:
         st.balloons()
         st.download_button(
-            label="✅ Baixar Documento Consolidado (.pdf)",
+            label=f"✅ Baixar Documento Consolidado ({len(st.session_state['final_pdf_auxilio']) // 1024} KB)",
             data=st.session_state['final_pdf_auxilio'],
             file_name="solicitacoes_auxilio_transporte.pdf",
             mime="application/pdf"
