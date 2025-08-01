@@ -100,7 +100,7 @@ def importacao_guiada_tab(supabase):
         st.info("Aguardando o upload do ficheiro para iniciar.")
         return
     try:
-        df_import = pd.read_csv(uploaded_file, delimiter=';') if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+        df_import = pd.read_csv(uploaded_file, delimiter=';', encoding='latin-1') if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
         st.session_state['df_import_cache_at'] = df_import
         st.session_state['import_file_columns_at'] = df_import.columns.tolist()
     except Exception as e:
