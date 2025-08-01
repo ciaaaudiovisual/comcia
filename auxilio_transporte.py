@@ -31,13 +31,21 @@ def show_auxilio_transporte():
 
 # --- FUNÇÕES AUXILIARES PARA GERAÇÃO DE PDF ---
 def fill_pdf_auxilio(template_bytes: bytes, aluno_data: pd.Series) -> BytesIO:
+    """Preenche um único PDF com os dados de um aluno."""
     reader = PdfReader(BytesIO(template_bytes))
     writer = PdfWriter(clone_from=reader)
     
-    # Adapte as chaves deste dicionário para corresponderem EXATAMENTE aos nomes dos campos no seu PDF
+    # IMPORTANTE: As chaves neste dicionário (ex: 'NOME COMPLETO') devem ser os nomes EXATOS dos campos no seu formulário PDF.
+    # Use a ferramenta de diagnóstico na aba "Gerar Documento" para descobrir os nomes corretos e ajuste-os aqui.
     pdf_field_mapping = {
-        'NOME COMPLETO': 'nome_completo', 'NIP': 'nip', 'ENDEREÇO': 'endereco',
-        'BAIRRO': 'bairro', 'CIDADE': 'cidade', 'CEP': 'cep', 'ANO': 'ano_referencia'
+        'NOME COMPLETO': 'nome_completo',
+        'NIP': 'nip',
+        'ENDEREÇO': 'endereco',
+        'BAIRRO': 'bairro',
+        'CIDADE': 'cidade',
+        'CEP': 'cep',
+        'ANO': 'ano_referencia'
+        # Adicione/Altere mais campos do seu PDF aqui
     }
 
     fill_data = {
@@ -45,11 +53,13 @@ def fill_pdf_auxilio(template_bytes: bytes, aluno_data: pd.Series) -> BytesIO:
         for pdf_field, df_column in pdf_field_mapping.items()
     }
     
+    # Mapeamento para os campos de transporte
     for i in range(1, 5):
+        # Adapte os nomes dos campos (ex: 'EMPRESA IDA 1') para corresponderem ao seu PDF
         fill_data[f'EMPRESA IDA {i}'] = str(aluno_data.get(f'ida_{i}_empresa', ''))
         fill_data[f'LINHA IDA {i}'] = str(aluno_data.get(f'ida_{i}_linha', ''))
         fill_data[f'TARIFA IDA {i}'] = f"R$ {aluno_data.get(f'ida_{i}_tarifa', 0.0):.2f}"
-        fill_data[f'EMPRESA VOLTA {i}'] = str(aluno_data.get(f'volta_{i}_empresa', ''))
+        fill_data[f'EMPRESA VOLTA {i}'] = str(aluna_data.get(f'volta_{i}_empresa', ''))
         fill_data[f'LINHA VOLTA {i}'] = str(aluno_data.get(f'volta_{i}_linha', ''))
         fill_data[f'TARIFA VOLTA {i}'] = f"R$ {aluno_data.get(f'volta_{i}_tarifa', 0.0):.2f}"
 
@@ -63,6 +73,7 @@ def fill_pdf_auxilio(template_bytes: bytes, aluno_data: pd.Series) -> BytesIO:
     return output_buffer
 
 def merge_pdfs(pdf_buffers: list) -> BytesIO:
+    """Junta vários PDFs em um único ficheiro."""
     merger = PdfWriter()
     for buffer in pdf_buffers:
         reader = PdfReader(buffer)
@@ -74,15 +85,28 @@ def merge_pdfs(pdf_buffers: list) -> BytesIO:
     return merged_pdf_buffer
 
 
-# --- ABA DE GERAÇÃO DE DOCUMENTOS ---
+# --- ABA DE GERAÇÃO DE DOCUMENTOS (COM FERRAMENTA DE DIAGNÓSTICO) ---
 def gerar_documento_tab(supabase):
     st.subheader("Gerador de Documentos de Solicitação de Auxílio Transporte")
     
     NOME_TEMPLATE = "auxilio_transporte_template.pdf"
 
-    with st.expander("Configurar Modelo de PDF"):
-        st.info(f"Faça o upload do seu modelo de PDF preenchível. Ele será salvo no sistema como '{NOME_TEMPLATE}'.")
-        uploaded_template = st.file_uploader("Selecione o seu modelo de PDF", type="pdf", key="pdf_template_uploader")
+    with st.expander("Configurar e Diagnosticar Modelo de PDF", expanded=True):
+        st.info("Faça o upload do seu modelo PDF preenchível. O sistema irá analisar o ficheiro e listar os campos de texto encontrados abaixo.")
+        uploaded_template = st.file_uploader("Selecione o seu modelo PDF", type="pdf", key="pdf_template_uploader")
+        
+        # Ferramenta de diagnóstico que lê o PDF e lista os nomes dos campos
+        if uploaded_template:
+            try:
+                reader = PdfReader(BytesIO(uploaded_template.getvalue()))
+                if reader.get_form_text_fields():
+                    fields = reader.get_form_text_fields().keys()
+                    st.success("✅ Campos de texto encontrados neste PDF:")
+                    st.text_area("Use estes nomes para ajustar o mapeamento no código (função fill_pdf_auxilio)", value="\n".join(fields), height=200)
+                else:
+                    st.warning("⚠️ Atenção: Nenhum campo de formulário editável (caixa de texto) foi encontrado neste PDF.")
+            except Exception as e:
+                st.error(f"Não foi possível ler os campos do PDF: {e}")
         
         if uploaded_template:
             if st.button("Salvar Modelo no Sistema"):
@@ -105,8 +129,6 @@ def gerar_documento_tab(supabase):
         st.warning("Nenhum dado de transporte foi cadastrado para preencher os documentos.")
         return
 
-    # --- CORREÇÃO APLICADA AQUI ---
-    # Força a limpeza e a padronização dos campos de ligação para evitar erros de tipo de dado ou espaços.
     try:
         alunos_df['id'] = alunos_df['id'].astype(str).str.strip()
         transporte_df['aluno_id'] = transporte_df['aluno_id'].astype(str).str.strip()
@@ -114,69 +136,53 @@ def gerar_documento_tab(supabase):
         st.error(f"Ocorreu um erro ao padronizar os IDs. Verifique os dados: {e}")
         return
     
-    # Usa 'left' merge para manter todos os alunos na lista, mesmo que não tenham dados de transporte.
     dados_completos_df = pd.merge(alunos_df, transporte_df, left_on='id', right_on='aluno_id', how='left')
-
     if 'id_x' in dados_completos_df.columns:
         dados_completos_df.rename(columns={'id_x': 'id'}, inplace=True)
 
-    # O componente para selecionar alunos agora pode ser exibido
-    alunos_selecionados_df = render_alunos_filter_and_selection(
-        key_suffix="docgen_transporte", 
-        include_full_name_search=True
-    )
+    alunos_selecionados_df = render_alunos_filter_and_selection(key_suffix="docgen_transporte", include_full_name_search=True)
     
     if alunos_selecionados_df.empty:
-        st.info("Use os filtros para selecionar os alunos para os quais deseja gerar o documento.")
+        st.info("Use os filtros para selecionar os alunos.")
         return
 
     st.markdown(f"**{len(alunos_selecionados_df)} aluno(s) selecionado(s).**")
     
     st.markdown("#### 2. Gere o Documento Consolidado")
     if st.button(f"Gerar PDF para os {len(alunos_selecionados_df)} alunos", type="primary"):
-        with st.spinner("Preparando para gerar os documentos..."):
+        with st.spinner("Preparando..."):
             try:
                 template_bytes = supabase.storage.from_("templates").download(NOME_TEMPLATE)
             except Exception as e:
-                st.error(f"Falha ao carregar o modelo de PDF do sistema: {e}")
-                st.warning("Por favor, faça o upload do modelo na seção 'Configurar Modelo de PDF' acima.")
+                st.error(f"Falha ao carregar o modelo de PDF: {e}. Faça o upload na seção acima.")
                 return
 
             ids_selecionados = alunos_selecionados_df['id'].astype(str).str.strip().tolist()
             dados_completos_df['id'] = dados_completos_df['id'].astype(str).str.strip()
-            
             dados_alunos_selecionados_df = dados_completos_df[dados_completos_df['id'].isin(ids_selecionados)]
 
             dados_para_gerar_df = dados_alunos_selecionados_df.dropna(subset=['aluno_id'])
             alunos_sem_dados_df = dados_alunos_selecionados_df[dados_alunos_selecionados_df['aluno_id'].isna()]
 
             if not alunos_sem_dados_df.empty:
-                nomes_sem_dados = ", ".join(alunos_sem_dados_df['nome_guerra'].tolist())
-                st.warning(f"**Aviso:** Os seguintes alunos foram ignorados por não possuírem dados de transporte cadastrados: **{nomes_sem_dados}**")
-
+                st.warning(f"Aviso: {len(alunos_sem_dados_df)} alunos foram ignorados por não terem dados de transporte.")
             if dados_para_gerar_df.empty:
-                st.error("Nenhum dos alunos selecionados possui dados de transporte cadastrados para preencher o documento.")
+                st.error("Nenhum dos alunos selecionados possui dados de transporte cadastrados.")
                 return
 
             filled_pdfs = []
             progress_bar = st.progress(0, text=f"Gerando {len(dados_para_gerar_df)} documentos...")
-            total_alunos = len(dados_para_gerar_df)
-
             for i, (_, aluno_row) in enumerate(dados_para_gerar_df.iterrows()):
                 filled_pdfs.append(fill_pdf_auxilio(template_bytes, aluno_row))
-                progress_bar.progress((i + 1) / total_alunos, text=f"Gerando documento para: {aluno_row['nome_guerra']}")
+                progress_bar.progress((i + 1) / len(dados_para_gerar_df), text=f"Gerando: {aluno_row['nome_guerra']}")
             
             final_pdf_buffer = merge_pdfs(filled_pdfs)
             st.session_state['final_pdf_auxilio'] = final_pdf_buffer.getvalue()
 
     if 'final_pdf_auxilio' in st.session_state:
         st.balloons()
-        st.download_button(
-            label=f"✅ Baixar Documento Consolidado ({len(st.session_state['final_pdf_auxilio']) // 1024} KB)",
-            data=st.session_state['final_pdf_auxilio'],
-            file_name="solicitacoes_auxilio_transporte.pdf",
-            mime="application/pdf"
-        )
+        st.download_button(label="✅ Baixar Documento Consolidado (.pdf)", data=st.session_state['final_pdf_auxilio'], file_name="solicitacoes_auxilio_transporte.pdf", mime="application/pdf")
+
 
 # --- ABA DE IMPORTAÇÃO GUIADA ---
 def importacao_guiada_tab(supabase):
