@@ -71,10 +71,53 @@ def show_auxilio_transporte():
         gerar_documento_tab(supabase)
 
 
-# --- ABA DE IMPORTAÇÃO GUIADA ---
+def create_excel_template():
+    """Cria um modelo Excel em memória para o usuário baixar."""
+    # Define os cabeçalhos das colunas exatamente como o sistema espera
+    template_data = {
+        'NÚMERO INTERNO DO ALUNO': ['M-01-101'],
+        'ANO DE REFERÊNCIA': [2025],
+        'POSTO/GRADUAÇÃO': ['ALUNO'],
+        'ENDEREÇO COMPLETO': ['Rua Exemplo, 123'],
+        'BAIRRO': ['Bairro Exemplo'],
+        'CIDADE': ['Cidade Exemplo'],
+        'CEP': ['12345-678'],
+        'DIAS ÚTEIS (MÁX 22)': [22],
+        '1ª EMPRESA (IDA)': ['Empresa A'],
+        '1º TRAJETO (IDA)': ['Linha 100'],
+        '1ª TARIFA (IDA)': [4.50],
+        '2ª EMPRESA (IDA)': [''], '2º TRAJETO (IDA)': [''], '2ª TARIFA (IDA)': [''],
+        '3ª EMPRESA (IDA)': [''], '3º TRAJETO (IDA)': [''], '3ª TARIFA (IDA)': [''],
+        '4ª EMPRESA (IDA)': [''], '4º TRAJETO (IDA)': [''], '4ª TARIFA (IDA)': [''],
+        '1ª EMPRESA (VOLTA)': ['Empresa A'],
+        '1º TRAJETO (VOLTA)': ['Linha 100'],
+        '1ª TARIFA (VOLTA)': [4.50],
+        '2ª EMPRESA (VOLTA)': [''], '2º TRAJETO (VOLTA)': [''], '2ª TARIFA (VOLTA)': [''],
+        '3ª EMPRESA (VOLTA)': [''], '3º TRAJETO (VOLTA)': [''], '3ª TARIFA (VOLTA)': [''],
+        '4ª EMPRESA (VOLTA)': [''], '4º TRAJETO (VOLTA)': [''], '4ª TARIFA (VOLTA)': [''],
+    }
+    df = pd.DataFrame(template_data)
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='ModeloAuxilioTransporte')
+    return output.getvalue()
+
+# --- ABA DE IMPORTAÇÃO GUIADA (COM BOTÃO DE DOWNLOAD) ---
 def importacao_guiada_tab(supabase):
     st.subheader("Assistente de Importação de Dados")
-    st.markdown("#### Passo 1: Carregue o ficheiro (CSV ou Excel)")
+    
+    st.markdown("#### Passo 1: Baixe o modelo e preencha com os dados")
+    st.info("Use o modelo padrão para garantir que as colunas sejam reconhecidas corretamente durante a importação.")
+    
+    excel_modelo_bytes = create_excel_template()
+    st.download_button(
+        label="📥 Baixar Modelo de Preenchimento (.xlsx)",
+        data=excel_modelo_bytes,
+        file_name="modelo_auxilio_transporte.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    st.markdown("#### Passo 2: Carregue o ficheiro preenchido")
     uploaded_file = st.file_uploader("Escolha o ficheiro...", type=["csv", "xlsx"], key="importer_uploader_at")
 
     if not uploaded_file:
@@ -90,10 +133,11 @@ def importacao_guiada_tab(supabase):
         return
 
     st.markdown("---")
-    st.markdown("#### Passo 2: Mapeie as colunas do seu ficheiro")
+    st.markdown("#### Passo 3: Mapeie as colunas do seu ficheiro")
     
     config_df = load_data("Config")
     mapeamento_salvo = json.loads(config_df[config_df['chave'] == 'mapeamento_auxilio_transporte']['valor'].iloc[0]) if 'mapeamento_auxilio_transporte' in config_df['chave'].values else {}
+
 
     campos_sistema = {
         "numero_interno": ("Número Interno*", ["número interno"]),
