@@ -91,6 +91,8 @@ def merge_pdfs(pdf_buffers):
 # No ficheiro auxilio_transporte.py, substitua a função existente por esta
 # No ficheiro auxilio_transporte.py, substitua esta função
 
+# No ficheiro auxilio_transporte.py, substitua esta função
+
 def importacao_guiada_tab(supabase):
     st.subheader("Assistente de Importação de Dados")
     st.markdown("#### Passo 1: Baixe o modelo e preencha com os dados")
@@ -228,25 +230,30 @@ def importacao_guiada_tab(supabase):
                     
                     registros_para_upsert.dropna(subset=['aluno_id', 'ano_referencia'], inplace=True)
                     
-                    # --- CORREÇÃO APLICADA AQUI ---
-                    # Busca os nomes das colunas do BD e verifica se a resposta não está vazia.
-                    response = supabase.table('auxilio_transporte').select('*', head=True).execute()
-                    if response.data:
-                        colunas_db = response.data[0].keys()
-                        colunas_para_remover = [col for col in registros_para_upsert.columns if col not in colunas_db]
-                        registros_para_upsert.drop(columns=colunas_para_remover, inplace=True)
-                    else:
-                        # Se a tabela está vazia, confia nas colunas que temos, mas remove as que sabemos que não pertencem
-                        colunas_para_remover = ['numero_interno'] 
-                        registros_para_upsert.drop(columns=colunas_para_remover, inplace=True, errors='ignore')
+                    # --- CORREÇÃO DEFINITIVA APLICADA AQUI ---
+                    # 1. Define uma lista fixa e explícita de colunas que a tabela 'auxilio_transporte' aceita.
+                    colunas_finais_db = [
+                        'aluno_id', 'ano_referencia', 'posto_grad', 'dias_uteis', 
+                        'endereco', 'bairro', 'cidade', 'cep',
+                        'ida_1_empresa', 'ida_1_linha', 'ida_1_tarifa', 'ida_2_empresa', 'ida_2_linha', 'ida_2_tarifa',
+                        'ida_3_empresa', 'ida_3_linha', 'ida_3_tarifa', 'ida_4_empresa', 'ida_4_linha', 'ida_4_tarifa',
+                        'volta_1_empresa', 'volta_1_linha', 'volta_1_tarifa', 'volta_2_empresa', 'volta_2_linha', 'volta_2_tarifa',
+                        'volta_3_empresa', 'volta_3_linha', 'volta_3_tarifa', 'volta_4_empresa', 'volta_4_linha', 'volta_4_tarifa'
+                    ]
 
-                    st.toast(f"Enviando {len(registros_para_upsert)} registros...", icon="➡️")
+                    # 2. Filtra o DataFrame para garantir que SÓ estas colunas sejam enviadas, na ordem correta.
+                    colunas_para_enviar = [col for col in colunas_finais_db if col in registros_para_upsert.columns]
+                    payload_final = registros_para_upsert[colunas_para_enviar]
+
+                    st.toast(f"Enviando {len(payload_final)} registros com estrutura validada...", icon="➡️")
+                    
+                    # 3. Envia o payload final e limpo
                     supabase.table("auxilio_transporte").upsert(
-                        registros_para_upsert.to_dict(orient='records'),
+                        payload_final.to_dict(orient='records'),
                         on_conflict='aluno_id,ano_referencia'
                     ).execute()
                     
-                    st.success(f"**Importação Concluída!** {len(registros_para_upsert)} registros salvos.")
+                    st.success(f"**Importação Concluída!** {len(payload_final)} registros salvos.")
                     
                     for key in ['df_import_cache_at', 'mapeamento_final_at', 'registros_para_importar_at']:
                         if key in st.session_state: del st.session_state[key]
