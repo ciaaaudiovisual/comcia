@@ -77,25 +77,37 @@ def merge_pdfs(pdf_buffers: list) -> BytesIO:
 # --- ABA DE GERAÇÃO DE DOCUMENTOS ---
 def gerar_documento_tab(supabase):
     st.subheader("Gerador de Documentos de Solicitação de Auxílio Transporte")
+    
     NOME_TEMPLATE = "auxilio_transporte_template.pdf"
 
     with st.expander("Configurar Modelo de PDF"):
-        st.info(f"Faça o upload do seu modelo PDF preenchível. Ele será salvo como '{NOME_TEMPLATE}'.")
-        uploaded_template = st.file_uploader("Selecione o seu modelo PDF", type="pdf")
+        st.info(f"Faça o upload do seu modelo de PDF preenchível. Ele será salvo no sistema como '{NOME_TEMPLATE}'.")
+        uploaded_template = st.file_uploader("Selecione o seu modelo de PDF", type="pdf", key="pdf_template_uploader")
         
-        if uploaded_template and st.button("Salvar Modelo no Sistema"):
-            with st.spinner("Salvando modelo..."):
-                try:
-                    supabase.storage.from_("templates").upload(
-                        NOME_TEMPLATE, uploaded_template.getvalue(), {"content-type": "application/pdf", "x-upsert": "true"}
-                    )
-                    st.success("Modelo salvo com sucesso!")
-                except Exception as e:
-                    st.error(f"Erro ao salvar: {e}. Verifique se o bucket 'templates' existe e é público.")
+        if uploaded_template:
+            if st.button("Salvar Modelo no Sistema"):
+                # VERIFICAÇÃO ADICIONADA: Confere se o ficheiro não está vazio
+                file_bytes = uploaded_template.getvalue()
+                if not file_bytes:
+                    st.error("O ficheiro carregado parece estar vazio. Por favor, selecione um PDF válido.")
+                    return
+
+                with st.spinner("Salvando modelo..."):
+                    try:
+                        supabase.storage.from_("templates").upload(
+                            NOME_TEMPLATE, file_bytes, {"content-type": "application/pdf", "x-upsert": "true"}
+                        )
+                        st.success("Modelo salvo com sucesso!")
+                    except Exception as e:
+                        # ERRO MELHORADO: Exibe a mensagem de erro completa do Supabase
+                        st.error("Ocorreu um erro detalhado ao tentar salvar o modelo:")
+                        st.error(f"Detalhes: {e}")
+                        st.warning("Causas comuns: 1) O PDF está corrompido ou protegido por senha. 2) Tente fazer o upload do modelo diretamente pelo painel do Supabase (passo 2 abaixo) para verificar se o ficheiro é válido.")
 
     st.divider()
     
     st.markdown("#### 1. Selecione os Alunos")
+    # O restante da função continua igual...
     alunos_df = load_data("Alunos")
     transporte_df = load_data("auxilio_transporte")
 
@@ -145,6 +157,7 @@ def gerar_documento_tab(supabase):
     if 'final_pdf_auxilio' in st.session_state:
         st.balloons()
         st.download_button(label="✅ Baixar Documento Consolidado (.pdf)", data=st.session_state['final_pdf_auxilio'], file_name="solicitacoes_auxilio_transporte.pdf", mime="application/pdf")
+
 
 # --- ABA DE IMPORTAÇÃO GUIADA ---
 def importacao_guiada_tab(supabase):
