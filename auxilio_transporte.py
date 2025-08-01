@@ -89,6 +89,8 @@ def merge_pdfs(pdf_buffers):
 # --- DEFINIÇÃO DAS FUNÇÕES DE CADA ABA (COMPLETAS) ---
 
 # No ficheiro auxilio_transporte.py, substitua a função existente por esta
+# No ficheiro auxilio_transporte.py, substitua esta função
+
 def importacao_guiada_tab(supabase):
     st.subheader("Assistente de Importação de Dados")
     st.markdown("#### Passo 1: Baixe o modelo e preencha com os dados")
@@ -183,34 +185,25 @@ def importacao_guiada_tab(supabase):
         st.markdown("#### Passo 4: Valide os dados antes de importar")
         
         with st.spinner("Processando e validando os dados..."):
-            
-            # --- LÓGICA DE PREPARAÇÃO DE DADOS REESCRITA PARA MAIOR ROBUSTEZ ---
             df_import = st.session_state['df_import_cache_at'].copy()
             mapeamento = st.session_state['mapeamento_final_at']
-
-            # 1. Cria um DataFrame limpo, contendo apenas as colunas mapeadas
             df_processado = pd.DataFrame()
             system_to_user_map = {k: v for k, v in mapeamento.items() if v != '-- Não importar este campo --'}
             for system_col, user_col in system_to_user_map.items():
                 if user_col in df_import.columns:
                     df_processado[system_col] = df_import[user_col]
             
-            # 2. Continua o processo de merge com o DataFrame limpo
             alunos_df = load_data("Alunos")[['id', 'numero_interno']]
             df_processado['numero_interno'] = df_processado['numero_interno'].astype(str).str.strip().str.upper()
             alunos_df['numero_interno'] = alunos_df['numero_interno'].astype(str).str.strip().str.upper()
-
             df_final = pd.merge(df_processado, alunos_df, on='numero_interno', how='left')
             df_final.rename(columns={'id': 'aluno_id'}, inplace=True)
-
             sucesso_df = df_final.dropna(subset=['aluno_id'])
             falha_df = df_final[df_final['aluno_id'].isna()]
-
             st.success(f"Validação Concluída! Foram encontrados **{len(sucesso_df)}** alunos correspondentes.")
             if not falha_df.empty:
                 st.warning(f"Não foi possível encontrar **{len(falha_df)}** alunos. Verifique os 'Números Internos' abaixo:")
                 st.dataframe(falha_df[['numero_interno']], use_container_width=True)
-
             st.markdown("**Pré-visualização dos dados a serem importados:**")
             st.dataframe(sucesso_df, use_container_width=True)
             st.session_state['registros_para_importar_at'] = sucesso_df
@@ -220,16 +213,13 @@ def importacao_guiada_tab(supabase):
             with st.spinner("Salvando dados..."):
                 try:
                     st.toast("Iniciando importação...", icon="⏳")
-                    # Usa diretamente o DataFrame limpo e validado
                     registros_para_upsert = st.session_state['registros_para_importar_at'].copy()
                     
                     st.toast("Convertendo tipos de dados...", icon="⚙️")
                     registros_para_upsert['aluno_id'] = pd.to_numeric(registros_para_upsert['aluno_id'], errors='coerce').astype('Int64')
                     registros_para_upsert['ano_referencia'] = pd.to_numeric(registros_para_upsert['ano_referencia'], errors='coerce').astype('Int64')
-                    
                     if 'dias_uteis' in registros_para_upsert.columns:
                         registros_para_upsert['dias_uteis'] = pd.to_numeric(registros_para_upsert['dias_uteis'], errors='coerce').fillna(0).astype(int)
-                    
                     for col in registros_para_upsert.columns:
                         if 'tarifa' in col:
                             registros_para_upsert[col] = pd.to_numeric(
@@ -238,10 +228,17 @@ def importacao_guiada_tab(supabase):
                     
                     registros_para_upsert.dropna(subset=['aluno_id', 'ano_referencia'], inplace=True)
                     
-                    # Remove colunas que não pertencem à tabela de destino antes de enviar
-                    colunas_db = supabase.table('auxilio_transporte').select('*', head=True).execute().data[0].keys()
-                    colunas_para_remover = [col for col in registros_para_upsert.columns if col not in colunas_db]
-                    registros_para_upsert.drop(columns=colunas_para_remover, inplace=True)
+                    # --- CORREÇÃO APLICADA AQUI ---
+                    # Busca os nomes das colunas do BD e verifica se a resposta não está vazia.
+                    response = supabase.table('auxilio_transporte').select('*', head=True).execute()
+                    if response.data:
+                        colunas_db = response.data[0].keys()
+                        colunas_para_remover = [col for col in registros_para_upsert.columns if col not in colunas_db]
+                        registros_para_upsert.drop(columns=colunas_para_remover, inplace=True)
+                    else:
+                        # Se a tabela está vazia, confia nas colunas que temos, mas remove as que sabemos que não pertencem
+                        colunas_para_remover = ['numero_interno'] 
+                        registros_para_upsert.drop(columns=colunas_para_remover, inplace=True, errors='ignore')
 
                     st.toast(f"Enviando {len(registros_para_upsert)} registros...", icon="➡️")
                     supabase.table("auxilio_transporte").upsert(
