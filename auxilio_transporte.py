@@ -7,7 +7,8 @@ import re
 from aluno_selection_components import render_alunos_filter_and_selection
 from pypdf import PdfReader, PdfWriter
 
-# --- FUNÇÃO DE CÁLCULO CENTRAL ---
+# --- FUNÇÕES AUXILIARES E DE CÁLCULO (DEFINIDAS PRIMEIRO) ---
+
 def calcular_auxilio_transporte(linha):
     try:
         despesa_diaria = 0
@@ -28,7 +29,6 @@ def calcular_auxilio_transporte(linha):
     except (ValueError, TypeError):
         return pd.Series({'despesa_diaria': 0.0, 'despesa_mensal': 0.0, 'parcela_beneficiario': 0.0, 'auxilio_pago': 0.0})
 
-# --- FUNÇÕES AUXILIARES DE ARQUIVO E PDF ---
 def create_excel_template():
     template_data = {
         'NÚMERO INTERNO DO ALUNO': ['M-01-101'],'ANO DE REFERÊNCIA': [2025],'POSTO/GRADUAÇÃO': ['ALUNO'],
@@ -85,7 +85,6 @@ def merge_pdfs(pdf_buffers):
     merger.write(merged_pdf_buffer)
     merged_pdf_buffer.seek(0)
     return merged_pdf_buffer
-
 
 # --- DEFINIÇÃO DAS FUNÇÕES DE CADA ABA (COMPLETAS) ---
 
@@ -298,7 +297,7 @@ def gestao_decat_tab(supabase):
     colunas_visiveis = [col for col in colunas_principais + colunas_calculadas + colunas_editaveis if col in display_df.columns]
     edited_df = st.data_editor(display_df[colunas_visiveis], hide_index=True, use_container_width=True, disabled=colunas_principais + colunas_calculadas)
     if st.button("Salvar Alterações na Tabela de Gestão"):
-        # Lógica para salvar as edições
+        st.info("A funcionalidade de salvar edições diretamente nesta tabela está em desenvolvimento.")
         pass
 
 def gerar_documento_tab(supabase):
@@ -322,7 +321,8 @@ def gerar_documento_tab(supabase):
             if st.button("Salvar Modelo no Sistema"):
                 with st.spinner("Salvando modelo..."):
                     try:
-                        supabase.storage.from_("templates").upload(NOME_TEMPLATE, uploaded_template.getvalue(), {"content-type": "application/pdf", "x-upsert": "true"}).execute()
+                        # CORREÇÃO: Removido o .execute() incorreto da chamada de storage
+                        supabase.storage.from_("templates").upload(NOME_TEMPLATE, uploaded_template.getvalue(), {"content-type": "application/pdf", "x-upsert": "true"})
                         st.success("Modelo salvo com sucesso!")
                     except Exception as e:
                         st.error(f"Erro ao salvar o modelo: {e}")
@@ -393,8 +393,27 @@ def gestao_soldos_tab(supabase):
         except Exception as e:
             st.error(f"Erro ao salvar os soldos: {e}")
 
-# --- FUNÇÃO PRINCIPAL QUE CHAMA AS ABAS ---
-# Esta função deve ser chamada pelo app.py
-# Ela garante que as funções das abas são definidas antes de serem chamadas.
-def show_auxilio_transporte_main():
-    show_auxilio_transporte()
+# --- FUNÇÃO PRINCIPAL QUE É IMPORTADA PELO app.py ---
+def show_auxilio_transporte():
+    supabase = init_supabase_client()
+    
+    tab_importacao, tab_individual, tab_gestao, tab_soldos, tab_gerar_doc = st.tabs([
+        "1. Importação Guiada", "2. Lançamento Individual", 
+        "3. Gerenciar Dados", "4. Gerenciar Soldos", "5. Gerar Documento"
+    ])
+
+    soldos_df = load_data("soldos")
+    opcoes_posto_grad = [""]
+    if not soldos_df.empty and 'graduacao' in soldos_df.columns:
+        opcoes_posto_grad += sorted(soldos_df['graduacao'].unique().tolist())
+
+    with tab_importacao:
+        importacao_guiada_tab(supabase)
+    with tab_individual:
+        lancamento_individual_tab(supabase, opcoes_posto_grad)
+    with tab_gestao:
+        gestao_decat_tab(supabase)
+    with tab_soldos:
+        gestao_soldos_tab(supabase)
+    with tab_gerar_doc:
+        gerar_documento_tab(supabase)
