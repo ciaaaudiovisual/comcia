@@ -64,7 +64,6 @@ def fill_pdf_auxilio(template_bytes, aluno_data):
         fill_data[f'EMPRESA IDA {i}'] = str(aluno_data.get(f'ida_{i}_empresa', ''))
         fill_data[f'LINHA IDA {i}'] = str(aluno_data.get(f'ida_{i}_linha', ''))
         fill_data[f'TARIFA IDA {i}'] = f"R$ {aluno_data.get(f'ida_{i}_tarifa', 0.0):.2f}"
-        # --- CORREÇÃO APLICADA AQUI ---
         fill_data[f'EMPRESA VOLTA {i}'] = str(aluno_data.get(f'volta_{i}_empresa', ''))
         fill_data[f'LINHA VOLTA {i}'] = str(aluno_data.get(f'volta_{i}_linha', ''))
         fill_data[f'TARIFA VOLTA {i}'] = f"R$ {aluno_data.get(f'volta_{i}_tarifa', 0.0):.2f}"
@@ -95,18 +94,21 @@ def importacao_guiada_tab(supabase):
     st.info("Use o modelo padrão para garantir que as colunas sejam reconhecidas corretamente durante a importação.")
     excel_modelo_bytes = create_excel_template()
     st.download_button(label="📥 Baixar Modelo de Preenchimento (.xlsx)",data=excel_modelo_bytes,file_name="modelo_auxilio_transporte.xlsx",mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    
     st.markdown("#### Passo 2: Carregue o ficheiro preenchido")
     uploaded_file = st.file_uploader("Escolha o ficheiro...", type=["csv", "xlsx"], key="importer_uploader_at")
+    
     if not uploaded_file:
         st.info("Aguardando o upload do ficheiro para iniciar.")
         return
+
     try:
         df_import = pd.read_csv(uploaded_file, delimiter=';', encoding='latin-1') if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
         st.session_state['df_import_cache_at'] = df_import
-        st.session_state['import_file_columns_at'] = df_import.columns.tolist()
     except Exception as e:
         st.error(f"Erro ao ler o ficheiro: {e}")
         return
+
     st.markdown("---")
     st.markdown("#### Passo 3: Mapeie as colunas do seu ficheiro")
     config_df = load_data("Config")
@@ -294,16 +296,16 @@ def lancamento_individual_tab(supabase, opcoes_posto_grad):
 
 def gestao_decat_tab(supabase):
     st.subheader("Dados de Transporte Cadastrados (com Cálculo)")
-    alunos_df = load_data("Alunos")[['id', 'numero_interno', 'nome_guerra']]
+    alunos_df = load_data("Alunos")[['numero_interno', 'nome_guerra']]
     transporte_df = load_data("auxilio_transporte")
     soldos_df = load_data("soldos")
     if transporte_df.empty:
         st.warning("Nenhum dado de auxílio transporte cadastrado.")
         return
-    alunos_df['id'] = alunos_df['id'].astype(str).str.strip()
-    transporte_df['aluno_id'] = transporte_df['aluno_id'].astype(str).str.strip()
-    dados_completos_df = pd.merge(transporte_df, alunos_df, left_on='aluno_id', right_on='id', how='left')
+    
+    dados_completos_df = pd.merge(transporte_df, alunos_df, on='numero_interno', how='left')
     dados_completos_df = pd.merge(dados_completos_df, soldos_df, left_on='posto_grad', right_on='graduacao', how='left')
+    
     calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
     display_df = pd.concat([dados_completos_df, calculos_df], axis=1)
     colunas_principais = ['numero_interno', 'nome_guerra', 'ano_referencia', 'posto_grad']
@@ -412,11 +414,11 @@ def gestao_soldos_tab(supabase):
 
 # --- FUNÇÃO PRINCIPAL QUE É IMPORTADA PELO app.py ---
 def show_auxilio_transporte():
+    st.title("🚌 Gestão de Auxílio Transporte (DeCAT)")
     supabase = init_supabase_client()
     
     tab_importacao, tab_individual, tab_gestao, tab_soldos, tab_gerar_doc = st.tabs([
-        "1. Importação Guiada", "2. Lançamento Individual", 
-        "3. Gerenciar Dados", "4. Gerenciar Soldos", "5. Gerar Documento"
+        "1. Importação Guiada", "2. Lançamento Individual", "3. Gerenciar Dados", "4. Gerenciar Soldos", "5. Gerar Documento"
     ])
 
     soldos_df = load_data("soldos")
