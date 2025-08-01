@@ -237,27 +237,35 @@ def importacao_guiada_tab(supabase):
 def lancamento_individual_tab(supabase, opcoes_posto_grad):
     st.subheader("Adicionar ou Editar Dados para um Aluno")
     aluno_selecionado_df = render_alunos_filter_and_selection(key_suffix="transporte_individual", include_full_name_search=True)
+
     if aluno_selecionado_df.empty or len(aluno_selecionado_df) > 1:
         st.info("Por favor, selecione um único aluno.")
         return
+
     aluno_atual = aluno_selecionado_df.iloc[0]
     st.success(f"Aluno selecionado: **{aluno_atual['nome_guerra']} ({aluno_atual['numero_interno']})**")
+    
     transporte_df = load_data("auxilio_transporte")
     dados_atuais = {}
     if not transporte_df.empty:
-        dados_aluno = transporte_df[transporte_df['aluno_id'].astype(str) == str(aluno_atual['id'])].sort_values('ano_referencia', ascending=False)
+        # --- CORREÇÃO APLICADA AQUI ---
+        # Procura por 'numero_interno' em vez de 'aluno_id'
+        dados_aluno = transporte_df[transporte_df['numero_interno'] == aluno_atual['numero_interno']].sort_values('ano_referencia', ascending=False)
         if not dados_aluno.empty:
             dados_atuais = dados_aluno.iloc[0].to_dict()
+
     with st.form("form_individual_at"):
         c1, c2, c3 = st.columns(3)
         ano_referencia = c1.number_input("Ano*", value=int(dados_atuais.get('ano_referencia', 2025)))
         posto_grad = c2.selectbox("Posto/Graduação*", options=opcoes_posto_grad, index=opcoes_posto_grad.index(dados_atuais.get('posto_grad', '')) if dados_atuais.get('posto_grad') in opcoes_posto_grad else 0)
         dias_uteis = c3.number_input("Dias Úteis", value=int(dados_atuais.get('dias_uteis', 22)))
+        
         endereco = st.text_input("Endereço", value=dados_atuais.get('endereco', ''))
         c4,c5,c6 = st.columns(3)
         bairro = c4.text_input("Bairro", value=dados_atuais.get('bairro', ''))
         cidade = c5.text_input("Cidade", value=dados_atuais.get('cidade', ''))
         cep = c6.text_input("CEP", value=dados_atuais.get('cep', ''))
+        
         ida_data = {}
         volta_data = {}
         st.markdown("**Itinerários**")
@@ -274,9 +282,13 @@ def lancamento_individual_tab(supabase, opcoes_posto_grad):
                 volta_data[f'empresa_{i}'] = st.text_input(f"{i}ª Empresa (Volta)", value=dados_atuais.get(f'volta_{i}_empresa', ''), key=f'volta_empresa_{i}')
                 volta_data[f'linha_{i}'] = st.text_input(f"{i}ª Linha (Volta)", value=dados_atuais.get(f'volta_{i}_linha', ''), key=f'volta_linha_{i}')
                 volta_data[f'tarifa_{i}'] = st.number_input(f"{i}ª Tarifa (Volta)", value=float(dados_atuais.get(f'volta_{i}_tarifa', 0.0)), min_value=0.0, format="%.2f", key=f'volta_tarifa_{i}')
+        
         if st.form_submit_button("Salvar Dados"):
+            # --- CORREÇÃO APLICADA AQUI ---
+            # Salva o 'numero_interno' do aluno em vez do 'aluno_id'
             dados_para_salvar = {
-                "aluno_id": int(aluno_atual['id']), "ano_referencia": ano_referencia,
+                "numero_interno": aluno_atual['numero_interno'],
+                "ano_referencia": ano_referencia,
                 "posto_grad": posto_grad, "dias_uteis": dias_uteis,
                 "endereco": endereco, "bairro": bairro, "cidade": cidade, "cep": cep
             }
@@ -288,7 +300,7 @@ def lancamento_individual_tab(supabase, opcoes_posto_grad):
                 dados_para_salvar[f'volta_{i}_linha'] = volta_data[f'linha_{i}']
                 dados_para_salvar[f'volta_{i}_tarifa'] = volta_data[f'tarifa_{i}']
             try:
-                supabase.table("auxilio_transporte").upsert(dados_para_salvar, on_conflict='aluno_id,ano_referencia').execute()
+                supabase.table("auxilio_transporte").upsert(dados_para_salvar, on_conflict='numero_interno,ano_referencia').execute()
                 st.success("Dados salvos com sucesso!")
                 load_data.clear()
             except Exception as e:
