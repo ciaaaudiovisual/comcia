@@ -86,28 +86,18 @@ def gerar_documento_tab(supabase):
         
         if uploaded_template:
             if st.button("Salvar Modelo no Sistema"):
-                # VERIFICAÇÃO ADICIONADA: Confere se o ficheiro não está vazio
-                file_bytes = uploaded_template.getvalue()
-                if not file_bytes:
-                    st.error("O ficheiro carregado parece estar vazio. Por favor, selecione um PDF válido.")
-                    return
-
                 with st.spinner("Salvando modelo..."):
                     try:
                         supabase.storage.from_("templates").upload(
-                            NOME_TEMPLATE, file_bytes, {"content-type": "application/pdf", "x-upsert": "true"}
+                            NOME_TEMPLATE, uploaded_template.getvalue(), {"content-type": "application/pdf", "x-upsert": "true"}
                         )
                         st.success("Modelo salvo com sucesso!")
                     except Exception as e:
-                        # ERRO MELHORADO: Exibe a mensagem de erro completa do Supabase
-                        st.error("Ocorreu um erro detalhado ao tentar salvar o modelo:")
-                        st.error(f"Detalhes: {e}")
-                        st.warning("Causas comuns: 1) O PDF está corrompido ou protegido por senha. 2) Tente fazer o upload do modelo diretamente pelo painel do Supabase (passo 2 abaixo) para verificar se o ficheiro é válido.")
+                        st.error(f"Erro ao salvar o modelo: {e}")
 
     st.divider()
     
     st.markdown("#### 1. Selecione os Alunos")
-    # O restante da função continua igual...
     alunos_df = load_data("Alunos")
     transporte_df = load_data("auxilio_transporte")
 
@@ -117,30 +107,44 @@ def gerar_documento_tab(supabase):
 
     alunos_df['id'] = alunos_df['id'].astype(str)
     transporte_df['aluno_id'] = transporte_df['aluno_id'].astype(str)
+    
+    # Junta as informações dos alunos com os dados de transporte
     dados_completos_df = pd.merge(alunos_df, transporte_df, left_on='id', right_on='aluno_id', how='inner')
 
-    alunos_selecionados_df = render_alunos_filter_and_selection(key_suffix="docgen_transporte", include_full_name_search=True)
+    # --- CORREÇÃO APLICADA AQUI ---
+    # Renomeia a coluna 'id_x' (ID do aluno) para 'id' para evitar o KeyError.
+    if 'id_x' in dados_completos_df.columns:
+        dados_completos_df.rename(columns={'id_x': 'id'}, inplace=True)
+
+    # O componente para selecionar alunos agora pode ser exibido
+    alunos_selecionados_df = render_alunos_filter_and_selection(
+        key_suffix="docgen_transporte", 
+        include_full_name_search=True
+    )
     
     if alunos_selecionados_df.empty:
-        st.info("Use os filtros para selecionar os alunos.")
+        st.info("Use os filtros para selecionar os alunos para os quais deseja gerar o documento.")
         return
 
     st.markdown(f"**{len(alunos_selecionados_df)} aluno(s) selecionado(s).**")
     
     st.markdown("#### 2. Gere o Documento Consolidado")
     if st.button(f"Gerar PDF para os {len(alunos_selecionados_df)} alunos", type="primary"):
-        with st.spinner("Preparando..."):
+        with st.spinner("Preparando para gerar os documentos..."):
             try:
                 template_bytes = supabase.storage.from_("templates").download(NOME_TEMPLATE)
             except Exception as e:
-                st.error(f"Falha ao carregar o modelo de PDF: {e}. Faça o upload na seção acima.")
+                st.error(f"Falha ao carregar o modelo de PDF do sistema: {e}")
+                st.warning("Por favor, faça o upload do modelo na seção 'Configurar Modelo de PDF' acima.")
                 return
 
+            # Filtra os dados completos para incluir apenas os alunos selecionados
+            # Agora esta linha funciona, pois a coluna 'id' existe.
             ids_selecionados = alunos_selecionados_df['id'].tolist()
             dados_para_gerar_df = dados_completos_df[dados_completos_df['id'].isin(ids_selecionados)]
 
             if dados_para_gerar_df.empty:
-                st.error("Nenhum dos alunos selecionados possui dados de transporte cadastrados.")
+                st.error("Nenhum dos alunos selecionados possui dados de transporte cadastrados para preencher o documento.")
                 return
 
             filled_pdfs = []
@@ -149,15 +153,19 @@ def gerar_documento_tab(supabase):
 
             for i, (_, aluno_row) in enumerate(dados_para_gerar_df.iterrows()):
                 filled_pdfs.append(fill_pdf_auxilio(template_bytes, aluno_row))
-                progress_bar.progress((i + 1) / total_alunos, text=f"Gerando: {aluno_row['nome_guerra']}")
+                progress_bar.progress((i + 1) / total_alunos, text=f"Gerando documento para: {aluno_row['nome_guerra']}")
             
             final_pdf_buffer = merge_pdfs(filled_pdfs)
             st.session_state['final_pdf_auxilio'] = final_pdf_buffer.getvalue()
 
     if 'final_pdf_auxilio' in st.session_state:
         st.balloons()
-        st.download_button(label="✅ Baixar Documento Consolidado (.pdf)", data=st.session_state['final_pdf_auxilio'], file_name="solicitacoes_auxilio_transporte.pdf", mime="application/pdf")
-
+        st.download_button(
+            label="✅ Baixar Documento Consolidado (.pdf)",
+            data=st.session_state['final_pdf_auxilio'],
+            file_name="solicitacoes_auxilio_transporte.pdf",
+            mime="application/pdf"
+        )
 
 # --- ABA DE IMPORTAÇÃO GUIADA ---
 def importacao_guiada_tab(supabase):
