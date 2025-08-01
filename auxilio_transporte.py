@@ -257,15 +257,22 @@ def importacao_guiada_tab(supabase):
                     colunas_a_remover = ['nome_guerra']
                     payload.drop(columns=colunas_a_remover, inplace=True, errors='ignore')
 
+ # 1. Importa a biblioteca numpy para lidar com o NaN
+                    import numpy as np
+                    # 2. Substitui todos os valores NaN (Not a Number) por None (nulo), que é compatível com JSON.
+                    # O Supabase irá interpretar None como um campo nulo no banco de dados.
+                    payload_final = payload.replace({np.nan: None})
+                    
+                    st.toast(f"Enviando {len(payload_final)} registros...", icon="➡️")
                     supabase.table("auxilio_transporte").upsert(
-                        payload.to_dict(orient='records'),
+                        payload_final.to_dict(orient='records'),
                         on_conflict='numero_interno,ano_referencia'
                     ).execute()
-
-                    st.success(f"**Importação Concluída!** {len(payload)} registros salvos.")
-                    for key in ['df_import_cache_at', 'mapeamento_final_at', 'registros_para_importar_at']:
-                        if key in st.session_state: del st.session_state[key]
-                    load_data.clear()
+                    
+                    st.success(f"**Importação Concluída!** {len(payload_final)} registros salvos.")
+                    
+                    
+     
                 except Exception as e:
                     st.error(f"**Erro na importação final:** {e}")
 
