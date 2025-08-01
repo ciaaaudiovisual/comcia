@@ -271,10 +271,11 @@ def importacao_guiada_tab(supabase):
                     
                     st.success(f"**Importação Concluída!** {len(payload_final)} registros salvos.")
                     
-                    
+                    st.rerun()
      
                 except Exception as e:
                     st.error(f"**Erro na importação final:** {e}")
+                    
 
 def lancamento_individual_tab(supabase, opcoes_posto_grad):
     st.subheader("Adicionar ou Editar Dados para um Aluno")
