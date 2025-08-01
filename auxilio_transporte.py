@@ -6,6 +6,7 @@ import json
 import re
 from aluno_selection_components import render_alunos_filter_and_selection
 from pypdf import PdfReader, PdfWriter
+from auxilio_transporte import show_auxilio_transporte
 
 # --- FUNÇÕES AUXILIARES E DE CÁLCULO (DEFINIDAS PRIMEIRO) ---
 
