@@ -88,6 +88,7 @@ def merge_pdfs(pdf_buffers):
 
 # --- DEFINIÇÃO DAS FUNÇÕES DE CADA ABA (COMPLETAS) ---
 
+# No ficheiro auxilio_transporte.py, substitua a função existente por esta
 def importacao_guiada_tab(supabase):
     st.subheader("Assistente de Importação de Dados")
     st.markdown("#### Passo 1: Baixe o modelo e preencha com os dados")
@@ -182,12 +183,19 @@ def importacao_guiada_tab(supabase):
         st.markdown("#### Passo 4: Valide os dados antes de importar")
         
         with st.spinner("Processando e validando os dados..."):
+            
+            # --- LÓGICA DE PREPARAÇÃO DE DADOS REESCRITA PARA MAIOR ROBUSTEZ ---
             df_import = st.session_state['df_import_cache_at'].copy()
             mapeamento = st.session_state['mapeamento_final_at']
 
-            rename_dict = {v: k for k, v in mapeamento.items() if v != '-- Não importar este campo --'}
-            df_processado = df_import.rename(columns=rename_dict)
+            # 1. Cria um DataFrame limpo, contendo apenas as colunas mapeadas
+            df_processado = pd.DataFrame()
+            system_to_user_map = {k: v for k, v in mapeamento.items() if v != '-- Não importar este campo --'}
+            for system_col, user_col in system_to_user_map.items():
+                if user_col in df_import.columns:
+                    df_processado[system_col] = df_import[user_col]
             
+            # 2. Continua o processo de merge com o DataFrame limpo
             alunos_df = load_data("Alunos")[['id', 'numero_interno']]
             df_processado['numero_interno'] = df_processado['numero_interno'].astype(str).str.strip().str.upper()
             alunos_df['numero_interno'] = alunos_df['numero_interno'].astype(str).str.strip().str.upper()
@@ -212,20 +220,8 @@ def importacao_guiada_tab(supabase):
             with st.spinner("Salvando dados..."):
                 try:
                     st.toast("Iniciando importação...", icon="⏳")
-                    registros = st.session_state['registros_para_importar_at'].copy()
-                    
-                    # --- CORREÇÃO APLICADA AQUI ---
-                    # 1. Define uma lista explícita de colunas que a tabela do BD espera.
-                    colunas_esperadas_db = [
-                        'aluno_id', 'ano_referencia', 'posto_grad', 'endereco', 'bairro', 'cidade', 'cep', 'dias_uteis'
-                    ]
-                    for i in range(1, 5):
-                        colunas_esperadas_db.extend([f'ida_{i}_empresa', f'ida_{i}_linha', f'ida_{i}_tarifa'])
-                        colunas_esperadas_db.extend([f'volta_{i}_empresa', f'volta_{i}_linha', f'volta_{i}_tarifa'])
-
-                    # 2. Filtra o DataFrame para garantir que APENAS colunas esperadas sejam enviadas.
-                    colunas_para_enviar = [col for col in colunas_esperadas_db if col in registros.columns]
-                    registros_para_upsert = registros[colunas_para_enviar]
+                    # Usa diretamente o DataFrame limpo e validado
+                    registros_para_upsert = st.session_state['registros_para_importar_at'].copy()
                     
                     st.toast("Convertendo tipos de dados...", icon="⚙️")
                     registros_para_upsert['aluno_id'] = pd.to_numeric(registros_para_upsert['aluno_id'], errors='coerce').astype('Int64')
@@ -242,6 +238,11 @@ def importacao_guiada_tab(supabase):
                     
                     registros_para_upsert.dropna(subset=['aluno_id', 'ano_referencia'], inplace=True)
                     
+                    # Remove colunas que não pertencem à tabela de destino antes de enviar
+                    colunas_db = supabase.table('auxilio_transporte').select('*', head=True).execute().data[0].keys()
+                    colunas_para_remover = [col for col in registros_para_upsert.columns if col not in colunas_db]
+                    registros_para_upsert.drop(columns=colunas_para_remover, inplace=True)
+
                     st.toast(f"Enviando {len(registros_para_upsert)} registros...", icon="➡️")
                     supabase.table("auxilio_transporte").upsert(
                         registros_para_upsert.to_dict(orient='records'),
