@@ -599,10 +599,10 @@ def gestao_decat_tab(supabase):
     colunas_calculadas = ['soldo', 'despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']
     colunas_editaveis = ['dias_uteis', 'endereco', 'bairro', 'cidade', 'cep']
     for i in range(1, 5):
-    colunas_editaveis += [f'ida_{i}_empresa', f'ida_{i}_linha', f'ida_{i}_tarifa', f'volta_{i}_empresa', f'volta_{i}_linha', f'volta_{i}_tarifa']
-   
+        colunas_editaveis += [f'ida_{i}_empresa', f'ida_{i}_linha', f'ida_{i}_tarifa', f'volta_{i}_empresa', f'volta_{i}_linha', f'volta_{i}_tarifa']
     
     colunas_visiveis = [col for col in colunas_principais + colunas_calculadas + colunas_editaveis if col in display_df.columns]
+    
     edited_df = st.data_editor(display_df[colunas_visiveis], hide_index=True, use_container_width=True, disabled=colunas_principais + colunas_calculadas)
     
     if st.button("Salvar Alterações na Tabela de Gestão"):
