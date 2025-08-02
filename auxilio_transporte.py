@@ -9,18 +9,18 @@ from acoes import load_data # Usando a função load_data que já existe
 # --- Bloco de Funções Essenciais ---
 
 def calcular_auxilio_transporte(linha):
-    """Sua função de cálculo principal, agora atualizada para 5 opções de transporte."""
+    """Sua função de cálculo principal, que permanece a mesma."""
     try:
         despesa_diaria = 0
-        # ATUALIZAÇÃO: O loop agora vai de 1 a 5
         for i in range(1, 6):
             ida_tarifa = linha.get(f'ida_{i}_tarifa', 0.0)
             volta_tarifa = linha.get(f'volta_{i}_tarifa', 0.0)
             despesa_diaria += float(ida_tarifa if ida_tarifa else 0.0)
             despesa_diaria += float(volta_tarifa if volta_tarifa else 0.0)
-        
         dias_trabalhados = min(int(linha.get('dias_uteis', 0) or 0), 22)
         despesa_mensal = despesa_diaria * dias_trabalhados
+        
+        # O 'soldo' aqui virá da junção das tabelas
         valor_soldo_bruto = linha.get('soldo')
         try:
             soldo = float(valor_soldo_bruto)
@@ -28,39 +28,53 @@ def calcular_auxilio_transporte(linha):
             soldo = 0.0
         parcela_beneficiario = ((soldo * 0.06) / 30) * dias_trabalhados if soldo > 0 and dias_trabalhados > 0 else 0.0
         auxilio_pago = max(0.0, despesa_mensal - parcela_beneficiario)
-        
-        # Adicionando os novos campos calculados ao resultado
         return pd.Series({
-            'despesa_diaria': round(despesa_diaria, 2),
-            'dias_trabalhados': dias_trabalhados,
-            'despesa_mensal_total': round(despesa_mensal, 2),
-            'parcela_descontada_6_porcento': round(parcela_beneficiario, 2),
+            'despesa_diaria': round(despesa_diaria, 2), 'dias_trabalhados': dias_trabalhados,
+            'despesa_mensal_total': round(despesa_mensal, 2), 'parcela_descontada_6_porcento': round(parcela_beneficiario, 2),
             'auxilio_transporte_pago': round(auxilio_pago, 2)
         })
     except Exception as e:
-        # Fornece mais detalhes no erro para facilitar a depuração
-        error_context = f"Erro no cálculo para NIP {linha.get('numero_interno', 'N/A')}: {e}"
-        print(error_context) # Loga o erro no terminal para depuração
+        print(f"Erro no cálculo para NIP {linha.get('numero_interno', 'N/A')}: {e}")
         return pd.Series()
 
 # --- Função Principal da Página ---
-
 def show_auxilio_transporte():
     st.header("🚌 Gestão de Auxílio Transporte")
     st.markdown("---")
     
-    # Use o nome da sua tabela. Se você recriou, use o novo nome.
-    NOME_DA_TABELA = "auxilio_transporte_dados" 
+    NOME_TABELA_TRANSPORTE = "auxilio_transporte_dados"
+    NOME_TABELA_SOLDOS = "soldos"
 
     try:
         supabase = init_supabase_client()
-        with st.spinner(f"Carregando dados da tabela '{NOME_DA_TABELA}'..."):
-            if 'dados_transporte' not in st.session_state:
-                st.session_state['dados_transporte'] = load_data(NOME_DA_TABELA)
-            df_original = st.session_state['dados_transporte']
-        st.success(f"{len(df_original)} registos carregados com sucesso!")
+        with st.spinner("Carregando dados..."):
+            # Carrega os dados de transporte E os dados de soldos
+            df_transporte = load_data(NOME_TABELA_TRANSPORTE)
+            df_soldos = load_data(NOME_TABELA_SOLDOS)
+            
+            # --- LÓGICA DE JUNÇÃO DINÂMICA DO SOLDO ---
+            # Padroniza as chaves de junção
+            df_transporte['graduacao'] = df_transporte['graduacao'].astype(str).str.strip()
+            df_soldos['graduacao'] = df_soldos['graduacao'].astype(str).str.strip()
+
+            # Remove a coluna de 'soldo' antiga da tabela de transporte para evitar conflitos
+            if 'soldo' in df_transporte.columns:
+                df_transporte = df_transporte.drop(columns=['soldo'])
+
+            # Junta as tabelas usando a 'graduacao' para buscar o soldo mais recente
+            df_completo = pd.merge(
+                df_transporte,
+                df_soldos[['graduacao', 'soldo']], # Pega apenas as colunas necessárias de soldos
+                on='graduacao',
+                how='left' # 'left' para manter todos os militares mesmo que não encontre um soldo
+            )
+            df_completo['soldo'].fillna(0, inplace=True) # Se não encontrar soldo, assume 0
+
+            st.session_state['dados_transporte_completos'] = df_completo
+            
+        st.success(f"{len(df_completo)} registos carregados e atualizados com os soldos mais recentes.")
     except Exception as e:
-        st.error(f"Não foi possível carregar os dados da tabela '{NOME_DA_TABELA}'. Verifique se a tabela existe. Erro: {e}")
+        st.error(f"Não foi possível carregar os dados. Erro: {e}")
         st.stop()
 
     tab1, tab2 = st.tabs(["1. Consultar, Filtrar e Editar", "2. Gerar Documentos"])
