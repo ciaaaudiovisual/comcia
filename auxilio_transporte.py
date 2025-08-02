@@ -390,70 +390,74 @@ def lancamento_individual_tab(supabase, opcoes_posto_grad):
                 except Exception as e:
                     st.error(f"Erro ao salvar: {e}")
 
+# No ficheiro auxilio_transporte.py, substitua esta função
+
 def gestao_decat_tab(supabase):
     st.subheader("Dados de Transporte Cadastrados (com Cálculo)")
+    
     alunos_df = load_data("Alunos")
     transporte_df = load_data("auxilio_transporte")
     soldos_df = load_data("soldos")
+
+    # --- NOVA FERRAMENTA DE DIAGNÓSTICO ---
+    with st.expander("🔍 Ferramenta de Diagnóstico de Graduação"):
+        st.info("Use esta ferramenta para verificar se os nomes das graduações correspondem entre as tabelas 'Alunos' and 'Soldos'.")
+        
+        if 'graduacao' in alunos_df.columns and 'graduacao' in soldos_df.columns:
+            graduacoes_alunos = sorted(alunos_df['graduacao'].dropna().unique())
+            graduacoes_soldos = sorted(soldos_df['graduacao'].dropna().unique())
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write("**Lista A: Graduações na Tabela Alunos**")
+                st.dataframe(pd.DataFrame(graduacoes_alunos, columns=["Graduação"]), hide_index=True, use_container_width=True)
+            with col2:
+                st.write("**Lista B: Graduações na Tabela Soldos**")
+                st.dataframe(pd.DataFrame(graduacoes_soldos, columns=["Graduação"]), hide_index=True, use_container_width=True)
+            
+            st.warning("Para que o cálculo do soldo funcione, cada graduação na 'Lista A' deve ter uma correspondência EXATA na 'Lista B'. Se encontrar alguma diferença, corrija os dados na tabela 'Alunos' ou na aba 'Gerenciar Soldos'.")
+        else:
+            st.error("As colunas 'graduacao' não foram encontradas nas tabelas 'Alunos' e/ou 'soldos'.")
 
     if transporte_df.empty:
         st.warning("Nenhum dado de auxílio transporte cadastrado.")
         return
 
-    # --- LÓGICA DE JUNÇÃO DE DADOS CORRIGIDA ---
-
-    # 1. Garante que as chaves de junção em todas as tabelas estão limpas e padronizadas
-    transporte_df['numero_interno'] = transporte_df['numero_interno'].astype(str).str.strip().str.upper()
-    alunos_df['numero_interno'] = alunos_df['numero_interno'].astype(str).str.strip().str.upper()
-    
-    # 2. Junta primeiro os dados de transporte com os dados dos alunos
-    dados_completos_df = pd.merge(transporte_df, alunos_df, on='numero_interno', how='left')
-
-    # 3. Agora, com a 'graduacao' do aluno disponível, faz a junção com a tabela de soldos
-    if 'graduacao' in dados_completos_df.columns and 'graduacao' in soldos_df.columns and not soldos_df.empty:
-        dados_completos_df['join_key'] = dados_completos_df['graduacao'].astype(str).str.lower().str.strip()
-        soldos_df['join_key'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
-        
-        # Junta o resultado com a tabela de soldos usando a chave limpa
-        dados_completos_df = pd.merge(dados_completos_df, soldos_df, on='join_key', how='left')
-        dados_completos_df.drop(columns=['join_key'], inplace=True, errors='ignore')
+    # Lógica de junção robusta
+    if 'graduacao' in alunos_df.columns and 'graduacao' in soldos_df.columns and not soldos_df.empty:
+        alunos_df['join_key_grad'] = alunos_df['graduacao'].astype(str).str.lower().str.strip()
+        soldos_df['join_key_grad'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
+        alunos_com_soldo_df = pd.merge(alunos_df, soldos_df, on='join_key_grad', how='left')
+        alunos_com_soldo_df.drop(columns=['join_key_grad'], inplace=True, errors='ignore')
     else:
         st.error("Erro: A coluna 'graduacao' não foi encontrada na tabela 'Alunos' ou 'soldos'. O cálculo não pode ser realizado.")
         return
+        
+    dados_completos_df = pd.merge(alunos_com_soldo_df, transporte_df, on='numero_interno', how='left')
+    dados_completos_df.dropna(subset=['ano_referencia'], inplace=True)
 
-    # 4. Garante que a coluna 'soldo' existe e preenche valores não encontrados com 0
     if 'soldo' in dados_completos_df.columns:
         dados_completos_df['soldo'] = pd.to_numeric(dados_completos_df['soldo'], errors='coerce').fillna(0)
     else:
         dados_completos_df['soldo'] = 0
 
-    # 5. Aplica o cálculo e cria o DataFrame final para exibição
     calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
     display_df = pd.concat([dados_completos_df.drop(columns=calculos_df.columns, errors='ignore'), calculos_df], axis=1)
     
-    # --- CORREÇÃO DO DECIMAL EM 'DIAS ÚTEIS' ---
-    # Garante que a coluna 'dias_uteis' seja exibida como número inteiro
-    if 'dias_uteis' in display_df.columns:
-        display_df['dias_uteis'] = pd.to_numeric(display_df['dias_uteis'], errors='coerce').fillna(0).astype(int)
-
-    # Define a ordem das colunas para exibição
     colunas_principais = ['numero_interno', 'nome_guerra', 'graduacao', 'ano_referencia']
-    colunas_calculadas = ['soldo', 'dias_uteis', 'despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']
-    colunas_itinerario = []
+    colunas_calculadas = ['soldo', 'despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']
+    colunas_editaveis = ['dias_uteis', 'endereco', 'bairro', 'cidade', 'cep']
     for i in range(1, 5):
-        colunas_itinerario += [f'ida_{i}_empresa', f'ida_{i}_linha', f'ida_{i}_tarifa']
-        colunas_itinerario += [f'volta_{i}_empresa', f'volta_{i}_linha', f'volta_{i}_tarifa']
-    colunas_endereco = ['endereco', 'bairro', 'cidade', 'cep']
+        colunas_editaveis += [f'ida_{i}_empresa', f'ida_{i}_linha', f'ida_{i}_tarifa']
+        colunas_editaveis += [f'volta_{i}_empresa', f'volta_{i}_linha', f'volta_{i}_tarifa']
     
-    colunas_visiveis = [col for col in colunas_principais + colunas_calculadas + colunas_endereco + colunas_itinerario if col in display_df.columns]
+    colunas_visiveis = [col for col in colunas_principais + colunas_calculadas + colunas_editaveis if col in display_df.columns]
     
-    edited_df = st.data_editor(display_df[colunas_visiveis], hide_index=True, use_container_width=True, disabled=colunas_principais + colunas_calculadas)
+    st.data_editor(display_df[colunas_visiveis], hide_index=True, use_container_width=True, disabled=colunas_principais + colunas_calculadas)
     
     if st.button("Salvar Alterações na Tabela de Gestão"):
         st.info("A funcionalidade de salvar edições diretamente nesta tabela está em desenvolvimento.")
         pass
-
-
 
 # No ficheiro auxilio_transporte.py, substitua esta função
 
