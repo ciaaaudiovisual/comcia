@@ -454,10 +454,11 @@ def gerar_documento_tab(supabase):
     st.subheader("Gerador de Documentos de Solicitação")
     NOME_TEMPLATE = "auxilio_transporte_template.pdf"
 
+    # Carrega o mapeamento salvo do BD
     config_df = load_data("Config")
     mapeamento_pdf_salvo = json.loads(config_df[config_df['chave'] == 'pdf_mapping_auxilio_transporte']['valor'].iloc[0]) if 'pdf_mapping_auxilio_transporte' in config_df['chave'].values else {}
 
-    with st.expander("Passo 1: Configurar Modelo e Mapeamento de Campos", expanded=not mapeamento_pdf_salvo):
+    with st.expander("Passo 1: Configurar Modelo e Mapeamento de Campos (feito apenas uma vez)", expanded=not mapeamento_pdf_salvo):
         st.info("Faça o upload do seu modelo PDF preenchível. Em seguida, mapeie os campos do PDF com os dados do sistema.")
         
         col1, col2 = st.columns(2)
@@ -466,8 +467,11 @@ def gerar_documento_tab(supabase):
             if uploaded_template:
                 if st.button("Salvar Modelo no Sistema"):
                     with st.spinner("Salvando modelo..."):
-                        supabase.storage.from_("templates").upload(NOME_TEMPLATE, uploaded_template.getvalue(), {"content-type": "application/pdf", "x-upsert": "true"})
-                        st.success("Modelo salvo! Agora configure o mapeamento ao lado.")
+                        try:
+                            supabase.storage.from_("templates").upload(NOME_TEMPLATE, uploaded_template.getvalue(), {"content-type": "application/pdf", "x-upsert": "true"})
+                            st.success("Modelo salvo! Agora configure o mapeamento ao lado.")
+                        except Exception as e:
+                            st.error(f"Erro ao salvar modelo: {e}")
 
         with col2:
             understanding_file_bytes = create_understanding_file()
@@ -488,28 +492,21 @@ def gerar_documento_tab(supabase):
                 else:
                     st.success(f"{len(pdf_fields)} campos encontrados no PDF.")
                     
-                    # --- CORREÇÃO APLICADA AQUI ---
-                    # A lógica de junção de dados foi corrigida para ser idêntica à da
-                    # parte principal da função, garantindo que 'soldo' e os campos
-                    # calculados apareçam na lista de mapeamento.
+                    # Gera uma lista limpa de campos do sistema para o dropdown
                     alunos_df = load_data("Alunos")
                     transporte_df = load_data("auxilio_transporte")
                     soldos_df = load_data("soldos")
                     
-                    if 'graduacao' in alunos_df.columns and 'graduacao' in soldos_df.columns and not soldos_df.empty:
-                        alunos_df['join_key_grad'] = alunos_df['graduacao'].astype(str).str.lower().str.strip()
-                        soldos_df['join_key_grad'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
-                        alunos_com_soldo_df = pd.merge(alunos_df, soldos_df, on='join_key_grad', how='left')
-                        alunos_com_soldo_df.drop(columns=['join_key_grad'], inplace=True, errors='ignore')
+                    if 'graduacao' in alunos_df.columns:
+                        dados_completos_df = pd.merge(transporte_df, alunos_df, on='numero_interno', how='left')
+                        dados_completos_df = pd.merge(dados_completos_df, soldos_df, on='graduacao', how='left')
+                        calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
+                        dados_completos_df = pd.concat([dados_completos_df, calculos_df], axis=1)
+                        campos_do_sistema = ["-- Não Mapeado --"] + sorted([col for col in dados_completos_df.columns if col not in ['id_x', 'id_y', 'created_at', 'join_key_grad']])
                     else:
-                        alunos_com_soldo_df = alunos_df.copy()
-                        alunos_com_soldo_df['soldo'] = 0
+                        campos_do_sistema = ["-- Não Mapeado --"]
+                        st.error("Coluna 'graduacao' não encontrada na tabela 'Alunos'.")
 
-                    dados_completos_df = pd.merge(alunos_com_soldo_df, transporte_df, on='numero_interno', how='left')
-                    calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
-                    dados_completos_df = pd.concat([dados_completos_df.drop(columns=calculos_df.columns, errors='ignore'), calculos_df], axis=1)
-
-                    campos_do_sistema = ["-- Não Mapeado --"] + sorted([col for col in dados_completos_df.columns if col not in ['id', 'created_at', 'graduacao_y']])
 
                     with st.form("pdf_mapping_form"):
                         st.markdown("**Mapeie cada campo do seu PDF para um campo do sistema:**")
@@ -523,10 +520,13 @@ def gerar_documento_tab(supabase):
                             mapeamento_pdf_usuario[field] = st.selectbox(f"Campo do PDF: `{field}`", options=campos_do_sistema, key=field, index=index)
                         
                         if st.form_submit_button("Salvar Mapeamento", type="primary"):
-                            supabase.table("Config").upsert({"chave": "pdf_mapping_auxilio_transporte", "valor": json.dumps(mapeamento_pdf_usuario)}).execute()
-                            st.success("Mapeamento salvo com sucesso! A página será atualizada.")
-                            load_data.clear()
-                            st.rerun()
+                            try:
+                                supabase.table("Config").upsert({"chave": "pdf_mapping_auxilio_transporte", "valor": json.dumps(mapeamento_pdf_usuario)}).execute()
+                                st.success("Mapeamento salvo com sucesso! A página será atualizada.")
+                                load_data.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao salvar o mapeamento: {e}")
 
             except Exception as e:
                 st.error(f"Erro ao ler o PDF: {e}")
@@ -538,7 +538,6 @@ def gerar_documento_tab(supabase):
     st.divider()
     st.markdown("#### Passo 2: Selecione os Alunos e Gere os Documentos")
     
-    # A lógica de junção de dados aqui é a mesma da seção de mapeamento
     alunos_df = load_data("Alunos")
     transporte_df = load_data("auxilio_transporte")
     soldos_df = load_data("soldos")
@@ -547,13 +546,14 @@ def gerar_documento_tab(supabase):
         st.warning("Nenhum dado de transporte foi cadastrado para preencher os documentos.")
         return
         
+    # Lógica de junção de dados usando 'graduacao' da tabela 'Alunos'
     if 'graduacao' in alunos_df.columns and 'graduacao' in soldos_df.columns and not soldos_df.empty:
         alunos_df['join_key_grad'] = alunos_df['graduacao'].astype(str).str.lower().str.strip()
         soldos_df['join_key_grad'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
         alunos_com_soldo_df = pd.merge(alunos_df, soldos_df, on='join_key_grad', how='left')
         alunos_com_soldo_df.drop(columns=['join_key_grad'], inplace=True, errors='ignore')
     else:
-        st.error("Erro: A coluna 'graduacao' não foi encontrada na tabela 'Alunos' ou 'soldos'. O cálculo não pode ser realizado.")
+        st.error("Erro: A coluna 'graduacao' não foi encontrada na tabela 'Alunos' ou 'soldos'.")
         return
         
     dados_completos_df = pd.merge(alunos_com_soldo_df, transporte_df, on='numero_interno', how='left')
@@ -567,27 +567,12 @@ def gerar_documento_tab(supabase):
     calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
     dados_completos_df = pd.concat([dados_completos_df.drop(columns=calculos_df.columns, errors='ignore'), calculos_df], axis=1)
     
+    alunos_selecionados_df = render_alunos_filter_and_selection(key_suffix="docgen_transporte", include_full_name_search=True)
     
     if not alunos_selecionados_df.empty:
         numeros_internos_selecionados = alunos_selecionados_df['numero_interno'].tolist()
         dados_para_gerar_df = dados_completos_df[dados_completos_df['numero_interno'].isin(numeros_internos_selecionados)]
 
-        st.markdown("---")
-        st.markdown("##### Diagnóstico dos Dados")
-        if st.button("👁️ Pré-visualizar Dados Mapeados", key="preview_docgen_data"):
-            if not dados_para_gerar_df.empty:
-                colunas_mapeadas = [coluna for coluna in mapeamento_pdf_salvo.values() if coluna != "-- Não Mapeado --"]
-                colunas_base = ['nome_guerra']
-                colunas_a_exibir_com_duplicados = colunas_base + [col for col in colunas_mapeadas if col in dados_para_gerar_df.columns]
-                colunas_a_exibir = list(dict.fromkeys(colunas_a_exibir_com_duplicados))
-                
-                st.dataframe(dados_para_gerar_df[colunas_a_exibir])
-                st.info("A tabela acima mostra os dados exatos que serão usados para preencher o PDF.")
-            else:
-                st.warning("Nenhum dado de transporte encontrado para os alunos selecionados.")
-
-        st.markdown("---")
-        
         if st.button(f"Gerar PDF para os {len(alunos_selecionados_df)} alunos", type="primary"):
             with st.spinner("Preparando..."):
                 try:
@@ -597,7 +582,7 @@ def gerar_documento_tab(supabase):
                     return
             
                 if dados_para_gerar_df.empty:
-                    st.error("Nenhum dos alunos selecionados possui dados de transporte válidos para gerar o documento.")
+                    st.error("Nenhum dos alunos selecionados possui dados de transporte cadastrados.")
                     return
 
                 filled_pdfs = []
@@ -612,6 +597,7 @@ def gerar_documento_tab(supabase):
     if 'final_pdf_auxilio' in st.session_state:
         st.balloons()
         st.download_button(label="✅ Baixar Documento Consolidado (.pdf)", data=st.session_state['final_pdf_auxilio'], file_name="solicitacoes_auxilio_transporte.pdf", mime="application/pdf")
+        
 def gestao_soldos_tab(supabase):
     st.subheader("Tabela de Soldos por Graduação")
     soldos_df = load_data("soldos")
