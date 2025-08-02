@@ -5,7 +5,8 @@ from io import BytesIO
 # Importando as funções de conexão do seu ficheiro de configuração e as funções de cálculo
 from config import init_supabase_client
 from acoes import load_data # Usando a função load_data que está em acoes.py ou outro local central
-from geracao_documentos import fill_pdf_auxilio, merge_pdfs # Funções que geram o PDF
+# Linha nova e corrigida em auxilio_transporte.py
+from pdf_utils import fill_pdf_auxilio, merge_pdfs # Importa do novo ficheiro de utilitários
 
 # Esta é a sua função de cálculo principal. Ela permanece a mesma.
 def calcular_auxilio_transporte(linha):
