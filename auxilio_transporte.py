@@ -13,7 +13,6 @@ def calcular_auxilio_transporte(linha):
     try:
         despesa_diaria = 0
         for i in range(1, 5):
-            # Tenta converter tarifas para float, tratando erros
             ida_tarifa = linha.get(f'ida_{i}_tarifa', 0.0)
             volta_tarifa = linha.get(f'volta_{i}_tarifa', 0.0)
             despesa_diaria += float(ida_tarifa if ida_tarifa else 0.0)
@@ -40,57 +39,50 @@ def calcular_auxilio_transporte(linha):
         })
     except Exception as e:
         st.error(f"Erro no cálculo para a linha com dados {linha.get('numero_interno')}. Detalhe: {e}")
-        return None
+        return pd.Series() # Retorna uma Series vazia em caso de erro
 
-# Esta é a função principal que será chamada pelo app.py
+# Função principal da página, que será chamada pelo app.py
 def show_auxilio_transporte():
-    st.header("🚌 Geração de Declaração de Auxílio Transporte")
+    st.header("🚌 Geração de Declaração de Auxílio Transporte (Versão Simplificada)")
     st.markdown("---")
+    st.info("Este módulo utiliza um único ficheiro CSV como fonte de dados para todos os cálculos.")
 
-    # ETAPA 1: CARREGAR DADOS DE SOLDOS DO SUPABASE
-    try:
-        with st.spinner("Conectando à base de dados para buscar a tabela de soldos..."):
-            supabase = init_supabase_client()
-            soldos_df = load_data("soldos")
-        st.success("Tabela de soldos carregada com sucesso do Supabase.")
-    except Exception as e:
-        st.error(f"Não foi possível conectar à base de dados. Erro: {e}")
-        st.stop()
+    # ETAPA 1: UPLOAD DO FICHEIRO CSV ÚNICO
+    uploaded_file = st.file_uploader(
+        "Carregue o seu ficheiro de dados (.csv)", 
+        type="csv",
+        help="Este ficheiro deve ser o exportado do Google Forms, com ponto e vírgula (;) como separador."
+    )
 
-    # ETAPA 2: UPLOAD DOS FICHEIROS CSV PELO UTILIZADOR
-    st.subheader("1. Carregue os Ficheiros de Dados")
-    col1, col2 = st.columns(2)
-    with col1:
-        uploaded_transporte_file = st.file_uploader("Ficheiro de Transporte do Mês (.csv)", type="csv", help="Este deve ser o ficheiro como 'decat tste.csv', com ponto e vírgula como separador.")
-    with col2:
-        uploaded_alunos_file = st.file_uploader("Ficheiro com a Lista de Alunos (.csv)", type="csv", help="Este deve ser o ficheiro 'Alunos_rows.csv'.")
-
-    # O código só prossegue se ambos os ficheiros forem carregados
-    if not uploaded_transporte_file or not uploaded_alunos_file:
-        st.info("Aguardando o upload de ambos os ficheiros para iniciar o processamento.")
+    if not uploaded_file:
+        st.warning("Aguardando o ficheiro de dados para iniciar.")
         return
 
-    # ETAPA 3: PROCESSAMENTO E CÁLCULO
-    st.subheader("2. Processamento, Cálculo e Validação")
-    if st.button("Iniciar Processamento dos Dados", type="primary"):
-        with st.spinner("Lendo ficheiros, juntando tabelas e calculando valores..."):
+    # ETAPA 2: PROCESSAMENTO E CÁLCULO
+    if st.button("Processar Ficheiro e Calcular Valores", type="primary"):
+        with st.spinner("Processando..."):
             try:
-                # Leitura dos ficheiros CSV
-                transporte_df = pd.read_csv(uploaded_transporte_file, sep=';', encoding='latin-1')
-                alunos_df = pd.read_csv(uploaded_alunos_file)
+                # Carrega o CSV. O separador deve ser ponto e vírgula.
+                df = pd.read_csv(uploaded_file, sep=';')
 
-                # --- LÓGICA DE CORRESPONDÊNCIA DE COLUNAS ---
-                # Mapeia os nomes das colunas do ficheiro de transporte para os nomes padrão do sistema
+                # --- PREPARAÇÃO DOS DADOS ---
+                
+                # 1. Remove a primeira coluna ("Carimbo de data/hora")
+                df = df.iloc[:, 1:]
+                
+                # 2. Mapeia os nomes das colunas do seu ficheiro para os nomes padrão do sistema
                 mapa_colunas = {
                     'NÚMERO INTERNO DO ALUNO': 'numero_interno',
+                    'NOME COMPLETO': 'nome_completo',
+                    'POSTO/GRAD': 'graduacao',
+                    'SOLDO': 'soldo', # Assumindo que a coluna de soldo se chama 'SOLDO'
+                    'DIAS ÚTEIS (MÁX 22)': 'dias_uteis',
                     'ANO DE REFERÊNCIA': 'ano_referencia',
                     'ENDEREÇO COMPLETO': 'endereco',
                     'BAIRRO': 'bairro',
                     'CIDADE': 'cidade',
-                    'CEP': 'cep',
-                    'DIAS ÚTEIS (MÁX 22)': 'dias_uteis',
+                    'CEP': 'cep'
                 }
-                # Mapeia dinamicamente as colunas de itinerário
                 for i in range(1, 5):
                     mapa_colunas[f'{i}ª EMPRESA (IDA)'] = f'ida_{i}_empresa'
                     mapa_colunas[f'{i}º TRAJETO (IDA)'] = f'ida_{i}_linha'
@@ -99,79 +91,41 @@ def show_auxilio_transporte():
                     mapa_colunas[f'{i}º TRAJETO (VOLTA)'] = f'volta_{i}_linha'
                     mapa_colunas[f'{i}ª TARIFA (VOLTA)'] = f'volta_{i}_tarifa'
                 
-                transporte_df.rename(columns=mapa_colunas, inplace=True)
+                df.rename(columns=mapa_colunas, inplace=True)
+                
+                # 3. Converte colunas numéricas, tratando possíveis erros
+                colunas_numericas = ['dias_uteis', 'soldo'] + [f'ida_{i}_tarifa' for i in range(1, 5)] + [f'volta_{i}_tarifa' for i in range(1, 5)]
+                for col in colunas_numericas:
+                    if col in df.columns:
+                        # Substitui vírgula por ponto e converte para número
+                        df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.'), errors='coerce')
+                
+                df.fillna(0, inplace=True) # Preenche valores nulos com 0 após conversão
 
-                # Limpeza e padronização das chaves de junção
-                transporte_df['numero_interno'] = transporte_df['numero_interno'].astype(str).str.strip().str.upper()
-                alunos_df['numero_interno'] = alunos_df['numero_interno'].astype(str).str.strip().str.upper()
-                soldos_df['graduacao'] = soldos_df['graduacao'].astype(str).str.strip()
-                alunos_df['graduacao'] = alunos_df['graduacao'].astype(str).str.strip()
+                # 4. Aplica a função de cálculo a cada linha do DataFrame
+                calculos_df = df.apply(calcular_auxilio_transporte, axis=1)
 
-                # 1. Juntar dados de transporte com os dados dos alunos para obter a 'graduacao'
-                dados_completos = pd.merge(
-                    transporte_df,
-                    alunos_df[['numero_interno', 'nome_completo', 'graduacao']],
-                    on='numero_interno',
-                    how='left'
-                )
+                # 5. Junta os resultados dos cálculos à tabela original
+                resultados_finais_df = pd.concat([df, calculos_df], axis=1)
 
-                # 2. Juntar o resultado com os soldos para obter o valor do 'soldo'
-                dados_completos = pd.merge(
-                    dados_completos,
-                    soldos_df,
-                    on='graduacao',
-                    how='left'
-                )
-
-                # 3. Tratar dados faltantes após as junções
-                dados_completos['soldo'].fillna(0, inplace=True)
-                dados_completos.dropna(subset=['graduacao'], inplace=True) # Remove linhas onde o aluno ou graduação não foram encontrados
-
-                # 4. Aplicar a função de cálculo
-                calculos_df = dados_completos.apply(calcular_auxilio_transporte, axis=1)
-
-                # 5. Unir os resultados dos cálculos à tabela final
-                resultados_finais_df = pd.concat([dados_completos, calculos_df], axis=1)
-
-                st.success(f"Processamento concluído! Foram encontrados e calculados {len(resultados_finais_df)} registos válidos.")
+                st.success(f"Processamento concluído! Foram calculados {len(resultados_finais_df)} registos.")
                 st.dataframe(resultados_finais_df)
 
-                # Armazenar os resultados na sessão para o passo de geração de PDF
+                # Armazena na sessão para a etapa de geração do PDF
                 st.session_state['resultados_para_pdf'] = resultados_finais_df
 
-            except FileNotFoundError:
-                st.error("Erro: Um dos ficheiros não foi encontrado. Verifique os caminhos.")
             except Exception as e:
-                st.error(f"Ocorreu um erro durante o processamento. Detalhes: {e}")
+                st.error(f"Ocorreu um erro durante o processamento. Verifique o formato do ficheiro e das colunas. Detalhes: {e}")
 
-    # Elógica da função show_auxilio_transporte)
-
-    # ETAPA 4: GERAÇÃO DOS DOCUMENTOS
+    # ETAPA 3: GERAÇÃO DOS DOCUMENTOS PDF
     if 'resultados_para_pdf' in st.session_state:
-        st.subheader("3. Geração dos Documentos PDF")
+        st.markdown("---")
+        st.subheader("3. Geração dos Documentos")
         
         df_para_gerar = st.session_state['resultados_para_pdf']
         
-        if st.button(f"Gerar {len(df_para_gerar)} Documentos", type="primary"):
-            
-            # --- INÍCIO DA CORREÇÃO ---
-            # Importe as funções aqui, apenas quando forem necessárias
-            from geracao_documentos import fill_pdf_auxilio, merge_pdfs
-            # --- FIM DA CORREÇÃO ---
-            st.info("Funcionalidade de geração de PDF ainda a ser conectada.")
-            # Aqui você chamaria a sua lógica de geração de PDF. Exemplo:
-            # try:
-            #     # Supondo que você tenha um modelo PDF carregado
-            #     with open("caminho/do/seu/modelo.pdf", "rb") as f:
-            #         modelo_pdf_bytes = f.read()
-                
-            #     pdf_final_bytes = gerar_pdfs_consolidados(df_para_gerar, modelo_pdf_bytes)
-                
-            #     st.download_button(
-            #         label="✅ Baixar PDFs Consolidados",
-            #         data=pdf_final_bytes,
-            #         file_name="Declaracoes_Auxilio_Transporte.pdf",
-            #         mime="application/pdf"
-            #     )
-            # except Exception as e:
-            #     st.error(f"Erro ao gerar o PDF: {e}")
+        if st.button(f"Gerar PDF para os {len(df_para_gerar)} registos", type="primary"):
+            st.info("Funcionalidade de geração de PDF a ser conectada.")
+            # Exemplo de como a lógica seria chamada:
+            # pdf_final = gerar_pdfs_consolidados(df_para_gerar, "caminho/do/modelo.pdf")
+            # st.download_button("Baixar PDFs", data=pdf_final, file_name="Declaracoes.pdf")
