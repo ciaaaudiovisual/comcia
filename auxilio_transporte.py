@@ -16,19 +16,34 @@ def calcular_auxilio_transporte(linha):
         for i in range(1, 5):
             despesa_diaria += float(linha.get(f'ida_{i}_tarifa', 0.0) or 0.0)
             despesa_diaria += float(linha.get(f'volta_{i}_tarifa', 0.0) or 0.0)
+        
         dias_trabalhados = min(int(linha.get('dias_uteis', 0) or 0), 22)
         despesa_mensal = despesa_diaria * dias_trabalhados
-        soldo = float(linha.get('soldo', 0.0) or 0.0)
+
+        # --- INÍCIO DA CORREÇÃO ---
+        # Pega o valor bruto da coluna 'soldo'
+        valor_soldo_bruto = linha.get('soldo') 
+        
+        try:
+            # Tenta converter o valor para float.
+            soldo = float(valor_soldo_bruto)
+        except (ValueError, TypeError):
+            # Se a conversão falhar (ex: string vazia, texto, etc.), assume o soldo como 0.
+            soldo = 0.0
+        # --- FIM DA CORREÇÃO ---
+
         parcela_beneficiario = ((soldo * 0.06) / 30) * dias_trabalhados if soldo > 0 and dias_trabalhados > 0 else 0.0
         auxilio_pago = max(0.0, despesa_mensal - parcela_beneficiario)
         return pd.Series({
             'despesa_diaria': round(despesa_diaria, 2),
-            'despesa_mensal': round(despesa_mensal, 2),
-            'parcela_beneficiario': round(parcela_beneficiario, 2),
-            'auxilio_pago': round(auxilio_pago, 2)
+            'dias_trabalhados': dias_trabalhados,
+            'despesa_mensal_total': round(despesa_mensal, 2),
+            'parcela_descontada_6_porcento': round(parcela_beneficiario, 2),
+            'auxilio_transporte_pago': round(auxilio_pago, 2)
         })
-    except (ValueError, TypeError):
-        return pd.Series({'despesa_diaria': 0.0, 'despesa_mensal': 0.0, 'parcela_beneficiario': 0.0, 'auxilio_pago': 0.0})
+    except Exception as e:
+        st.error(f"Erro ao calcular auxílio para a linha: {linha}. Erro: {e}")
+        return None
 
 def create_excel_template():
     template_data = {
