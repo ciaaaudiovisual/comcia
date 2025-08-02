@@ -497,6 +497,7 @@ def gerar_documento_tab(supabase):
         return
 
     st.divider()
+
     st.markdown("#### Passo 2: Selecione os Alunos e Gere os Documentos")
     
     alunos_df = load_data("Alunos")
@@ -515,6 +516,24 @@ def gerar_documento_tab(supabase):
     alunos_selecionados_df = render_alunos_filter_and_selection(key_suffix="docgen_transporte", include_full_name_search=True)
     
     if not alunos_selecionados_df.empty:
+        numeros_internos_selecionados = alunos_selecionados_df['numero_interno'].tolist()
+        dados_para_gerar_df = dados_completos_df[dados_completos_df['numero_interno'].isin(numeros_internos_selecionados)]
+
+        # --- NOVA FERRAMENTA DE DIAGNÓSTICO ---
+        st.markdown("---")
+        st.markdown("##### Diagnóstico dos Dados")
+        if st.button("👁️ Pré-visualizar Dados Mapeados para Alunos Selecionados"):
+            if not dados_para_gerar_df.empty:
+                # Pega apenas as colunas que foram mapeadas pelo usuário
+                colunas_mapeadas = [coluna for coluna in mapeamento_pdf_salvo.values() if coluna != "-- Não Mapeado --"]
+                colunas_a_exibir = ['nome_guerra'] + [col for col in colunas_mapeadas if col in dados_para_gerar_df.columns]
+                
+                st.dataframe(dados_para_gerar_df[colunas_a_exibir])
+                st.info("A tabela acima mostra os dados exatos que serão usados para preencher o PDF. Se uma coluna estiver vazia, os dados não existem para estes alunos no banco de dados.")
+            else:
+                st.warning("Nenhum dado de transporte encontrado para os alunos selecionados.")
+
+        st.markdown("---")
         if st.button(f"Gerar PDF para os {len(alunos_selecionados_df)} alunos", type="primary"):
             with st.spinner("Preparando..."):
                 try:
