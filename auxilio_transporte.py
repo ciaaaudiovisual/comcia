@@ -582,7 +582,7 @@ def gerar_documento_tab(supabase):
     if 'final_pdf_auxilio' in st.session_state:
         st.balloons()
         st.download_button(label="✅ Baixar Documento Consolidado (.pdf)", data=st.session_state['final_pdf_auxilio'], file_name="solicitacoes_auxilio_transporte.pdf", mime="application/pdf")
-        
+
 def gestao_decat_tab(supabase):
     st.subheader("Dados de Transporte Cadastrados (com Cálculo)")
     alunos_df = load_data("Alunos")
