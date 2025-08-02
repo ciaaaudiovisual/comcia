@@ -420,6 +420,8 @@ def gestao_decat_tab(supabase):
     calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
     display_df = pd.concat([dados_completos_df, calculos_df], axis=1)
     
+    # --- CORREÇÃO APLICADA AQUI ---
+    # Adiciona a coluna 'soldo' à visualização para diagnóstico
     colunas_principais = ['numero_interno', 'nome_guerra', 'ano_referencia', 'posto_grad']
     colunas_calculadas = ['soldo', 'despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']
     colunas_editaveis = ['dias_uteis', 'endereco', 'bairro', 'cidade', 'cep']
@@ -429,7 +431,7 @@ def gestao_decat_tab(supabase):
     
     colunas_visiveis = [col for col in colunas_principais + colunas_calculadas + colunas_editaveis if col in display_df.columns]
     
-    edited_df = st.data_editor(display_df[colunas_visiveis], hide_index=True, use_container_width=True, disabled=colunas_principais + colunas_calculadas)
+    st.data_editor(display_df[colunas_visiveis], hide_index=True, use_container_width=True, disabled=colunas_principais + colunas_calculadas)
     
     if st.button("Salvar Alterações na Tabela de Gestão"):
         try:
