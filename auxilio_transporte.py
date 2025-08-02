@@ -143,6 +143,8 @@ def show_auxilio_transporte():
             except Exception as e:
                 st.error(f"Ocorreu um erro durante o processamento. Detalhes: {e}")
 
+    # Elógica da função show_auxilio_transporte)
+
     # ETAPA 4: GERAÇÃO DOS DOCUMENTOS
     if 'resultados_para_pdf' in st.session_state:
         st.subheader("3. Geração dos Documentos PDF")
@@ -150,6 +152,11 @@ def show_auxilio_transporte():
         df_para_gerar = st.session_state['resultados_para_pdf']
         
         if st.button(f"Gerar {len(df_para_gerar)} Documentos", type="primary"):
+            
+            # --- INÍCIO DA CORREÇÃO ---
+            # Importe as funções aqui, apenas quando forem necessárias
+            from geracao_documentos import fill_pdf_auxilio, merge_pdfs
+            # --- FIM DA CORREÇÃO ---
             st.info("Funcionalidade de geração de PDF ainda a ser conectada.")
             # Aqui você chamaria a sua lógica de geração de PDF. Exemplo:
             # try:
