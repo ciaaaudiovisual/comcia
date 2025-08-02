@@ -41,10 +41,20 @@ def calcular_auxilio_transporte(linha):
             'parcela_descontada_6_porcento': round(parcela_beneficiario, 2),
             'auxilio_transporte_pago': round(auxilio_pago, 2)
         })
-    except Exception as e:
-        st.error(f"Erro ao calcular auxílio para a linha: {linha}. Erro: {e}")
-        return None
-
+    
+except Exception as e:
+    # Mostra um erro mais limpo, com o ID do aluno, se possível
+    aluno_id = linha.get('numero_interno', 'desconhecido') if isinstance(linha, (pd.Series, dict)) else 'inválida'
+    st.error(f"Erro ao calcular auxílio para o aluno {aluno_id}. Erro: {e}")
+    
+    # Retorna uma Series com a mesma estrutura e valores padrão (zeros)
+    return pd.Series({
+        'despesa_diaria': 0.0,
+        'dias_trabalhados': 0,
+        'despesa_mensal_total': 0.0,
+        'parcela_descontada_6_porcento': 0.0,
+        'auxilio_transporte_pago': 0.0
+    })
 def create_excel_template():
     template_data = {
         'NÚMERO INTERNO DO ALUNO': ['M-01-101'],'ANO DE REFERÊNCIA': [2025],
