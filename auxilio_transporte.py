@@ -658,6 +658,52 @@ def gerar_documento_tab(supabase):
         st.balloons()
         st.download_button(label="✅ Baixar Documento Consolidado (.pdf)", data=st.session_state['final_pdf_auxilio'], file_name="solicitacoes_auxilio_transporte.pdf", mime="application/pdf")
 
+
+
+    # --- LÓGICA DE JUNÇÃO DE DADOS CORRIGIDA ---
+    if 'graduacao' not in alunos_df.columns or 'graduacao' not in soldos_df.columns:
+        st.error("Erro Crítico: A coluna 'graduacao' é necessária nas tabelas 'Alunos' e 'soldos'.")
+        return
+
+    if 'valor' in soldos_df.columns:
+        soldos_df.rename(columns={'valor': 'soldo'}, inplace=True)
+    elif 'soldo' not in soldos_df.columns:
+        st.error("Erro Crítico: A tabela 'soldos' precisa de uma coluna chamada 'soldo' ou 'valor'.")
+        return
+        
+    # 1. Prepara as chaves de junção
+    alunos_df['join_key'] = alunos_df['graduacao'].astype(str).str.lower().str.strip()
+    soldos_df['join_key'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
+    
+    # 2. Junta Alunos com Soldos, mas seleciona apenas as colunas necessárias para evitar conflitos
+    alunos_com_soldo_df = pd.merge(
+        alunos_df, 
+        soldos_df[['join_key', 'soldo']], # Pega apenas a chave e o soldo da tabela de soldos
+        on='join_key', 
+        how='left'
+    )
+    
+    # 3. Junta o resultado com a tabela de transporte
+    dados_completos_df = pd.merge(alunos_com_soldo_df, transporte_df, on='numero_interno', how='inner')
+    dados_completos_df['soldo'] = pd.to_numeric(dados_completos_df['soldo'], errors='coerce').fillna(0)
+
+    # Aplica os cálculos
+    calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
+    display_df = pd.concat([dados_completos_df, calculos_df], axis=1)
+    
+    # Define a ordem das colunas para exibição (agora usando 'graduacao' sem sufixo)
+    colunas_principais = ['numero_interno', 'nome_guerra', 'graduacao', 'ano_referencia']
+    colunas_calculadas = ['soldo', 'despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']
+    colunas_editaveis = ['dias_uteis', 'endereco', 'bairro', 'cidade', 'cep']
+    for i in range(1, 5):
+        colunas_editaveis += [f'ida_{i}_empresa', f'ida_{i}_linha', f'ida_{i}_tarifa', f'volta_{i}_empresa', f'volta_{i}_linha', f'volta_{i}_tarifa']
+    
+    colunas_visiveis = [col for col in colunas_principais + colunas_calculadas + colunas_editaveis if col in display_df.columns]
+    
+    edited_df = st.data_editor(display_df[colunas_visiveis], hide_index=True, use_container_width=True, disabled=colunas_principais + colunas_calculadas)
+    
+    if st.button("Salvar Alterações na Tabela de Gestão"):
+        st.info("Funcionalidade em desenvolvimento.")
 def gestao_decat_tab(supabase):
     st.subheader("Dados de Transporte Cadastrados (com Cálculo)")
     alunos_df = load_data("Alunos")
@@ -683,34 +729,39 @@ def gestao_decat_tab(supabase):
         st.warning("Nenhum dado de auxílio transporte cadastrado.")
         return
 
-    if 'graduacao' in alunos_df.columns and 'graduacao' in soldos_df.columns and 'soldo' in soldos_df.columns:
+    if 'graduacao' in alunos_df.columns and 'graduacao' in soldos_df.columns:
+        if 'valor' in soldos_df.columns:
+            soldos_df.rename(columns={'valor': 'soldo'}, inplace=True)
+        elif 'soldo' not in soldos_df.columns:
+            st.error("Erro Crítico: A tabela 'soldos' precisa de uma coluna chamada 'soldo' ou 'valor'.")
+            return
+        
         alunos_df['join_key'] = alunos_df['graduacao'].astype(str).str.lower().str.strip()
         soldos_df['join_key'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
         alunos_com_soldo_df = pd.merge(alunos_df, soldos_df, on='join_key', how='left')
-        alunos_com_soldo_df.drop(columns=['join_key'], inplace=True, errors='ignore')
-    else:
-        st.error("Erro: Colunas essenciais ('graduacao', 'soldo') não encontradas. Verifique as tabelas 'Alunos' e 'soldos'.")
-        return
         
-    dados_completos_df = pd.merge(alunos_com_soldo_df, transporte_df, on='numero_interno', how='inner')
-    dados_completos_df['soldo'] = pd.to_numeric(dados_completos_df['soldo'], errors='coerce').fillna(0)
+        dados_completos_df = pd.merge(alunos_com_soldo_df, transporte_df, on='numero_interno', how='inner')
+        dados_completos_df['soldo'] = pd.to_numeric(dados_completos_df['soldo'], errors='coerce').fillna(0)
 
-    calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
-    display_df = pd.concat([dados_completos_df, calculos_df], axis=1)
-    
-    colunas_principais = ['numero_interno', 'nome_guerra', 'graduacao_x', 'ano_referencia']
-    colunas_calculadas = ['soldo', 'despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']
-    colunas_editaveis = ['dias_uteis', 'endereco', 'bairro', 'cidade', 'cep']
-    for i in range(1, 5):
-        colunas_editaveis += [f'ida_{i}_empresa', f'ida_{i}_linha', f'ida_{i}_tarifa', f'volta_{i}_empresa', f'volta_{i}_linha', f'volta_{i}_tarifa']
-    
-    colunas_visiveis = [col for col in colunas_principais + colunas_calculadas + colunas_editaveis if col in display_df.columns]
-    
-    edited_df = st.data_editor(display_df[colunas_visiveis], hide_index=True, use_container_width=True, disabled=colunas_principais + colunas_calculadas)
-    
-    if st.button("Salvar Alterações na Tabela de Gestão"):
-        st.info("Funcionalidade em desenvolvimento.")
+        calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
+        display_df = pd.concat([dados_completos_df, calculos_df], axis=1)
         
+        colunas_principais = ['numero_interno', 'nome_guerra', 'graduacao_x', 'ano_referencia']
+        colunas_calculadas = ['soldo', 'despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']
+        colunas_editaveis = ['dias_uteis', 'endereco', 'bairro', 'cidade', 'cep']
+        for i in range(1, 5):
+            colunas_editaveis += [f'ida_{i}_empresa', f'ida_{i}_linha', f'ida_{i}_tarifa', f'volta_{i}_empresa', f'volta_{i}_linha', f'volta_{i}_tarifa']
+        
+        colunas_visiveis = [col for col in colunas_principais + colunas_calculadas + colunas_editaveis if col in display_df.columns]
+        
+        edited_df = st.data_editor(display_df[colunas_visiveis], hide_index=True, use_container_width=True, disabled=colunas_principais + colunas_calculadas)
+        
+        if st.button("Salvar Alterações na Tabela de Gestão"):
+            st.info("Funcionalidade em desenvolvimento.")
+    else:
+        st.error("Erro: Colunas essenciais ('graduacao') não encontradas. Verifique as tabelas 'Alunos' e 'soldos'.")
+        return
+
 def gestao_soldos_tab(supabase):
     st.subheader("Tabela de Soldos por Graduação")
     soldos_df = load_data("soldos")
