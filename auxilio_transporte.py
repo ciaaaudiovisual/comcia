@@ -46,37 +46,18 @@ def create_excel_template():
     return output.getvalue()
 
 def create_understanding_file():
-    """Cria um ficheiro de texto explicando os campos de dados disponíveis para o PDF."""
     data_fields_explanation = {
-        'numero_interno': "Número de identificação do aluno (ex: M-01-101).",
-        'nome_guerra': "Nome de guerra do aluno.",
-        'nome_completo': "Nome completo do aluno.",
-        'posto_grad': "Posto ou Graduação do aluno (ex: ALUNO).",
-        'ano_referencia': "Ano do benefício (ex: 2025).",
-        'dias_uteis': "Quantidade de dias de trabalho considerados (máx 22).",
-        'endereco': "Endereço residencial completo do aluno.",
-        'bairro': "Bairro do aluno.",
-        'cidade': "Cidade do aluno.",
-        'cep': "CEP do aluno.",
-        'despesa_diaria': "CÁLCULO: Soma de todas as tarifas de ida e volta.",
-        'despesa_mensal': "CÁLCULO: Despesa Diária x Dias Úteis.",
-        'parcela_beneficiario': "CÁLCULO: Parcela de 6% do soldo, proporcional aos dias úteis.",
-        'auxilio_pago': "CÁLCULO: Valor final a ser pago (Despesa Mensal - Parcela do Beneficiário).",
-        'ida_1_empresa': "Nome da 1ª empresa do trajeto de IDA.",
-        'ida_1_linha': "Nome/Número da 1ª linha do trajeto de IDA.",
-        'ida_1_tarifa': "Valor da 1ª tarifa do trajeto de IDA.",
-        # Adicionar mais campos se necessário
+        'numero_interno': "Número de identificação do aluno.", 'nome_guerra': "Nome de guerra do aluno.",'nome_completo': "Nome completo do aluno.",
+        'graduacao': "Posto ou Graduação do aluno (ex: ALUNO).",'ano_referencia': "Ano do benefício (ex: 2025).",'dias_uteis': "Quantidade de dias de trabalho considerados (máx 22).",
+        'endereco': "Endereço residencial completo.",'bairro': "Bairro do aluno.",'cidade': "Cidade do aluno.",'cep': "CEP do aluno.",
+        'soldo': "Valor do salário base encontrado para a graduação do aluno.",
+        'despesa_diaria': "CÁLCULO: Soma de todas as tarifas de ida e volta.",'despesa_mensal': "CÁLCULO: Despesa Diária x Dias Úteis.",
+        'parcela_beneficiario': "CÁLCULO: Parcela de 6% do soldo, proporcional aos dias úteis.",'auxilio_pago': "CÁLCULO: Valor final a ser pago (Despesa Mensal - Parcela do Beneficiário).",
+        'ida_1_empresa': "Nome da 1ª empresa do trajeto de IDA.",'ida_1_linha': "Nome/Número da 1ª linha do trajeto de IDA.",'ida_1_tarifa': "Valor da 1ª tarifa do trajeto de IDA.",
     }
-    
-    output = "GUIA DE CAMPOS PARA MAPEAMENTO DO PDF\n"
-    output += "========================================\n\n"
-    output += "Use os nomes da coluna 'CAMPO NO SISTEMA' para mapear os campos do seu PDF.\n\n"
-    
+    output = "GUIA DE CAMPOS PARA MAPEAMENTO DO PDF\n========================================\n\n"
     for key, desc in data_fields_explanation.items():
-        output += f"CAMPO NO SISTEMA: {key}\n"
-        output += f"DESCRIÇÃO: {desc}\n"
-        output += "----------------------------------------\n"
-        
+        output += f"CAMPO NO SISTEMA: {key}\nDESCRIÇÃO: {desc}\n----------------------------------------\n"
     return output.encode('utf-8')
 
 # --- FUNÇÃO DE PREENCHIMENTO DE PDF ATUALIZADA ---
@@ -650,13 +631,13 @@ def gestao_soldos_tab(supabase):
             st.rerun()
         except Exception as e:
             st.error(f"Erro ao salvar os soldos: {e}")
-# --- FUNÇÃO PRINCIPAL QUE É IMPORTADA PELO app.py ---
+
 def show_auxilio_transporte():
     st.title("🚌 Gestão de Auxílio Transporte (DeCAT)")
     supabase = init_supabase_client()
-
-    tab_importacao, tab_individual, tab_gestao, tab_soldos, tab_gerar_doc = st.tabs([
-        "1. Importação Guiada", "2. Lançamento Individual",
+    
+    tabs = st.tabs([
+        "1. Importação Guiada", "2. Lançamento Individual", 
         "3. Gerenciar Dados", "4. Gerenciar Soldos", "5. Gerar Documento"
     ])
 
@@ -665,13 +646,13 @@ def show_auxilio_transporte():
     if not soldos_df.empty and 'graduacao' in soldos_df.columns:
         opcoes_posto_grad += sorted(soldos_df['graduacao'].unique().tolist())
 
-    with tab_importacao:
+    with tabs[0]:
         importacao_guiada_tab(supabase)
-    with tab_individual:
+    with tabs[1]:
         lancamento_individual_tab(supabase, opcoes_posto_grad)
-    with tab_gestao:
+    with tabs[2]:
         gestao_decat_tab(supabase)
-    with tab_soldos:
+    with tabs[3]:
         gestao_soldos_tab(supabase)
-    with tab_gerar_doc:
+    with tabs[4]:
         gerar_documento_tab(supabase)
