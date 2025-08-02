@@ -526,36 +526,20 @@ def gerar_documento_tab(supabase):
 
         st.markdown("---")
         st.markdown("##### Diagnóstico dos Dados")
-        if st.button("👁️ Pré-visualizar Dados Mapeados para Alunos Selecionados"):
+           # A chave do botão foi tornada única para evitar o erro de duplicação.
+        if st.button("👁️ Pré-visualizar Dados Mapeados", key="preview_docgen_data"):
             if not dados_para_gerar_df.empty:
                 colunas_mapeadas = [coluna for coluna in mapeamento_pdf_salvo.values() if coluna != "-- Não Mapeado --"]
-                
-                # --- CORREÇÃO APLICADA AQUI (CAMADA 2) ---
-                # Garante que a lista final de colunas para exibição é 100% única
                 colunas_base = ['nome_guerra']
                 colunas_a_exibir_com_duplicados = colunas_base + [col for col in colunas_mapeadas if col in dados_para_gerar_df.columns]
-                colunas_a_exibir = list(dict.fromkeys(colunas_a_exibir_com_duplicados)) # Remove duplicados mantendo a ordem
+                colunas_a_exibir = list(dict.fromkeys(colunas_a_exibir_com_duplicados))
                 
                 st.dataframe(dados_para_gerar_df[colunas_a_exibir])
                 st.info("A tabela acima mostra os dados exatos que serão usados para preencher o PDF.")
             else:
                 st.warning("Nenhum dado de transporte encontrado para os alunos selecionados.")
 
-        st.markdown("---")
-        st.markdown("##### Diagnóstico dos Dados")
-        if st.button("👁️ Pré-visualizar Dados Mapeados para Alunos Selecionados"):
-            if not dados_para_gerar_df.empty:
-                colunas_mapeadas = [coluna for coluna in mapeamento_pdf_salvo.values() if coluna != "-- Não Mapeado --"]
-                
-                # --- CORREÇÃO APLICADA AQUI ---
-                # Garante que a lista final de colunas não tenha duplicados
-                colunas_base = ['nome_guerra']
-                colunas_a_exibir = colunas_base + [col for col in colunas_mapeadas if col not in colunas_base and col in dados_para_gerar_df.columns]
-                
-                st.dataframe(dados_para_gerar_df[colunas_a_exibir])
-                st.info("A tabela acima mostra os dados exatos que serão usados para preencher o PDF. Se uma coluna estiver vazia, os dados não existem para estes alunos no banco de dados.")
-            else:
-                st.warning("Nenhum dado de transporte encontrado para os alunos selecionados.")
+      
 
         st.markdown("---")
         if st.button(f"Gerar PDF para os {len(alunos_selecionados_df)} alunos", type="primary"):
