@@ -6,6 +6,7 @@ import json
 import re
 from aluno_selection_components import render_alunos_filter_and_selection
 from pypdf import PdfReader, PdfWriter
+import numpy as np
 
 # --- FUNÇÕES AUXILIARES E DE CÁLCULO (DEFINIDAS PRIMEIRO) ---
 
@@ -31,7 +32,7 @@ def calcular_auxilio_transporte(linha):
 
 def create_excel_template():
     template_data = {
-        'NÚMERO INTERNO DO ALUNO': ['M-01-101'],'ANO DE REFERÊNCIA': [2025],'POSTO/GRADUAÇÃO': ['ALUNO'],
+        'NÚMERO INTERNO DO ALUNO': ['M-01-101'],'ANO DE REFERÊNCIA': [2025],
         'ENDEREÇO COMPLETO': ['Rua Exemplo, 123'],'BAIRRO': ['Bairro Exemplo'],'CIDADE': ['Cidade Exemplo'],'CEP': ['12345-678'],
         'DIAS ÚTEIS (MÁX 22)': [22],'1ª EMPRESA (IDA)': ['Empresa A'],'1º TRAJETO (IDA)': ['Linha 100'],'1ª TARIFA (IDA)': [4.50],
         '2ª EMPRESA (IDA)': [''], '2º TRAJETO (IDA)': [''], '2ª TARIFA (IDA)': [''], '3ª EMPRESA (IDA)': [''], '3º TRAJETO (IDA)': [''], '3ª TARIFA (IDA)': [''],
@@ -45,38 +46,16 @@ def create_excel_template():
         df.to_excel(writer, index=False, sheet_name='ModeloAuxilioTransporte')
     return output.getvalue()
 
-def create_understanding_file():
-    data_fields_explanation = {
-        'numero_interno': "Número de identificação do aluno.", 'nome_guerra': "Nome de guerra do aluno.",'nome_completo': "Nome completo do aluno.",
-        'graduacao': "Posto ou Graduação do aluno (ex: ALUNO).",'ano_referencia': "Ano do benefício (ex: 2025).",'dias_uteis': "Quantidade de dias de trabalho considerados (máx 22).",
-        'endereco': "Endereço residencial completo.",'bairro': "Bairro do aluno.",'cidade': "Cidade do aluno.",'cep': "CEP do aluno.",
-        'soldo': "Valor do salário base encontrado para a graduação do aluno.",
-        'despesa_diaria': "CÁLCULO: Soma de todas as tarifas de ida e volta.",'despesa_mensal': "CÁLCULO: Despesa Diária x Dias Úteis.",
-        'parcela_beneficiario': "CÁLCULO: Parcela de 6% do soldo, proporcional aos dias úteis.",'auxilio_pago': "CÁLCULO: Valor final a ser pago (Despesa Mensal - Parcela do Beneficiário).",
-        'ida_1_empresa': "Nome da 1ª empresa do trajeto de IDA.",'ida_1_linha': "Nome/Número da 1ª linha do trajeto de IDA.",'ida_1_tarifa': "Valor da 1ª tarifa do trajeto de IDA.",
-    }
-    output = "GUIA DE CAMPOS PARA MAPEAMENTO DO PDF\n========================================\n\n"
-    for key, desc in data_fields_explanation.items():
-        output += f"CAMPO NO SISTEMA: {key}\nDESCRIÇÃO: {desc}\n----------------------------------------\n"
-    return output.encode('utf-8')
-
-# --- FUNÇÃO DE PREENCHIMENTO DE PDF ATUALIZADA ---
 def fill_pdf_auxilio(template_bytes, aluno_data, pdf_mapping):
     reader = PdfReader(BytesIO(template_bytes))
     writer = PdfWriter(clone_from=reader)
-    
     fill_data = {}
     for pdf_field, df_column in pdf_mapping.items():
-        # Pula se o campo do PDF não foi mapeado para nenhuma coluna de dados
         if not df_column or df_column == "-- Não Mapeado --":
             continue
-            
-        # --- CORREÇÃO 1: Trata campos vazios para não exibir "None" ---
         valor = aluno_data.get(df_column)
         if pd.isna(valor):
-            valor = '' # Converte nulos para texto vazio
-
-        # --- CORREÇÃO 2: Garante a formatação de moeda para todos os campos relevantes ---
+            valor = ''
         campos_moeda = ['despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago', 'soldo']
         if df_column in campos_moeda or 'tarifa' in df_column:
             try:
@@ -86,11 +65,9 @@ def fill_pdf_auxilio(template_bytes, aluno_data, pdf_mapping):
                 fill_data[pdf_field] = "R$ 0,00"
         else:
             fill_data[pdf_field] = str(valor)
-            
     if writer.get_form_text_fields():
         for page in writer.pages:
             writer.update_page_form_field_values(page, fill_data)
-            
     output_buffer = BytesIO()
     writer.write(output_buffer)
     output_buffer.seek(0)
@@ -107,6 +84,20 @@ def merge_pdfs(pdf_buffers):
     merged_pdf_buffer.seek(0)
     return merged_pdf_buffer
 
+def create_understanding_file():
+    data_fields_explanation = {
+        'numero_interno': "Número de identificação do aluno.", 'nome_guerra': "Nome de guerra do aluno.",'nome_completo': "Nome completo do aluno.",
+        'graduacao': "Posto ou Graduação do aluno (ex: ALUNO).",'ano_referencia': "Ano do benefício (ex: 2025).",'dias_uteis': "Quantidade de dias de trabalho considerados (máx 22).",
+        'endereco': "Endereço residencial completo.",'bairro': "Bairro do aluno.",'cidade': "Cidade do aluno.",'cep': "CEP do aluno.",
+        'soldo': "Valor do salário base encontrado para a graduação do aluno.",
+        'despesa_diaria': "CÁLCULO: Soma de todas as tarifas de ida e volta.",'despesa_mensal': "CÁLCULO: Despesa Diária x Dias Úteis.",
+        'parcela_beneficiario': "CÁLCULO: Parcela de 6% do soldo, proporcional aos dias úteis.",'auxilio_pago': "CÁLCULO: Valor final a ser pago (Despesa Mensal - Parcela do Beneficiário).",
+        'ida_1_empresa': "Nome da 1ª empresa do trajeto de IDA.",'ida_1_linha': "Nome/Número da 1ª linha do trajeto de IDA.",'ida_1_tarifa': "Valor da 1ª tarifa do trajeto de IDA.",
+    }
+    output = "GUIA DE CAMPOS PARA MAPEAMENTO DO PDF\n========================================\n\n"
+    for key, desc in data_fields_explanation.items():
+        output += f"CAMPO NO SISTEMA: {key}\nDESCRIÇÃO: {desc}\n----------------------------------------\n"
+    return output.encode('utf-8')
 
 # --- DEFINIÇÃO DAS FUNÇÕES DE CADA ABA (COMPLETAS) ---
 
