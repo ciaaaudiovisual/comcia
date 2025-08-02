@@ -446,6 +446,10 @@ def gestao_decat_tab(supabase):
         st.info("A funcionalidade de salvar edições diretamente nesta tabela está em desenvolvimento.")
         pass
 
+Python
+
+# No ficheiro auxilio_transporte.py, substitua esta função
+
 def gerar_documento_tab(supabase):
     st.subheader("Gerador de Documentos de Solicitação")
     NOME_TEMPLATE = "auxilio_transporte_template.pdf"
@@ -484,14 +488,26 @@ def gerar_documento_tab(supabase):
                 else:
                     st.success(f"{len(pdf_fields)} campos encontrados no PDF.")
                     
+                    # --- CORREÇÃO APLICADA AQUI ---
+                    # A lógica de junção de dados foi corrigida para ser idêntica à da
+                    # parte principal da função, garantindo que 'soldo' e os campos
+                    # calculados apareçam na lista de mapeamento.
                     alunos_df = load_data("Alunos")
                     transporte_df = load_data("auxilio_transporte")
                     soldos_df = load_data("soldos")
                     
-                    dados_completos_df = pd.merge(transporte_df, alunos_df, on='numero_interno', how='left')
-                    dados_completos_df = pd.merge(dados_completos_df, soldos_df, left_on='graduacao', right_on='graduacao', how='left')
+                    if 'graduacao' in alunos_df.columns and 'graduacao' in soldos_df.columns and not soldos_df.empty:
+                        alunos_df['join_key_grad'] = alunos_df['graduacao'].astype(str).str.lower().str.strip()
+                        soldos_df['join_key_grad'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
+                        alunos_com_soldo_df = pd.merge(alunos_df, soldos_df, on='join_key_grad', how='left')
+                        alunos_com_soldo_df.drop(columns=['join_key_grad'], inplace=True, errors='ignore')
+                    else:
+                        alunos_com_soldo_df = alunos_df.copy()
+                        alunos_com_soldo_df['soldo'] = 0
+
+                    dados_completos_df = pd.merge(alunos_com_soldo_df, transporte_df, on='numero_interno', how='left')
                     calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
-                    dados_completos_df = pd.concat([dados_completos_df, calculos_df], axis=1)
+                    dados_completos_df = pd.concat([dados_completos_df.drop(columns=calculos_df.columns, errors='ignore'), calculos_df], axis=1)
 
                     campos_do_sistema = ["-- Não Mapeado --"] + sorted([col for col in dados_completos_df.columns if col not in ['id', 'created_at', 'graduacao_y']])
 
@@ -522,6 +538,7 @@ def gerar_documento_tab(supabase):
     st.divider()
     st.markdown("#### Passo 2: Selecione os Alunos e Gere os Documentos")
     
+    # A lógica de junção de dados aqui é a mesma da seção de mapeamento
     alunos_df = load_data("Alunos")
     transporte_df = load_data("auxilio_transporte")
     soldos_df = load_data("soldos")
@@ -530,7 +547,6 @@ def gerar_documento_tab(supabase):
         st.warning("Nenhum dado de transporte foi cadastrado para preencher os documentos.")
         return
         
-    # --- LÓGICA DE JUNÇÃO DE DADOS CORRIGIDA ---
     if 'graduacao' in alunos_df.columns and 'graduacao' in soldos_df.columns and not soldos_df.empty:
         alunos_df['join_key_grad'] = alunos_df['graduacao'].astype(str).str.lower().str.strip()
         soldos_df['join_key_grad'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
@@ -551,7 +567,6 @@ def gerar_documento_tab(supabase):
     calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
     dados_completos_df = pd.concat([dados_completos_df.drop(columns=calculos_df.columns, errors='ignore'), calculos_df], axis=1)
     
-    alunos_selecionados_df = render_alunos_filter_and_selection(key_suffix="docgen_transporte", include_full_name_search=True)
     
     if not alunos_selecionados_df.empty:
         numeros_internos_selecionados = alunos_selecionados_df['numero_interno'].tolist()
