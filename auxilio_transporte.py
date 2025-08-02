@@ -362,65 +362,158 @@ def lancamento_individual_tab(supabase, opcoes_posto_grad):
                 except Exception as e:
                     st.error(f"Erro ao salvar: {e}")
 
-# No ficheiro auxilio_transporte.py, substitua esta função
 def gerar_documento_tab(supabase):
     st.subheader("Gerador de Documentos de Solicitação")
     NOME_TEMPLATE = "auxilio_transporte_template.pdf"
 
-    # --- PREPARAÇÃO UNIFICADA DOS DADOS (FEITA UMA ÚNICA VEZ) ---
-    @st.cache_data
-    def get_dados_completos():
-        alunos_df = load_data("Alunos")
-        transporte_df = load_data("auxilio_transporte")
-        soldos_df = load_data("soldos")
+    # Carrega o mapeamento salvo do BD
+    config_df = load_data("Config")
+    mapeamento_pdf_salvo = json.loads(config_df[config_df['chave'] == 'pdf_mapping_auxilio_transporte']['valor'].iloc[0]) if 'pdf_mapping_auxilio_transporte' in config_df['chave'].values else {}
 
-        if transporte_df.empty or alunos_df.empty or soldos_df.empty:
-            return pd.DataFrame()
-    # --- LÓGICA DE JUNÇÃO DE DADOS CORRIGIDA E ROBUSTA ---
-        if 'graduacao' not in alunos_df.columns or 'graduacao' not in soldos_df.columns:
-            st.error("Erro Crítico: A coluna 'graduacao' é necessária nas tabelas 'Alunos' e 'soldos'.")
-            return
+    with st.expander("Passo 1: Configurar Modelo e Mapeamento de Campos", expanded=not mapeamento_pdf_salvo):
+        st.info("Faça o upload do seu modelo PDF preenchível. Em seguida, mapeie os campos do PDF com os dados do sistema.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            uploaded_template = st.file_uploader("Carregue o seu modelo PDF", type="pdf")
+            if uploaded_template:
+                if st.button("Salvar Modelo no Sistema"):
+                    with st.spinner("Salvando modelo..."):
+                        supabase.storage.from_("templates").upload(NOME_TEMPLATE, uploaded_template.getvalue(), {"content-type": "application/pdf", "x-upsert": "true"})
+                        st.success("Modelo salvo! Agora configure o mapeamento ao lado.")
+
+        with col2:
+            understanding_file_bytes = create_understanding_file()
+            st.download_button(
+                label="📥 Baixar Guia de Campos",
+                data=understanding_file_bytes,
+                file_name="guia_de_campos_auxilio_transporte.txt",
+                mime="text/plain"
+            )
+
+        if uploaded_template:
+            try:
+                reader = PdfReader(BytesIO(uploaded_template.getvalue()))
+                pdf_fields = list(reader.get_form_text_fields().keys())
+                
+                if not pdf_fields:
+                    st.warning("Nenhum campo de formulário (caixa de texto) encontrado neste PDF.")
+                else:
+                    st.success(f"{len(pdf_fields)} campos encontrados no PDF.")
+                    
+                    # Prepara os dados completos para gerar a lista de campos do sistema
+                    alunos_df_map = load_data("Alunos")
+                    transporte_df_map = load_data("auxilio_transporte")
+                    soldos_df_map = load_data("soldos")
+                    
+                    if 'graduacao' in alunos_df_map.columns and 'graduacao' in soldos_df_map.columns:
+                        if 'valor' in soldos_df_map.columns:
+                            soldos_df_map.rename(columns={'valor': 'soldo'}, inplace=True)
+                        
+                        alunos_df_map['join_key'] = alunos_df_map['graduacao'].astype(str).str.lower().str.strip()
+                        soldos_df_map['join_key'] = soldos_df_map['graduacao'].astype(str).str.lower().str.strip()
+                        alunos_com_soldo_df = pd.merge(alunos_df_map, soldos_df_map, on='join_key', how='left')
+                    else:
+                        alunos_com_soldo_df = alunos_df_map
+                        if 'soldo' not in alunos_com_soldo_df.columns: alunos_com_soldo_df['soldo'] = 0
+
+                    dados_completos_map = pd.merge(alunos_com_soldo_df, transporte_df_map, on='numero_interno', how='left')
+                    calculos_map = dados_completos_map.apply(calcular_auxilio_transporte, axis=1)
+                    dados_completos_map = pd.concat([dados_completos_map, calculos_map], axis=1)
+
+                    campos_do_sistema = ["-- Não Mapeado --"] + sorted([col for col in dados_completos_map.columns if col not in ['id', 'created_at', 'graduacao_y', 'join_key']])
+
+                    with st.form("pdf_mapping_form"):
+                        st.markdown("**Mapeie cada campo do seu PDF para um campo do sistema:**")
+                        mapeamento_pdf_usuario = {}
+                        for field in pdf_fields:
+                            best_guess = mapeamento_pdf_salvo.get(field, "-- Não Mapeado --")
+                            if best_guess == "-- Não Mapeado --":
+                                best_guess = next((s for s in campos_do_sistema if field.replace("_", " ").lower() in s.lower()), "-- Não Mapeado --")
+                            
+                            index = campos_do_sistema.index(best_guess) if best_guess in campos_do_sistema else 0
+                            mapeamento_pdf_usuario[field] = st.selectbox(f"Campo do PDF: `{field}`", options=campos_do_sistema, key=field, index=index)
+                        
+                        if st.form_submit_button("Salvar Mapeamento", type="primary"):
+                            supabase.table("Config").upsert({"chave": "pdf_mapping_auxilio_transporte", "valor": json.dumps(mapeamento_pdf_usuario)}).execute()
+                            st.success("Mapeamento salvo com sucesso! A página será atualizada.")
+                            load_data.clear()
+                            st.rerun()
+
+            except Exception as e:
+                st.error(f"Erro ao ler o PDF: {e}")
     
-        # Padroniza o nome da coluna de salário para 'soldo'
-        if 'valor' in soldos_df.columns:
-            soldos_df.rename(columns={'valor': 'soldo'}, inplace=True)
-        elif 'soldo' not in soldos_df.columns:
-            st.error("Erro Crítico: A tabela 'soldos' precisa de uma coluna chamada 'soldo' ou 'valor'.")
-            return
+    if not mapeamento_pdf_salvo:
+        st.warning("É necessário configurar um modelo de PDF e mapear os seus campos para poder gerar os documentos.")
+        return
+
+    st.divider()
+    st.markdown("#### Passo 2: Selecione os Alunos e Gere os Documentos")
+    
+    alunos_df = load_data("Alunos")
+    transporte_df = load_data("auxilio_transporte")
+    soldos_df = load_data("soldos")
+    
+    if transporte_df.empty:
+        st.warning("Nenhum dado de transporte foi cadastrado para preencher os documentos.")
+        return
+        
+    if 'graduacao' not in alunos_df.columns or 'graduacao' not in soldos_df.columns:
+        st.error("Erro Crítico: A coluna 'graduacao' é necessária nas tabelas 'Alunos' e 'soldos'.")
+        return
+
+    if 'valor' in soldos_df.columns:
+        soldos_df.rename(columns={'valor': 'soldo'}, inplace=True)
+    elif 'soldo' not in soldos_df.columns:
+        st.error("Erro Crítico: A tabela 'soldos' precisa de uma coluna chamada 'soldo' ou 'valor'.")
+        return
+        
+    alunos_df['join_key_grad'] = alunos_df['graduacao'].astype(str).str.lower().str.strip()
+    soldos_df['join_key_grad'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
+    alunos_com_soldo_df = pd.merge(alunos_df, soldos_df, on='join_key_grad', how='left')
+    
+    dados_completos_df = pd.merge(alunos_com_soldo_df, transporte_df, on='numero_interno', how='inner')
+    dados_completos_df['soldo'] = pd.to_numeric(dados_completos_df['soldo'], errors='coerce').fillna(0)
+
+    calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
+    dados_completos_df = pd.concat([dados_completos_df.drop(columns=calculos_df.columns, errors='ignore'), calculos_df], axis=1)
+    
+    alunos_selecionados_df = render_alunos_filter_and_selection(key_suffix="docgen_transporte", include_full_name_search=True)
+    
+    if not alunos_selecionados_df.empty:
+        numeros_internos_selecionados = alunos_selecionados_df['numero_interno'].tolist()
+        dados_para_gerar_df = dados_completos_df[dados_completos_df['numero_interno'].isin(numeros_internos_selecionados)]
+
+        with st.expander("🔍 Diagnóstico de Dados do Aluno Selecionado"):
+            if not dados_para_gerar_df.empty:
+                st.dataframe(dados_para_gerar_df.head(1).T)
+            else:
+                st.warning("Nenhum dado encontrado para os alunos selecionados.")
+        
+        if st.button(f"Gerar PDF para os {len(dados_para_gerar_df)} alunos válidos", type="primary"):
+            with st.spinner("Preparando..."):
+                try:
+                    template_bytes = supabase.storage.from_("templates").download(NOME_TEMPLATE)
+                except Exception as e:
+                    st.error(f"Falha ao carregar o modelo de PDF: {e}. Faça o upload na seção acima.")
+                    return
             
-        alunos_df['join_key'] = alunos_df['graduacao'].astype(str).str.lower().str.strip()
-        soldos_df['join_key'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
-        alunos_com_soldo_df = pd.merge(alunos_df, soldos_df, on='join_key', how='left')
-        
+                if dados_para_gerar_df.empty:
+                    st.error("Nenhum dos alunos selecionados possui dados de transporte válidos para gerar o documento.")
+                    return
 
-        else:
-            return pd.DataFrame()
+                filled_pdfs = []
+                progress_bar = st.progress(0, text=f"Gerando {len(dados_para_gerar_df)} documentos...")
+                for i, (_, aluno_row) in enumerate(dados_para_gerar_df.iterrows()):
+                    filled_pdfs.append(fill_pdf_auxilio(template_bytes, aluno_row, mapeamento_pdf_salvo))
+                    progress_bar.progress((i + 1) / len(dados_para_gerar_df), text=f"Gerando: {aluno_row['nome_guerra']}")
+                
+                final_pdf_buffer = merge_pdfs(filled_pdfs)
+                st.session_state['final_pdf_auxilio'] = final_pdf_buffer.getvalue()
 
-        dados_completos = pd.merge(alunos_com_soldo_df, transporte_df, on='numero_interno', how='inner')
-        dados_completos.dropna(subset=['ano_referencia'], inplace=True)
-        dados_completos['soldo'] = pd.to_numeric(dados_completos['soldo'], errors='coerce').fillna(0)
-        
-        calculos_df = dados_completos.apply(calcular_auxilio_transporte, axis=1)
-        dados_finais = pd.concat([dados_completos, calculos_df], axis=1)
-        return dados_finais
-    
-    colunas_principais = ['numero_interno', 'nome_guerra', 'graduacao_x', 'ano_referencia']
-    colunas_calculadas = ['soldo', 'despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']
-    colunas_editaveis = ['dias_uteis', 'endereco', 'bairro', 'cidade', 'cep']
-    
-    for i in range(1, 5):
-        colunas_editaveis += [f'ida_{i}_empresa', f'ida_{i}_linha', f'ida_{i}_tarifa']
-        colunas_editaveis += [f'volta_{i}_empresa', f'volta_{i}_linha', f'volta_{i}_tarifa']
-    
-    colunas_visiveis = [col for col in colunas_principais + colunas_calculadas + colunas_editaveis if col in display_df.columns]
-    
-    st.data_editor(display_df[colunas_visiveis], hide_index=True, use_container_width=True, disabled=colunas_principais + colunas_calculadas)
-    
-    if st.button("Salvar Alterações na Tabela de Gestão"):
-        st.info("A funcionalidade de salvar edições diretamente nesta tabela está em desenvolvimento.")
-        pass
-
-# No ficheiro auxilio_transporte.py, substitua esta função
+    if 'final_pdf_auxilio' in st.session_state:
+        st.balloons()
+        st.download_button(label="✅ Baixar Documento Consolidado (.pdf)", data=st.session_state['final_pdf_auxilio'], file_name="solicitacoes_auxilio_transporte.pdf", mime="application/pdf")
 
 def gerar_documento_tab(supabase):
     st.subheader("Gerador de Documentos de Solicitação")
