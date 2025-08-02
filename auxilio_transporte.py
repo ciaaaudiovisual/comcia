@@ -374,7 +374,7 @@ def lancamento_individual_tab(supabase, opcoes_posto_grad):
             if campos_em_falta:
                 st.error(f"Erro: Os seguintes campos obrigatórios devem ser preenchidos: {', '.join(campos_em_falta)}")
             else:
-                dados_para_salvar = { "numero_interno": aluno_atual['numero_interno'], "ano_referencia": ano_referencia, "posto_grad": posto_grad, "dias_uteis": dias_uteis,
+                dados_para_salvar = { "numero_interno": aluno_atual['numero_interno'], "ano_referencia": ano_referencia, "dias_uteis": dias_uteis,
                                       "endereco": endereco, "bairro": bairro, "cidade": cidade, "cep": cep }
                 for i in range(1, 5):
                     dados_para_salvar[f'ida_{i}_empresa'] = ida_data[f'empresa_{i}']
