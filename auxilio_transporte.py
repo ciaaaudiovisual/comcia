@@ -376,13 +376,23 @@ def gerar_documento_tab(supabase):
 
         if transporte_df.empty or alunos_df.empty or soldos_df.empty:
             return pd.DataFrame()
-
-        if 'graduacao' in alunos_df.columns and 'graduacao' in soldos_df.columns and 'valor' in soldos_df.columns:
+    # --- LÓGICA DE JUNÇÃO DE DADOS CORRIGIDA E ROBUSTA ---
+        if 'graduacao' not in alunos_df.columns or 'graduacao' not in soldos_df.columns:
+            st.error("Erro Crítico: A coluna 'graduacao' é necessária nas tabelas 'Alunos' e 'soldos'.")
+            return
+    
+        # Padroniza o nome da coluna de salário para 'soldo'
+        if 'valor' in soldos_df.columns:
             soldos_df.rename(columns={'valor': 'soldo'}, inplace=True)
-            alunos_df['join_key'] = alunos_df['graduacao'].astype(str).str.lower().str.strip()
-            soldos_df['join_key'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
-            alunos_com_soldo_df = pd.merge(alunos_df, soldos_df, on='join_key', how='left')
-            alunos_com_soldo_df.drop(columns=['join_key'], inplace=True, errors='ignore')
+        elif 'soldo' not in soldos_df.columns:
+            st.error("Erro Crítico: A tabela 'soldos' precisa de uma coluna chamada 'soldo' ou 'valor'.")
+            return
+            
+        alunos_df['join_key'] = alunos_df['graduacao'].astype(str).str.lower().str.strip()
+        soldos_df['join_key'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
+        alunos_com_soldo_df = pd.merge(alunos_df, soldos_df, on='join_key', how='left')
+        
+
         else:
             return pd.DataFrame()
 
