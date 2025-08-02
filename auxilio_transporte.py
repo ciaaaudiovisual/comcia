@@ -86,12 +86,20 @@ def fill_pdf_auxilio(template_bytes, aluno_data, pdf_mapping):
     
     fill_data = {}
     for pdf_field, df_column in pdf_mapping.items():
+        # Pula se o campo do PDF não foi mapeado para nenhuma coluna de dados
         if not df_column or df_column == "-- Não Mapeado --":
             continue
             
         valor = aluno_data.get(df_column, '')
+        
+        # Formata valores numéricos como moeda, incluindo as tarifas individuais
         if df_column in ['despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago'] or 'tarifa' in df_column:
-            fill_data[pdf_field] = f"R$ {float(valor):.2f}"
+            # Garante que o valor é numérico antes de formatar
+            try:
+                valor_numerico = float(valor)
+                fill_data[pdf_field] = f"R$ {valor_numerico:.2f}"
+            except (ValueError, TypeError):
+                fill_data[pdf_field] = "R$ 0.00"
         else:
             fill_data[pdf_field] = str(valor)
             
@@ -452,18 +460,28 @@ def gerar_documento_tab(supabase):
                 else:
                     st.success(f"{len(pdf_fields)} campos encontrados no PDF.")
                     
-                    # Prepara a lista de campos de dados do sistema
-                    dados_completos_df = pd.DataFrame(columns=create_understanding_file().decode('utf-8').splitlines()) # Simula colunas
-                    campos_do_sistema = ["-- Não Mapeado --"] + sorted(list(dados_completos_df.columns))
+                    # Gera uma lista limpa de campos do sistema para o dropdown
+                    alunos_df = load_data("Alunos")
+                    transporte_df = load_data("auxilio_transporte")
+                    soldos_df = load_data("soldos")
+                    
+                    dados_completos_df = pd.merge(transporte_df, alunos_df, on='numero_interno', how='left')
+                    dados_completos_df = pd.merge(dados_completos_df, soldos_df, left_on='posto_grad', right_on='graduacao', how='left')
+                    calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
+                    dados_completos_df = pd.concat([dados_completos_df, calculos_df], axis=1)
+
+                    campos_do_sistema = ["-- Não Mapeado --"] + sorted([col for col in dados_completos_df.columns if col not in ['id', 'created_at', 'graduacao']])
 
                     with st.form("pdf_mapping_form"):
                         st.markdown("**Mapeie cada campo do seu PDF para um campo do sistema:**")
                         mapeamento_pdf_usuario = {}
                         for field in pdf_fields:
-                            # Tenta adivinhar o melhor mapeamento
-                            best_guess = next((s for s in campos_do_sistema if field.replace("_", " ").lower() in s.lower()), campos_do_sistema[0])
-                            index = campos_do_sistema.index(mapeamento_pdf_salvo.get(field, best_guess))
+                            # Lógica de pré-seleção inteligente
+                            best_guess = mapeamento_pdf_salvo.get(field, "-- Não Mapeado --")
+                            if best_guess == "-- Não Mapeado --":
+                                best_guess = next((s for s in campos_do_sistema if field.replace("_", " ").lower() in s.lower()), "-- Não Mapeado --")
                             
+                            index = campos_do_sistema.index(best_guess)
                             mapeamento_pdf_usuario[field] = st.selectbox(f"Campo do PDF: `{field}`", options=campos_do_sistema, key=field, index=index)
                         
                         if st.form_submit_button("Salvar Mapeamento", type="primary"):
@@ -480,28 +498,46 @@ def gerar_documento_tab(supabase):
 
     st.divider()
     st.markdown("#### Passo 2: Selecione os Alunos e Gere os Documentos")
-    if st.button(f"Gerar PDF para os {len(alunos_selecionados_df)} alunos", type="primary"):
-        with st.spinner("Preparando..."):
-            try:
-                template_bytes = supabase.storage.from_("templates").download(NOME_TEMPLATE)
-            except Exception as e:
-                st.error(f"Falha ao carregar o modelo de PDF: {e}. Faça o upload na seção acima.")
-                return
+    
+    alunos_df = load_data("Alunos")
+    transporte_df = load_data("auxilio_transporte")
+    soldos_df = load_data("soldos")
+    
+    if transporte_df.empty:
+        st.warning("Nenhum dado de transporte foi cadastrado para preencher os documentos.")
+        return
+        
+    dados_completos_df = pd.merge(transporte_df, alunos_df, on='numero_interno', how='left')
+    dados_completos_df = pd.merge(dados_completos_df, soldos_df, left_on='posto_grad', right_on='graduacao', how='left')
+    calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
+    dados_completos_df = pd.concat([dados_completos_df, calculos_df], axis=1)
+    
+    alunos_selecionados_df = render_alunos_filter_and_selection(key_suffix="docgen_transporte", include_full_name_search=True)
+    
+    if not alunos_selecionados_df.empty:
+        if st.button(f"Gerar PDF para os {len(alunos_selecionados_df)} alunos", type="primary"):
+            with st.spinner("Preparando..."):
+                try:
+                    template_bytes = supabase.storage.from_("templates").download(NOME_TEMPLATE)
+                except Exception as e:
+                    st.error(f"Falha ao carregar o modelo de PDF: {e}. Faça o upload na seção acima.")
+                    return
+            
+                numeros_internos_selecionados = alunos_selecionados_df['numero_interno'].tolist()
+                dados_para_gerar_df = dados_completos_df[dados_completos_df['numero_interno'].isin(numeros_internos_selecionados)]
+                
+                if dados_para_gerar_df.empty:
+                    st.error("Nenhum dos alunos selecionados possui dados de transporte cadastrados.")
+                    return
 
-            numeros_internos_selecionados = alunos_selecionados_df['numero_interno'].tolist()
-            dados_para_gerar_df = dados_completos_df[dados_completos_df['numero_interno'].isin(numeros_internos_selecionados)]
-
-            if dados_para_gerar_df.empty:
-                st.error("Nenhum dos alunos selecionados possui dados de transporte cadastrados.")
-                return
-
-            filled_pdfs = []
-            progress_bar = st.progress(0, text=f"Gerando {len(dados_para_gerar_df)} documentos...")
-            for i, (_, aluno_row) in enumerate(dados_para_gerar_df.iterrows()):
-                filled_pdfs.append(fill_pdf_auxilio(template_bytes, aluno_row))
-                progress_bar.progress((i + 1) / len(dados_para_gerar_df), text=f"Gerando: {aluno_row['nome_guerra']}")
-            final_pdf_buffer = merge_pdfs(filled_pdfs)
-            st.session_state['final_pdf_auxilio'] = final_pdf_buffer.getvalue()
+                filled_pdfs = []
+                progress_bar = st.progress(0, text=f"Gerando {len(dados_para_gerar_df)} documentos...")
+                for i, (_, aluno_row) in enumerate(dados_para_gerar_df.iterrows()):
+                    filled_pdfs.append(fill_pdf_auxilio(template_bytes, aluno_row, mapeamento_pdf_salvo))
+                    progress_bar.progress((i + 1) / len(dados_para_gerar_df), text=f"Gerando: {aluno_row['nome_guerra']}")
+                
+                final_pdf_buffer = merge_pdfs(filled_pdfs)
+                st.session_state['final_pdf_auxilio'] = final_pdf_buffer.getvalue()
 
     if 'final_pdf_auxilio' in st.session_state:
         st.balloons()
