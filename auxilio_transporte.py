@@ -9,31 +9,30 @@ from pypdf import PdfReader, PdfWriter
 import numpy as np
 
 # --- FUNÇÕES AUXILIARES E DE CÁLCULO (DEFINIDAS PRIMEIRO) ---
-
 def calcular_auxilio_transporte(linha):
     try:
+        # Calcula a despesa diária com as tarifas de ida e volta
         despesa_diaria = 0
         for i in range(1, 5):
             despesa_diaria += float(linha.get(f'ida_{i}_tarifa', 0.0) or 0.0)
             despesa_diaria += float(linha.get(f'volta_{i}_tarifa', 0.0) or 0.0)
         
+        # Calcula os dias trabalhados e a despesa mensal
         dias_trabalhados = min(int(linha.get('dias_uteis', 0) or 0), 22)
         despesa_mensal = despesa_diaria * dias_trabalhados
 
-        # --- INÍCIO DA CORREÇÃO ---
-        # Pega o valor bruto da coluna 'soldo'
-        valor_soldo_bruto = linha.get('soldo') 
-        
+        # Pega e trata o valor do soldo de forma segura
+        valor_soldo_bruto = linha.get('soldo')
         try:
-            # Tenta converter o valor para float.
             soldo = float(valor_soldo_bruto)
         except (ValueError, TypeError):
-            # Se a conversão falhar (ex: string vazia, texto, etc.), assume o soldo como 0.
-            soldo = 0.0
-        # --- FIM DA CORREÇÃO ---
+            soldo = 0.0 # Define 0 se o valor for inválido (vazio, texto, etc.)
 
+        # Calcula a parcela do beneficiário e o valor final do auxílio
         parcela_beneficiario = ((soldo * 0.06) / 30) * dias_trabalhados if soldo > 0 and dias_trabalhados > 0 else 0.0
         auxilio_pago = max(0.0, despesa_mensal - parcela_beneficiario)
+        
+        # Retorna uma Series com todos os resultados calculados
         return pd.Series({
             'despesa_diaria': round(despesa_diaria, 2),
             'dias_trabalhados': dias_trabalhados,
@@ -41,19 +40,20 @@ def calcular_auxilio_transporte(linha):
             'parcela_descontada_6_porcento': round(parcela_beneficiario, 2),
             'auxilio_transporte_pago': round(auxilio_pago, 2)
         })
-        except Exception as e:
-        # Mostra um erro mais limpo, com o ID do aluno, se possível
+
+    except Exception as e:
+        # Em caso de qualquer erro, mostra uma mensagem e retorna uma Series com zeros
         aluno_id = linha.get('numero_interno', 'desconhecido') if isinstance(linha, (pd.Series, dict)) else 'inválida'
         st.error(f"Erro ao calcular auxílio para o aluno {aluno_id}. Erro: {e}")
         
-    # Retorna uma Series com a mesma estrutura e valores padrão (zeros)
-    return pd.Series({
-        'despesa_diaria': 0.0,
-        'dias_trabalhados': 0,
-        'despesa_mensal_total': 0.0,
-        'parcela_descontada_6_porcento': 0.0,
-        'auxilio_transporte_pago': 0.0
-    })
+        return pd.Series({
+            'despesa_diaria': 0.0,
+            'dias_trabalhados': 0,
+            'despesa_mensal_total': 0.0,
+            'parcela_descontada_6_porcento': 0.0,
+            'auxilio_transporte_pago': 0.0
+        })
+
 def create_excel_template():
     template_data = {
         'NÚMERO INTERNO DO ALUNO': ['M-01-101'],'ANO DE REFERÊNCIA': [2025],
