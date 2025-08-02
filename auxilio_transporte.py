@@ -90,16 +90,19 @@ def fill_pdf_auxilio(template_bytes, aluno_data, pdf_mapping):
         if not df_column or df_column == "-- Não Mapeado --":
             continue
             
-        valor = aluno_data.get(df_column, '')
-        
-        # Formata valores numéricos como moeda, incluindo as tarifas individuais
-        if df_column in ['despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago'] or 'tarifa' in df_column:
-            # Garante que o valor é numérico antes de formatar
+        # --- CORREÇÃO 1: Trata campos vazios para não exibir "None" ---
+        valor = aluno_data.get(df_column)
+        if pd.isna(valor):
+            valor = '' # Converte nulos para texto vazio
+
+        # --- CORREÇÃO 2: Garante a formatação de moeda para todos os campos relevantes ---
+        campos_moeda = ['despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago', 'soldo']
+        if df_column in campos_moeda or 'tarifa' in df_column:
             try:
                 valor_numerico = float(valor)
-                fill_data[pdf_field] = f"R$ {valor_numerico:.2f}"
+                fill_data[pdf_field] = f"R$ {valor_numerico:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             except (ValueError, TypeError):
-                fill_data[pdf_field] = "R$ 0.00"
+                fill_data[pdf_field] = "R$ 0,00"
         else:
             fill_data[pdf_field] = str(valor)
             
@@ -390,27 +393,44 @@ def gestao_decat_tab(supabase):
     alunos_df = load_data("Alunos")[['numero_interno', 'nome_guerra']]
     transporte_df = load_data("auxilio_transporte")
     soldos_df = load_data("soldos")
+
     if transporte_df.empty:
         st.warning("Nenhum dado de auxílio transporte cadastrado.")
         return
 
-    dados_completos_df = pd.merge(transporte_df, alunos_df, on='numero_interno', how='left')
-    dados_completos_df = pd.merge(dados_completos_df, soldos_df, left_on='posto_grad', right_on='graduacao', how='left')
+    # --- CORREÇÃO DE ROBUSTEZ APLICADA AQUI ---
+    # Prepara as chaves de junção para serem à prova de erros de maiúsculas/minúsculas e espaços.
+    if 'posto_grad' in transporte_df.columns and 'graduacao' in soldos_df.columns and not soldos_df.empty:
+        transporte_df['join_key'] = transporte_df['posto_grad'].astype(str).str.lower().str.strip()
+        soldos_df['join_key'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
+        
+        # Junta os dados de transporte com os de soldo usando a chave limpa
+        dados_completos_df = pd.merge(transporte_df, soldos_df, on='join_key', how='left')
+        # Remove a chave de junção temporária
+        dados_completos_df.drop(columns=['join_key'], inplace=True, errors='ignore')
+    else:
+        # Se as colunas necessárias não existirem, continua sem os dados de soldo
+        dados_completos_df = transporte_df.copy()
+        if 'soldo' not in dados_completos_df.columns:
+            dados_completos_df['soldo'] = 0
 
+    # Junta o resultado com os dados dos alunos
+    dados_completos_df = pd.merge(dados_completos_df, alunos_df, on='numero_interno', how='left')
+    
     calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
     display_df = pd.concat([dados_completos_df, calculos_df], axis=1)
-
+    
     colunas_principais = ['numero_interno', 'nome_guerra', 'ano_referencia', 'posto_grad']
-    colunas_calculadas = ['despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']
+    colunas_calculadas = ['soldo', 'despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']
     colunas_editaveis = ['dias_uteis', 'endereco', 'bairro', 'cidade', 'cep']
     for i in range(1, 5):
         colunas_editaveis += [f'ida_{i}_empresa', f'ida_{i}_linha', f'ida_{i}_tarifa']
         colunas_editaveis += [f'volta_{i}_empresa', f'volta_{i}_linha', f'volta_{i}_tarifa']
-
+    
     colunas_visiveis = [col for col in colunas_principais + colunas_calculadas + colunas_editaveis if col in display_df.columns]
-
+    
     edited_df = st.data_editor(display_df[colunas_visiveis], hide_index=True, use_container_width=True, disabled=colunas_principais + colunas_calculadas)
-
+    
     if st.button("Salvar Alterações na Tabela de Gestão"):
         try:
             colunas_db = [col for col in colunas_editaveis + ['numero_interno', 'ano_referencia'] if col in edited_df.columns]
