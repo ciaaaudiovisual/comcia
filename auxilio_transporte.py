@@ -436,7 +436,12 @@ def gerar_documento_tab(supabase):
                         
                         alunos_df_map['join_key'] = alunos_df_map['graduacao'].astype(str).str.lower().str.strip()
                         soldos_df_map['join_key'] = soldos_df_map['graduacao'].astype(str).str.lower().str.strip()
-                        alunos_com_soldo_df = pd.merge(alunos_df_map, soldos_df_map, on='join_key', how='left')
+                        alunos_com_soldo_df = pd.merge(
+    alunos_df, 
+    soldos_df[['join_key', 'soldo']], # Pega apenas a chave e o soldo da tabela de soldos
+    on='join_key', 
+    how='left'
+)
                     else:
                         alunos_com_soldo_df = alunos_df_map
                         if 'soldo' not in alunos_com_soldo_df.columns: alunos_com_soldo_df['soldo'] = 0
@@ -726,8 +731,7 @@ def gerar_documento_tab(supabase):
     
     edited_df = st.data_editor(display_df[colunas_visiveis], hide_index=True, use_container_width=True, disabled=colunas_principais + colunas_calculadas)
     
-    if st.button("Salvar Alterações na Tabela de Gestão"):
-        st.info("Funcionalidade em desenvolvimento.")
+
 def gestao_decat_tab(supabase):
     st.subheader("Dados de Transporte Cadastrados (com Cálculo)")
     alunos_df = load_data("Alunos")
