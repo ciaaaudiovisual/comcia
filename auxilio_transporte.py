@@ -583,19 +583,64 @@ def gerar_documento_tab(supabase):
         st.balloons()
         st.download_button(label="✅ Baixar Documento Consolidado (.pdf)", data=st.session_state['final_pdf_auxilio'], file_name="solicitacoes_auxilio_transporte.pdf", mime="application/pdf")
         
+def gestao_decat_tab(supabase):
+    st.subheader("Dados de Transporte Cadastrados (com Cálculo)")
+    alunos_df = load_data("Alunos")
+    transporte_df = load_data("auxilio_transporte")
+    soldos_df = load_data("soldos")
+
+    with st.expander("🔍 Ferramenta de Diagnóstico de Graduação"):
+        if 'graduacao' in alunos_df.columns and 'graduacao' in soldos_df.columns:
+            graduacoes_alunos = sorted(alunos_df['graduacao'].dropna().unique())
+            graduacoes_soldos = sorted(soldos_df['graduacao'].dropna().unique())
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write("**Lista A: Graduações na Tabela Alunos**")
+                st.dataframe(pd.DataFrame(graduacoes_alunos, columns=["Graduação"]), hide_index=True, use_container_width=True)
+            with col2:
+                st.write("**Lista B: Graduações na Tabela Soldos**")
+                st.dataframe(pd.DataFrame(graduacoes_soldos, columns=["Graduação"]), hide_index=True, use_container_width=True)
+            st.warning("Para que o cálculo do soldo funcione, cada graduação na 'Lista A' deve ter uma correspondência EXATA na 'Lista B'.")
+        else:
+            st.error("As colunas 'graduacao' não foram encontradas nas tabelas 'Alunos' e/ou 'soldos'.")
+
+    if transporte_df.empty:
+        st.warning("Nenhum dado de auxílio transporte cadastrado.")
+        return
+
+    if 'graduacao' in alunos_df.columns and 'graduacao' in soldos_df.columns and 'soldo' in soldos_df.columns:
+        alunos_df['join_key'] = alunos_df['graduacao'].astype(str).str.lower().str.strip()
+        soldos_df['join_key'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
+        alunos_com_soldo_df = pd.merge(alunos_df, soldos_df, on='join_key', how='left')
+        alunos_com_soldo_df.drop(columns=['join_key'], inplace=True, errors='ignore')
+    else:
+        st.error("Erro: Colunas essenciais ('graduacao', 'soldo') não encontradas. Verifique as tabelas 'Alunos' e 'soldos'.")
+        return
+        
+    dados_completos_df = pd.merge(alunos_com_soldo_df, transporte_df, on='numero_interno', how='inner')
+    dados_completos_df['soldo'] = pd.to_numeric(dados_completos_df['soldo'], errors='coerce').fillna(0)
+
+    calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
+    display_df = pd.concat([dados_completos_df, calculos_df], axis=1)
+    
+    colunas_principais = ['numero_interno', 'nome_guerra', 'graduacao_x', 'ano_referencia']
+    colunas_calculadas = ['soldo', 'despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']
+    colunas_editaveis = ['dias_uteis', 'endereco', 'bairro', 'cidade', 'cep']
+    for i in range(1, 5):
+        colunas_editaveis += [f'ida_{i}_empresa', f'ida_{i}_linha', f'ida_{i}_tarifa', f'volta_{i}_empresa', f'volta_{i}_linha', f'volta_{i}_tarifa']
+    
+    colunas_visiveis = [col for col in colunas_principais + colunas_calculadas + colunas_editaveis if col in display_df.columns]
+    edited_df = st.data_editor(display_df[colunas_visiveis], hide_index=True, use_container_width=True, disabled=colunas_principais + colunas_calculadas)
+    
+    if st.button("Salvar Alterações na Tabela de Gestão"):
+        st.info("Funcionalidade em desenvolvimento.")
+        
 def gestao_soldos_tab(supabase):
     st.subheader("Tabela de Soldos por Graduação")
     soldos_df = load_data("soldos")
-    
-    # Configuração do editor para usar os nomes corretos
-    colunas_config = {
-        "graduacao": st.column_config.TextColumn("Graduação", required=True),
-        "soldo": st.column_config.NumberColumn("Soldo (R$)", format="R$ %.2f", required=True)
-    }
-    
+    colunas_config = {"graduacao": st.column_config.TextColumn("Graduação", required=True), "soldo": st.column_config.NumberColumn("Soldo (R$)", format="R$ %.2f", required=True)}
     if 'id' in soldos_df.columns: soldos_df = soldos_df.drop(columns=['id'])
     edited_df = st.data_editor(soldos_df, column_config=colunas_config, num_rows="dynamic", use_container_width=True)
-    
     if st.button("Salvar Alterações nos Soldos"):
         try:
             supabase.table("soldos").upsert(edited_df.to_dict(orient='records'), on_conflict='graduacao').execute()
@@ -604,7 +649,6 @@ def gestao_soldos_tab(supabase):
             st.rerun()
         except Exception as e:
             st.error(f"Erro ao salvar os soldos: {e}")
-
 # --- FUNÇÃO PRINCIPAL QUE É IMPORTADA PELO app.py ---
 def show_auxilio_transporte():
     st.title("🚌 Gestão de Auxílio Transporte (DeCAT)")
