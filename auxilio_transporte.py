@@ -179,16 +179,18 @@ def importacao_guiada_tab(supabase):
             if all(inc.lower() in option_lower for inc in must_include) and not any(exc.lower() in option_lower for exc in must_exclude): return i
         return 0
 
+ 
     with st.form("mapping_form_at"):
         mapeamento_usuario = {}
-        campos_gerais = ["numero_interno", "ano_referencia", "posto_grad", "endereco", "bairro", "cidade", "cep", "dias_uteis"]
+        # --- CORREÇÃO APLICADA AQUI: 'posto_grad' removido da lista de campos do formulário ---
+        campos_gerais = ["numero_interno", "ano_referencia", "endereco", "bairro", "cidade", "cep", "dias_uteis"]
         st.markdown("**Dados Gerais**")
         cols_gerais = st.columns(3)
         for i, key in enumerate(campos_gerais):
             display_name, search_criteria = campos_sistema.get(key, (key, ([], [])))
             index = get_best_match_index(search_criteria, opcoes_ficheiro, mapeamento_salvo.get(key))
-            label_geral = f"**{display_name}** `(Sistema: {key})`"
-            mapeamento_usuario[key] = cols_gerais[i % 3].selectbox(label_geral, options=opcoes_ficheiro, key=f"map_at_{key}", index=index)
+            mapeamento_usuario[key] = cols_gerais[i % 3].selectbox(f"**{display_name}**", options=opcoes_ficheiro, key=f"map_at_{key}", index=index)
+
 
         st.markdown("**Itinerários**")
         c1, c2 = st.columns(2)
