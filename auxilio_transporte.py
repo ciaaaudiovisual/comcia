@@ -503,14 +503,19 @@ def gerar_documento_tab(supabase):
     alunos_df = load_data("Alunos")
     transporte_df = load_data("auxilio_transporte")
     soldos_df = load_data("soldos")
-    
+  
     if transporte_df.empty:
         st.warning("Nenhum dado de transporte foi cadastrado para preencher os documentos.")
         return
         
     dados_completos_df = pd.merge(transporte_df, alunos_df, on='numero_interno', how='left')
     dados_completos_df = pd.merge(dados_completos_df, soldos_df, left_on='posto_grad', right_on='graduacao', how='left')
+    
+    # --- CORREÇÃO APLICADA AQUI (CAMADA 1) ---
+    # Garante que não haverá colunas duplicadas ao juntar os dados calculados
     calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
+    colunas_calculadas = calculos_df.columns.tolist()
+    dados_completos_df.drop(columns=colunas_calculadas, inplace=True, errors='ignore')
     dados_completos_df = pd.concat([dados_completos_df, calculos_df], axis=1)
     
     alunos_selecionados_df = render_alunos_filter_and_selection(key_suffix="docgen_transporte", include_full_name_search=True)
@@ -519,6 +524,22 @@ def gerar_documento_tab(supabase):
         numeros_internos_selecionados = alunos_selecionados_df['numero_interno'].tolist()
         dados_para_gerar_df = dados_completos_df[dados_completos_df['numero_interno'].isin(numeros_internos_selecionados)]
 
+        st.markdown("---")
+        st.markdown("##### Diagnóstico dos Dados")
+        if st.button("👁️ Pré-visualizar Dados Mapeados para Alunos Selecionados"):
+            if not dados_para_gerar_df.empty:
+                colunas_mapeadas = [coluna for coluna in mapeamento_pdf_salvo.values() if coluna != "-- Não Mapeado --"]
+                
+                # --- CORREÇÃO APLICADA AQUI (CAMADA 2) ---
+                # Garante que a lista final de colunas para exibição é 100% única
+                colunas_base = ['nome_guerra']
+                colunas_a_exibir_com_duplicados = colunas_base + [col for col in colunas_mapeadas if col in dados_para_gerar_df.columns]
+                colunas_a_exibir = list(dict.fromkeys(colunas_a_exibir_com_duplicados)) # Remove duplicados mantendo a ordem
+                
+                st.dataframe(dados_para_gerar_df[colunas_a_exibir])
+                st.info("A tabela acima mostra os dados exatos que serão usados para preencher o PDF.")
+            else:
+                st.warning("Nenhum dado de transporte encontrado para os alunos selecionados.")
 
         st.markdown("---")
         st.markdown("##### Diagnóstico dos Dados")
