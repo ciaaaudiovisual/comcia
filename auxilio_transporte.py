@@ -519,14 +519,17 @@ def gerar_documento_tab(supabase):
         numeros_internos_selecionados = alunos_selecionados_df['numero_interno'].tolist()
         dados_para_gerar_df = dados_completos_df[dados_completos_df['numero_interno'].isin(numeros_internos_selecionados)]
 
-        # --- NOVA FERRAMENTA DE DIAGNÓSTICO ---
+
         st.markdown("---")
         st.markdown("##### Diagnóstico dos Dados")
         if st.button("👁️ Pré-visualizar Dados Mapeados para Alunos Selecionados"):
             if not dados_para_gerar_df.empty:
-                # Pega apenas as colunas que foram mapeadas pelo usuário
                 colunas_mapeadas = [coluna for coluna in mapeamento_pdf_salvo.values() if coluna != "-- Não Mapeado --"]
-                colunas_a_exibir = ['nome_guerra'] + [col for col in colunas_mapeadas if col in dados_para_gerar_df.columns]
+                
+                # --- CORREÇÃO APLICADA AQUI ---
+                # Garante que a lista final de colunas não tenha duplicados
+                colunas_base = ['nome_guerra']
+                colunas_a_exibir = colunas_base + [col for col in colunas_mapeadas if col not in colunas_base and col in dados_para_gerar_df.columns]
                 
                 st.dataframe(dados_para_gerar_df[colunas_a_exibir])
                 st.info("A tabela acima mostra os dados exatos que serão usados para preencher o PDF. Se uma coluna estiver vazia, os dados não existem para estes alunos no banco de dados.")
