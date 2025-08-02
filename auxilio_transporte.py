@@ -436,18 +436,15 @@ def gestao_decat_tab(supabase):
         
     dados_completos_df = pd.merge(alunos_com_soldo_df, transporte_df, on='numero_interno', how='left')
     dados_completos_df.dropna(subset=['ano_referencia'], inplace=True)
-
-    if 'soldo' in dados_completos_df.columns:
-        dados_completos_df['soldo'] = pd.to_numeric(dados_completos_df['soldo'], errors='coerce').fillna(0)
-    else:
-        dados_completos_df['soldo'] = 0
+    dados_completos_df['soldo'] = pd.to_numeric(dados_completos_df['soldo'], errors='coerce').fillna(0)
 
     calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
-    display_df = pd.concat([dados_completos_df.drop(columns=calculos_df.columns, errors='ignore'), calculos_df], axis=1)
+    display_df = pd.concat([dados_completos_df, calculos_df], axis=1)
     
-    colunas_principais = ['numero_interno', 'nome_guerra', 'graduacao', 'ano_referencia']
+    colunas_principais = ['numero_interno', 'nome_guerra', 'graduacao_x', 'ano_referencia']
     colunas_calculadas = ['soldo', 'despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']
     colunas_editaveis = ['dias_uteis', 'endereco', 'bairro', 'cidade', 'cep']
+    
     for i in range(1, 5):
         colunas_editaveis += [f'ida_{i}_empresa', f'ida_{i}_linha', f'ida_{i}_tarifa']
         colunas_editaveis += [f'volta_{i}_empresa', f'volta_{i}_linha', f'volta_{i}_tarifa']
