@@ -45,31 +45,60 @@ def create_excel_template():
         df.to_excel(writer, index=False, sheet_name='ModeloAuxilioTransporte')
     return output.getvalue()
 
-def fill_pdf_auxilio(template_bytes, aluno_data):
+def create_understanding_file():
+    """Cria um ficheiro de texto explicando os campos de dados disponíveis para o PDF."""
+    data_fields_explanation = {
+        'numero_interno': "Número de identificação do aluno (ex: M-01-101).",
+        'nome_guerra': "Nome de guerra do aluno.",
+        'nome_completo': "Nome completo do aluno.",
+        'posto_grad': "Posto ou Graduação do aluno (ex: ALUNO).",
+        'ano_referencia': "Ano do benefício (ex: 2025).",
+        'dias_uteis': "Quantidade de dias de trabalho considerados (máx 22).",
+        'endereco': "Endereço residencial completo do aluno.",
+        'bairro': "Bairro do aluno.",
+        'cidade': "Cidade do aluno.",
+        'cep': "CEP do aluno.",
+        'despesa_diaria': "CÁLCULO: Soma de todas as tarifas de ida e volta.",
+        'despesa_mensal': "CÁLCULO: Despesa Diária x Dias Úteis.",
+        'parcela_beneficiario': "CÁLCULO: Parcela de 6% do soldo, proporcional aos dias úteis.",
+        'auxilio_pago': "CÁLCULO: Valor final a ser pago (Despesa Mensal - Parcela do Beneficiário).",
+        'ida_1_empresa': "Nome da 1ª empresa do trajeto de IDA.",
+        'ida_1_linha': "Nome/Número da 1ª linha do trajeto de IDA.",
+        'ida_1_tarifa': "Valor da 1ª tarifa do trajeto de IDA.",
+        # Adicionar mais campos se necessário
+    }
+    
+    output = "GUIA DE CAMPOS PARA MAPEAMENTO DO PDF\n"
+    output += "========================================\n\n"
+    output += "Use os nomes da coluna 'CAMPO NO SISTEMA' para mapear os campos do seu PDF.\n\n"
+    
+    for key, desc in data_fields_explanation.items():
+        output += f"CAMPO NO SISTEMA: {key}\n"
+        output += f"DESCRIÇÃO: {desc}\n"
+        output += "----------------------------------------\n"
+        
+    return output.encode('utf-8')
+
+# --- FUNÇÃO DE PREENCHIMENTO DE PDF ATUALIZADA ---
+def fill_pdf_auxilio(template_bytes, aluno_data, pdf_mapping):
     reader = PdfReader(BytesIO(template_bytes))
     writer = PdfWriter(clone_from=reader)
-    pdf_field_mapping = {
-        'NOME COMPLETO': 'nome_completo','NIP': 'nip','ENDEREÇO': 'endereco','BAIRRO': 'bairro',
-        'CIDADE': 'cidade','CEP': 'cep','ANO': 'ano_referencia','DESPESA DIARIA': 'despesa_diaria',
-        'DESPESA MENSAL': 'despesa_mensal','PARCELA 6%': 'parcela_beneficiario','VALOR FINAL': 'auxilio_pago'
-    }
+    
     fill_data = {}
-    for pdf_field, df_column in pdf_field_mapping.items():
+    for pdf_field, df_column in pdf_mapping.items():
+        if not df_column or df_column == "-- Não Mapeado --":
+            continue
+            
         valor = aluno_data.get(df_column, '')
-        if df_column in ['despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago']:
+        if df_column in ['despesa_diaria', 'despesa_mensal', 'parcela_beneficiario', 'auxilio_pago'] or 'tarifa' in df_column:
             fill_data[pdf_field] = f"R$ {float(valor):.2f}"
         else:
             fill_data[pdf_field] = str(valor)
-    for i in range(1, 5):
-        fill_data[f'EMPRESA IDA {i}'] = str(aluno_data.get(f'ida_{i}_empresa', ''))
-        fill_data[f'LINHA IDA {i}'] = str(aluno_data.get(f'ida_{i}_linha', ''))
-        fill_data[f'TARIFA IDA {i}'] = f"R$ {aluno_data.get(f'ida_{i}_tarifa', 0.0):.2f}"
-        fill_data[f'EMPRESA VOLTA {i}'] = str(aluno_data.get(f'volta_{i}_empresa', ''))
-        fill_data[f'LINHA VOLTA {i}'] = str(aluno_data.get(f'volta_{i}_linha', ''))
-        fill_data[f'TARIFA VOLTA {i}'] = f"R$ {aluno_data.get(f'volta_{i}_tarifa', 0.0):.2f}"
+            
     if writer.get_form_text_fields():
         for page in writer.pages:
             writer.update_page_form_field_values(page, fill_data)
+            
     output_buffer = BytesIO()
     writer.write(output_buffer)
     output_buffer.seek(0)
@@ -387,48 +416,70 @@ def gestao_decat_tab(supabase):
 def gerar_documento_tab(supabase):
     st.subheader("Gerador de Documentos de Solicitação")
     NOME_TEMPLATE = "auxilio_transporte_template.pdf"
-    with st.expander("Configurar e Diagnosticar Modelo de PDF", expanded=True):
-        st.info("Faça o upload do seu modelo PDF preenchível. O sistema irá analisar o ficheiro e listar os campos de texto encontrados abaixo.")
-        uploaded_template = st.file_uploader("Selecione o seu modelo PDF", type="pdf", key="pdf_template_uploader")
+
+    # Carrega o mapeamento salvo do BD
+    config_df = load_data("Config")
+    mapeamento_pdf_salvo = json.loads(config_df[config_df['chave'] == 'pdf_mapping_auxilio_transporte']['valor'].iloc[0]) if 'pdf_mapping_auxilio_transporte' in config_df['chave'].values else {}
+
+    with st.expander("Passo 1: Configurar Modelo e Mapeamento de Campos (feito apenas uma vez)", expanded=not mapeamento_pdf_salvo):
+        st.info("Faça o upload do seu modelo PDF preenchível. Em seguida, mapeie os campos do PDF com os dados do sistema.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            uploaded_template = st.file_uploader("Carregue o seu modelo PDF", type="pdf")
+            if uploaded_template:
+                if st.button("Salvar Modelo no Sistema"):
+                    with st.spinner("Salvando modelo..."):
+                        supabase.storage.from_("templates").upload(NOME_TEMPLATE, uploaded_template.getvalue(), {"content-type": "application/pdf", "x-upsert": "true"})
+                        st.success("Modelo salvo! Agora configure o mapeamento ao lado.")
+
+        with col2:
+            understanding_file_bytes = create_understanding_file()
+            st.download_button(
+                label="📥 Baixar Guia de Campos",
+                data=understanding_file_bytes,
+                file_name="guia_de_campos_auxilio_transporte.txt",
+                mime="text/plain"
+            )
+
         if uploaded_template:
             try:
                 reader = PdfReader(BytesIO(uploaded_template.getvalue()))
-                if reader.get_form_text_fields():
-                    fields = reader.get_form_text_fields().keys()
-                    st.success("✅ Campos de texto encontrados neste PDF:")
-                    st.text_area("Use estes nomes para ajustar o mapeamento no código (função fill_pdf_auxilio)", value="\n".join(fields), height=200)
+                pdf_fields = list(reader.get_form_text_fields().keys())
+                
+                if not pdf_fields:
+                    st.warning("Nenhum campo de formulário (caixa de texto) encontrado neste PDF.")
                 else:
-                    st.warning("⚠️ Atenção: Nenhum campo de formulário editável (caixa de texto) foi encontrado neste PDF.")
+                    st.success(f"{len(pdf_fields)} campos encontrados no PDF.")
+                    
+                    # Prepara a lista de campos de dados do sistema
+                    dados_completos_df = pd.DataFrame(columns=create_understanding_file().decode('utf-8').splitlines()) # Simula colunas
+                    campos_do_sistema = ["-- Não Mapeado --"] + sorted(list(dados_completos_df.columns))
+
+                    with st.form("pdf_mapping_form"):
+                        st.markdown("**Mapeie cada campo do seu PDF para um campo do sistema:**")
+                        mapeamento_pdf_usuario = {}
+                        for field in pdf_fields:
+                            # Tenta adivinhar o melhor mapeamento
+                            best_guess = next((s for s in campos_do_sistema if field.replace("_", " ").lower() in s.lower()), campos_do_sistema[0])
+                            index = campos_do_sistema.index(mapeamento_pdf_salvo.get(field, best_guess))
+                            
+                            mapeamento_pdf_usuario[field] = st.selectbox(f"Campo do PDF: `{field}`", options=campos_do_sistema, key=field, index=index)
+                        
+                        if st.form_submit_button("Salvar Mapeamento", type="primary"):
+                            supabase.table("Config").upsert({"chave": "pdf_mapping_auxilio_transporte", "valor": json.dumps(mapeamento_pdf_usuario)}).execute()
+                            st.success("Mapeamento salvo com sucesso! Pode fechar esta seção.")
+                            st.rerun()
+
             except Exception as e:
-                st.error(f"Não foi possível ler os campos do PDF: {e}")
-        if uploaded_template:
-            if st.button("Salvar Modelo no Sistema"):
-                with st.spinner("Salvando modelo..."):
-                    try:
-                        supabase.storage.from_("templates").upload(NOME_TEMPLATE, uploaded_template.getvalue(), {"content-type": "application/pdf", "x-upsert": "true"})
-                        st.success("Modelo salvo com sucesso!")
-                    except Exception as e:
-                        st.error(f"Erro ao salvar o modelo: {e}")
+                st.error(f"Erro ao ler o PDF: {e}")
+    
+    if not mapeamento_pdf_salvo:
+        st.warning("É necessário configurar um modelo de PDF e mapear os seus campos para poder gerar os documentos.")
+        return
+
     st.divider()
-    st.markdown("#### 1. Selecione os Alunos")
-    alunos_df = load_data("Alunos")
-    transporte_df = load_data("auxilio_transporte")
-    soldos_df = load_data("soldos")
-    if transporte_df.empty:
-        st.warning("Nenhum dado de transporte foi cadastrado para preencher os documentos.")
-        return
-
-    dados_completos_df = pd.merge(transporte_df, alunos_df, on='numero_interno', how='left')
-    dados_completos_df = pd.merge(dados_completos_df, soldos_df, left_on='posto_grad', right_on='graduacao', how='left')
-    calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
-    dados_completos_df = pd.concat([dados_completos_df, calculos_df], axis=1)
-
-    alunos_selecionados_df = render_alunos_filter_and_selection(key_suffix="docgen_transporte", include_full_name_search=True)
-    if alunos_selecionados_df.empty:
-        st.info("Use os filtros para selecionar os alunos.")
-        return
-    st.markdown(f"**{len(alunos_selecionados_df)} aluno(s) selecionado(s).**")
-    st.markdown("#### 2. Gere o Documento Consolidado")
+    st.markdown("#### Passo 2: Selecione os Alunos e Gere os Documentos")
     if st.button(f"Gerar PDF para os {len(alunos_selecionados_df)} alunos", type="primary"):
         with st.spinner("Preparando..."):
             try:
