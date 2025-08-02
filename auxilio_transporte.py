@@ -533,17 +533,24 @@ def gerar_documento_tab(supabase):
         st.warning("Nenhum dado de transporte foi cadastrado para preencher os documentos.")
         return
         
-    # --- LÓGICA DE JUNÇÃO DE DADOS CORRIGIDA (IDÊNTICA À DA ABA DE GESTÃO) ---
+    # --- LÓGICA DE JUNÇÃO DE DADOS CORRIGIDA ---
+    # Garante que a coluna 'graduacao' existe em ambas as tabelas antes de prosseguir
     if 'graduacao' in alunos_df.columns and 'graduacao' in soldos_df.columns and not soldos_df.empty:
+        # Cria chaves de junção temporárias e limpas para uma correspondência robusta
         alunos_df['join_key_grad'] = alunos_df['graduacao'].astype(str).str.lower().str.strip()
         soldos_df['join_key_grad'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
+        
+        # Junta Alunos com Soldos para obter o salário de cada aluno
         alunos_com_soldo_df = pd.merge(alunos_df, soldos_df, on='join_key_grad', how='left')
         alunos_com_soldo_df.drop(columns=['join_key_grad'], inplace=True, errors='ignore')
     else:
         st.error("Erro: A coluna 'graduacao' não foi encontrada na tabela 'Alunos' ou 'soldos'. O cálculo não pode ser realizado.")
         return
         
+    # Junta o resultado com a tabela de transporte usando 'numero_interno'
     dados_completos_df = pd.merge(alunos_com_soldo_df, transporte_df, on='numero_interno', how='left')
+    
+    # Filtra apenas os registos que têm dados de transporte
     dados_completos_df.dropna(subset=['ano_referencia'], inplace=True)
 
     if 'soldo' in dados_completos_df.columns:
@@ -551,6 +558,7 @@ def gerar_documento_tab(supabase):
     else:
         dados_completos_df['soldo'] = 0
 
+    # Aplica o cálculo e exibe
     calculos_df = dados_completos_df.apply(calcular_auxilio_transporte, axis=1)
     dados_completos_df = pd.concat([dados_completos_df.drop(columns=calculos_df.columns, errors='ignore'), calculos_df], axis=1)
     
