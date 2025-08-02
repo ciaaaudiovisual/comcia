@@ -423,14 +423,15 @@ def gestao_decat_tab(supabase):
         st.warning("Nenhum dado de auxílio transporte cadastrado.")
         return
 
-    # Lógica de junção robusta
-    if 'graduacao' in alunos_df.columns and 'graduacao' in soldos_df.columns and not soldos_df.empty:
-        alunos_df['join_key_grad'] = alunos_df['graduacao'].astype(str).str.lower().str.strip()
-        soldos_df['join_key_grad'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
-        alunos_com_soldo_df = pd.merge(alunos_df, soldos_df, on='join_key_grad', how='left')
-        alunos_com_soldo_df.drop(columns=['join_key_grad'], inplace=True, errors='ignore')
+   
+    # A lógica de junção agora espera que a coluna 'soldo' exista em soldos_df
+    if 'graduacao' in alunos_df.columns and 'graduacao' in soldos_df.columns and 'soldo' in soldos_df.columns:
+        alunos_df['join_key'] = alunos_df['graduacao'].astype(str).str.lower().str.strip()
+        soldos_df['join_key'] = soldos_df['graduacao'].astype(str).str.lower().str.strip()
+        alunos_com_soldo_df = pd.merge(alunos_df, soldos_df, on='join_key', how='left')
+        alunos_com_soldo_df.drop(columns=['join_key'], inplace=True, errors='ignore')
     else:
-        st.error("Erro: A coluna 'graduacao' não foi encontrada na tabela 'Alunos' ou 'soldos'. O cálculo não pode ser realizado.")
+        st.error("Erro: Colunas essenciais ('graduacao', 'soldo') não encontradas. Verifique as tabelas 'Alunos' e 'soldos'.")
         return
         
     dados_completos_df = pd.merge(alunos_com_soldo_df, transporte_df, on='numero_interno', how='left')
@@ -612,13 +613,22 @@ def gerar_documento_tab(supabase):
 def gestao_soldos_tab(supabase):
     st.subheader("Tabela de Soldos por Graduação")
     soldos_df = load_data("soldos")
+    
+    # Configuração do editor para usar os nomes corretos
+    colunas_config = {
+        "graduacao": st.column_config.TextColumn("Graduação", required=True),
+        "soldo": st.column_config.NumberColumn("Soldo (R$)", format="R$ %.2f", required=True)
+    }
+    
     if 'id' in soldos_df.columns: soldos_df = soldos_df.drop(columns=['id'])
-    edited_df = st.data_editor(soldos_df, num_rows="dynamic", use_container_width=True)
+    edited_df = st.data_editor(soldos_df, column_config=colunas_config, num_rows="dynamic", use_container_width=True)
+    
     if st.button("Salvar Alterações nos Soldos"):
         try:
             supabase.table("soldos").upsert(edited_df.to_dict(orient='records'), on_conflict='graduacao').execute()
             st.success("Tabela de soldos atualizada!")
             load_data.clear()
+            st.rerun()
         except Exception as e:
             st.error(f"Erro ao salvar os soldos: {e}")
 
