@@ -446,7 +446,7 @@ def gestao_decat_tab(supabase):
         st.info("A funcionalidade de salvar edições diretamente nesta tabela está em desenvolvimento.")
         pass
 
-Python
+
 
 # No ficheiro auxilio_transporte.py, substitua esta função
 
