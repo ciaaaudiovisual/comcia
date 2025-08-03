@@ -137,7 +137,7 @@ def show_auxilio_transporte():
                 # O código de mapeamento iria aqui, usando o pdf_template e os dados da sessão
                 st.info("Funcionalidade de mapeamento a ser implementada aqui.")
 
-    # --- ABA 3: GERAR DOCUMENTOS ---
+# --- ABA 3: GERAR DOCUMENTOS ---
     with tab3:
         st.subheader("Gerar Documentos Finais")
         if 'dados_em_memoria' not in st.session_state:
@@ -152,7 +152,12 @@ def show_auxilio_transporte():
             st.markdown("#### Filtro para Seleção")
             st.info("Selecione os militares para gerar o documento. Deixe em branco para incluir todos.")
             
-            opcoes_filtro = sorted(df_com_calculo['nome_completo'].unique())
+            # --- INÍCIO DA CORREÇÃO ---
+            # Remove valores nulos, pega os nomes únicos e depois ordena.
+            nomes_validos = df_com_calculo['nome_completo'].dropna().unique()
+            opcoes_filtro = sorted(nomes_validos)
+            # --- FIM DA CORREÇÃO ---
+
             selecionados = st.multiselect("Selecione por Nome Completo:", options=opcoes_filtro)
             
             if selecionados:
@@ -164,6 +169,8 @@ def show_auxilio_transporte():
 
             if st.button(f"Gerar PDF para os {len(df_para_gerar)} selecionados", type="primary"):
                 st.info("Lógica de geração de PDF a ser conectada aqui.")
+
+
                 # Exemplo:
                 # if 'mapeamento_pdf' in st.session_state and pdf_template is not None:
                 #     pdf_final = gerar_pdfs_consolidados(df_para_gerar, pdf_template, st.session_state['mapeamento_pdf'])
