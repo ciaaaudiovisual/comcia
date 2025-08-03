@@ -183,8 +183,7 @@ def show_auxilio_transporte():
 
 Pode substituir todo o bloco with tab2: no seu ficheiro auxilio_transporte.py por este código.
 
-Código Íntegral para a "Aba 2: Edição Individual"
-Python
+
 
     ## --- ABA 2: EDIÇÃO INDIVIDUAL (ATUALIZADA) ---
     with tab2:
