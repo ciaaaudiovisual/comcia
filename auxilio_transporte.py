@@ -82,8 +82,8 @@ def show_auxilio_transporte():
     supabase = init_supabase_client()
     NOME_TABELA_TRANSPORTE = "auxilio_transporte_dados"
     NOME_TABELA_SOLDOS = "soldos"
-    
- @st.cache_data(ttl=600)
+# Carregamento e junção dos dados (feito uma vez no início)
+    @st.cache_data(ttl=600)
     def carregar_dados_completos():
         df_transporte = load_data(NOME_TABELA_TRANSPORTE)
         df_soldos = load_data(NOME_TABELA_SOLDOS)
@@ -106,7 +106,6 @@ def show_auxilio_transporte():
         df_completo = pd.merge(df_transporte, df_soldos[['graduacao', 'soldo']], on='graduacao', how='left')
         df_completo['soldo'].fillna(0, inplace=True)
         return df_completo
-
     # --- ABA 1: TABELA GERAL ---
     with tab1:
         st.subheader("Visualizar e Filtrar Tabela Geral")
