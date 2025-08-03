@@ -76,26 +76,40 @@ def show_auxilio_transporte():
     supabase = init_supabase_client()
 
     with tab1:
-        st.subheader("Carregar Ficheiro de Dados do Mês")
+        st.subheader("Carregar e Editar Ficheiro de Dados")
         uploaded_file = st.file_uploader("Carregue o seu ficheiro CSV", type="csv", key="aux_transp_uploader")
         
         if uploaded_file:
             if st.button(f"Processar Ficheiro: {uploaded_file.name}", type="primary"):
                 with st.spinner("Processando..."):
                     try:
-                        # Limpa dados antigos da sessão para garantir um novo processamento
                         if 'dados_do_csv' in st.session_state:
                             del st.session_state['dados_do_csv']
-
                         df_csv = pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
                         df_preparado = preparar_dataframe(df_csv)
                         st.session_state['dados_do_csv'] = df_preparado
                         st.session_state['nome_ficheiro'] = uploaded_file.name
-                        st.success("Ficheiro processado! Vá para a aba 'Gerar Documentos' para ver os resultados com o soldo.")
+                        st.success("Ficheiro processado! Os dados estão prontos para edição abaixo.")
                     except Exception as e:
                         st.error(f"Erro ao ler o ficheiro: {e}")
                         st.error(traceback.format_exc())
-
+        
+        # --- CORREÇÃO: REINTRODUZINDO O EDITOR DE DADOS ---
+        if 'dados_do_csv' in st.session_state:
+            st.markdown("---")
+            st.markdown("##### Tabela de Dados para Edição")
+            st.info("Faça as correções necessárias na tabela abaixo. As alterações serão usadas nas próximas abas.")
+            
+            # O editor permite que o usuário modifique os dados carregados
+            df_editado = st.data_editor(
+                st.session_state['dados_do_csv'],
+                num_rows="dynamic",
+                use_container_width=True,
+                key="data_editor_transporte"
+            )
+            # Salva continuamente os dados editados na memória da sessão
+            st.session_state['dados_do_csv'] = df_editado
+            
     with tab2:
         st.subheader("Gerenciar Tabela de Soldos")
         st.info("As alterações feitas aqui são salvas diretamente no Supabase.")
@@ -166,11 +180,15 @@ def show_auxilio_transporte():
                     st.error(f"Ocorreu um erro ao processar o PDF: {e}")
 
     with tab4:
-        st.subheader("Gerar Documentos Finais")
+        st.subheader("Gerar Documentos Finais") # ... (código desta aba, que agora usará os dados editados de st.session_state['dados_do_csv']) ...
         if 'dados_do_csv' not in st.session_state:
-            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar Ficheiro'.")
+            st.warning("Por favor, carregue e edite um ficheiro na aba '1. Carregar & Editar'.")
         else:
+            # A lógica aqui agora usará os dados já editados
             df_do_csv = st.session_state['dados_do_csv'].copy()
+            st.info("Dados prontos para a geração do PDF.")
+            st.dataframe(df_do_csv.head())
+            # O resto da lógica de junção, cálculo e geração viria aqui.
             
             with st.spinner("Buscando soldos atualizados e juntando dados..."):
                 df_soldos_atual = load_data("soldos")
