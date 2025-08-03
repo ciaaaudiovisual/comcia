@@ -65,58 +65,78 @@ def preparar_dataframe(df):
 
     df_copy.fillna(0, inplace=True)
     return df_copy
-
 def show_auxilio_transporte():
     st.header("🚌 Gestão de Auxílio Transporte")
     st.markdown("---")
 
-    # Nova estrutura de abas com a Edição Individual
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "1. Tabela Geral",
-        "2. Edição Individual", # NOVA ABA
-        "3. Gerenciar Soldos", 
-        "4. Mapeamento PDF", 
-        "5. Gerar Documentos"
-    ])
-
-    supabase = init_supabase_client()
     NOME_TABELA_TRANSPORTE = "auxilio_transporte_dados"
     NOME_TABELA_SOLDOS = "soldos"
-# Carregamento e junção dos dados (feito uma vez no início)
-    @st.cache_data(ttl=600)
-    def carregar_dados_completos():
-        df_transporte = load_data(NOME_TABELA_TRANSPORTE)
-        df_soldos = load_data(NOME_TABELA_SOLDOS)
-        
-        # --- CORREÇÃO: VERIFICA SE AS TABELAS ESTÃO VAZIAS ANTES DE PROCESSAR ---
-        if df_transporte.empty:
-            # Se a tabela principal estiver vazia, avisa o usuário e retorna um DataFrame vazio.
-            st.warning(f"A tabela '{NOME_TABELA_TRANSPORTE}' está vazia. Não há dados para processar.")
-            return pd.DataFrame()
+    supabase = init_supabase_client()
 
-        if df_soldos.empty:
-            # Se a tabela de soldos estiver vazia, avisa, mas continua (o soldo será 0).
-            st.warning(f"A tabela '{NOME_TABELA_SOLDOS}' está vazia. Não será possível associar os soldos.")
-            df_soldos = pd.DataFrame(columns=['graduacao', 'soldo'])
+    # --- NOVA LÓGICA DE ABAS E CARREGAMENTO DE DADOS ---
+    # Agora temos uma aba dedicada para a gestão completa dos dados
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "1. Gestão de Dados (Visualizar, Editar, Carregar)", 
+        "2. Gerenciar Soldos", 
+        "3. Mapeamento PDF", 
+        "4. Gerar Documentos"
+    ])
 
-        # O código abaixo só será executado se a tabela de transporte tiver dados
-        df_transporte['graduacao'] = df_transporte['graduacao'].astype(str).str.strip().str.upper()
-        df_soldos['graduacao'] = df_soldos['graduacao'].astype(str).str.strip().str.upper()
-
-        df_completo = pd.merge(df_transporte, df_soldos[['graduacao', 'soldo']], on='graduacao', how='left')
-        df_completo['soldo'].fillna(0, inplace=True)
-        return df_completo
-    # --- ABA 1: TABELA GERAL ---
     with tab1:
-        st.subheader("Visualizar e Filtrar Tabela Geral")
-        if dados_completos_df.empty:
-            st.warning("Nenhum dado encontrado na tabela.")
-        else:
-            # Filtros (semelhante ao que já tínhamos)
-            nomes_unicos = sorted(dados_completos_df['nome_completo'].dropna().unique())
-            selecionados = st.multiselect("Filtrar por Nome:", options=nomes_unicos)
-            df_filtrado = dados_completos_df[dados_completos_df['nome_completo'].isin(selecionados)] if selecionados else dados_completos_df
-            st.dataframe(df_filtrado)
+        st.subheader("Visualizar e Editar Dados do Banco de Dados")
+        
+        # Carrega os dados existentes de forma segura
+        try:
+            df_database = load_data(NOME_TABELA_TRANSPORTE)
+        except Exception as e:
+            st.error(f"Erro ao conectar à tabela '{NOME_TABELA_TRANSPORTE}': {e}")
+            df_database = pd.DataFrame() # Cria um DataFrame vazio em caso de erro
+
+        if df_database.empty:
+            st.info("A tabela de auxílio transporte no banco de dados está vazia. Você pode adicionar dados editando a tabela abaixo ou carregando um ficheiro CSV.")
+        
+        edited_df = st.data_editor(
+            df_database,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="db_data_editor"
+        )
+        
+        if st.button("Salvar alterações na Tabela"):
+            with st.spinner("Salvando..."):
+                try:
+                    supabase.table(NOME_TABELA_TRANSPORTE).upsert(
+                        edited_df.to_dict(orient='records'),
+                        on_conflict='numero_interno,ano_referencia'
+                    ).execute()
+                    st.success("Dados salvos no Supabase!")
+                    load_data.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
+
+        st.markdown("---")
+        
+        # Seção para upload de CSV
+        with st.expander("Adicionar ou Atualizar Dados via Ficheiro CSV"):
+            uploaded_file = st.file_uploader("Carregue um ficheiro CSV para adicionar/atualizar dados", type="csv")
+            if uploaded_file:
+                if st.button("Processar e Enviar para o Banco de Dados"):
+                    with st.spinner("Processando e salvando..."):
+                        try:
+                            df_csv = pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
+                            df_preparado = preparar_dataframe(df_csv)
+                            
+                            supabase.table(NOME_TABELA_TRANSPORTE).upsert(
+                                df_preparado.to_dict(orient='records'),
+                                on_conflict='numero_interno,ano_referencia'
+                            ).execute()
+                            
+                            st.success(f"{len(df_preparado)} registos do CSV foram adicionados/atualizados no Supabase!")
+                            load_data.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao processar ou salvar o CSV: {e}")
 
     # --- ABA 2: EDIÇÃO INDIVIDUAL (NOVA FUNCIONALIDADE) ---
     with tab2:
