@@ -9,7 +9,7 @@ from acoes import load_data
 # --- Bloco de Funções Essenciais ---
 
 def calcular_auxilio_transporte(linha):
-    """Sua função de cálculo principal, que permanece a mesma."""
+    # Sua função de cálculo principal (sem alterações)
     try:
         despesa_diaria = 0
         for i in range(1, 6):
@@ -17,11 +17,8 @@ def calcular_auxilio_transporte(linha):
             volta_tarifa = linha.get(f'volta_{i}_tarifa', 0.0)
             despesa_diaria += float(ida_tarifa if ida_tarifa else 0.0)
             despesa_diaria += float(volta_tarifa if volta_tarifa else 0.0)
-        
         dias_trabalhados = min(int(linha.get('dias_uteis', 0) or 0), 22)
         despesa_mensal = despesa_diaria * dias_trabalhados
-        
-        # O 'soldo' aqui virá da junção das tabelas
         valor_soldo_bruto = linha.get('soldo')
         try:
             soldo = float(valor_soldo_bruto)
@@ -29,17 +26,51 @@ def calcular_auxilio_transporte(linha):
             soldo = 0.0
         parcela_beneficiario = ((soldo * 0.06) / 30) * dias_trabalhados if soldo > 0 and dias_trabalhados > 0 else 0.0
         auxilio_pago = max(0.0, despesa_mensal - parcela_beneficiario)
-        
         return pd.Series({
-            'despesa_diaria': round(despesa_diaria, 2),
-            'dias_trabalhados': dias_trabalhados,
-            'despesa_mensal_total': round(despesa_mensal, 2),
-            'parcela_descontada_6_porcento': round(parcela_beneficiario, 2),
+            'despesa_diaria': round(despesa_diaria, 2), 'dias_trabalhados': dias_trabalhados,
+            'despesa_mensal_total': round(despesa_mensal, 2), 'parcela_descontada_6_porcento': round(parcela_beneficiario, 2),
             'auxilio_transporte_pago': round(auxilio_pago, 2)
         })
     except Exception as e:
         print(f"Erro no cálculo para NIP {linha.get('numero_interno', 'N/A')}: {e}")
         return pd.Series()
+
+def validate_and_map_dataframe(df, required_columns, table_name):
+    """
+    Verifica se um DataFrame contém as colunas necessárias. Se não, pede ao usuário para mapeá-las.
+    Retorna o DataFrame corrigido ou o original se tudo estiver OK. Retorna None se o mapeamento estiver pendente.
+    """
+    missing_cols = [col for col in required_columns if col not in df.columns]
+    
+    if not missing_cols:
+        return df # Tudo certo, retorna o dataframe original
+
+    st.warning(f"Na tabela '{table_name}', as seguintes colunas essenciais não foram encontradas: `{', '.join(missing_cols)}`")
+    st.info("Por favor, mapeie as colunas em falta para as colunas existentes na sua tabela ou escolha deixar o campo vazio.")
+
+    user_mapping = {}
+    cols_para_mapear = st.columns(len(missing_cols))
+    
+    options = ['-- Deixar Vazio --'] + df.columns.tolist()
+
+    for i, col_name in enumerate(missing_cols):
+        user_mapping[col_name] = cols_para_mapear[i].selectbox(
+            f"Mapear coluna '{col_name}':", 
+            options=options,
+            key=f"map_{table_name}_{col_name}"
+        )
+    
+    if st.button(f"Aplicar Mapeamento para a Tabela '{table_name}'"):
+        df_corrigido = df.copy()
+        for system_col, user_col in user_mapping.items():
+            if user_col != '-- Deixar Vazio --':
+                df_corrigido[system_col] = df_corrigido[user_col]
+            else:
+                df_corrigido[system_col] = None # Deixa a coluna vazia (nula)
+        st.success(f"Mapeamento aplicado para '{table_name}'!")
+        return df_corrigido
+    
+    return None # Retorna None para indicar que a validação está pendente
 
 # --- Função Principal da Página ---
 def show_auxilio_transporte():
@@ -49,50 +80,43 @@ def show_auxilio_transporte():
     NOME_TABELA_TRANSPORTE = "auxilio_transporte_dados"
     NOME_TABELA_ALUNOS = "Alunos"
     NOME_TABELA_SOLDOS = "soldos"
-
+    
     try:
-        supabase = init_supabase_client()
-        with st.spinner("Carregando e unindo os dados..."):
-            # 1. Carrega as três tabelas necessárias do Supabase
-            df_transporte = load_data(NOME_TABELA_TRANSPORTE)
-            df_alunos = load_data(NOME_TABELA_ALUNOS)
-            df_soldos = load_data(NOME_TABELA_SOLDOS)
+        # Carregamento inicial dos dados
+        df_transporte_raw = load_data(NOME_TABELA_TRANSPORTE)
+        df_alunos_raw = load_data(NOME_TABELA_ALUNOS)
+        df_soldos_raw = load_data(NOME_TABELA_SOLDOS)
 
-            # --- LÓGICA DE JUNÇÃO CORRIGIDA ---
-            
-            # 2. Padroniza as chaves de junção para evitar erros de tipo ou espaçamento
+        # Validação e Mapeamento Interativo
+        required_cols_transporte = ['numero_interno', 'ano_referencia']
+        required_cols_alunos = ['numero_interno', 'nome_completo', 'graduacao']
+        required_cols_soldos = ['graduacao', 'soldo']
+
+        df_transporte = validate_and_map_dataframe(df_transporte_raw, required_cols_transporte, NOME_TABELA_TRANSPORTE)
+        df_alunos = validate_and_map_dataframe(df_alunos_raw, required_cols_alunos, NOME_TABELA_ALUNOS)
+        df_soldos = validate_and_map_dataframe(df_soldos_raw, required_cols_soldos, NOME_TABELA_SOLDOS)
+
+        # Se algum mapeamento estiver pendente, a aplicação aguarda a ação do usuário
+        if df_transporte is None or df_alunos is None or df_soldos is None:
+            st.warning("Aguardando a conclusão do mapeamento de colunas...")
+            st.stop()
+
+        # Se chegou aqui, todos os dataframes estão validados e prontos para a junção
+        with st.spinner("Unindo os dados..."):
+            # A lógica de junção que já tínhamos, agora com os dataframes validados
             df_transporte['numero_interno'] = df_transporte['numero_interno'].astype(str).str.strip()
             df_alunos['numero_interno'] = df_alunos['numero_interno'].astype(str).str.strip()
             df_alunos['graduacao'] = df_alunos['graduacao'].astype(str).str.strip()
             df_soldos['graduacao'] = df_soldos['graduacao'].astype(str).str.strip()
 
-            # 3. Junta TRANSPORTE com ALUNOS para buscar 'nome_completo' e 'graduacao'
-            # Usamos how='left' para manter todos os registros de transporte, mesmo que um aluno seja removido da tabela de alunos.
-            df_com_aluno = pd.merge(
-                df_transporte,
-                df_alunos[['numero_interno', 'nome_completo', 'graduacao']],
-                on='numero_interno',
-                how='left'
-            )
-            
-            # 4. Junta o resultado com SOLDOS para buscar o 'soldo' atualizado
-            df_completo = pd.merge(
-                df_com_aluno,
-                df_soldos[['graduacao', 'soldo']],
-                on='graduacao',
-                how='left'
-            )
-
-            # 5. Trata dados que possam ter ficado nulos após as junções
+            df_com_aluno = pd.merge(df_transporte, df_alunos[['numero_interno', 'nome_completo', 'graduacao']], on='numero_interno', how='left')
+            df_completo = pd.merge(df_com_aluno, df_soldos[['graduacao', 'soldo']], on='graduacao', how='left')
             df_completo['soldo'].fillna(0, inplace=True)
             df_completo['nome_completo'].fillna("ALUNO NÃO ENCONTRADO", inplace=True)
-
-            # Armazena o resultado final na sessão
             st.session_state['dados_transporte_completos'] = df_completo
-            
-        st.success(f"{len(df_completo)} registos carregados e processados.")
+
     except Exception as e:
-        st.error(f"Não foi possível carregar os dados. Verifique se as tabelas '{NOME_TABELA_TRANSPORTE}', '{NOME_TABELA_ALUNOS}' e '{NOME_TABELA_SOLDOS}' existem e contêm os dados corretos. Erro: {e}")
+        st.error(f"Ocorreu um erro crítico durante o carregamento. Verifique se as tabelas existem. Erro: {e}")
         st.stop()
 
     tab1, tab2 = st.tabs(["1. Consultar, Filtrar e Editar", "2. Gerar Documentos"])
