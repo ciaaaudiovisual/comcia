@@ -39,32 +39,37 @@ def calcular_auxilio_transporte(linha):
         return pd.Series()
 
 def preparar_dataframe(df):
-    """Prepara o DataFrame do CSV com limpeza de dados mais robusta."""
+    """Prepara o DataFrame do CSV com o mapeamento de colunas corrigido."""
     df_copy = df.iloc[:, 1:].copy()
+    
+    # --- CORREÇÃO APLICADA AQUI ---
+    # Adicionamos a coluna "1º NUMERO DA LINHA E TRAJETO" ao mapa
     mapa_colunas = {
         'NÚMERO INTERNO DO ALUNO': 'numero_interno', 'NOME COMPLETO': 'nome_completo', 'POSTO/GRAD': 'graduacao',
         'DIAS ÚTEIS (MÁX 22)': 'dias_uteis', 'ANO DE REFERÊNCIA': 'ano_referencia',
-        'ENDEREÇO COMPLETO': 'endereco', 'BAIRRO': 'bairro', 'CIDADE': 'cidade', 'CEP': 'cep'
+        'ENDEREÇO COMPLETO': 'endereco', 'BAIRRO': 'bairro', 'CIDADE': 'cidade', 'CEP': 'cep',
+        # Mapeamento explícito para a coluna problemática
+        '1º NUMERO DA LINHA E TRAJETO ': 'ida_1_linha', 
     }
     for i in range(1, 6):
         for direcao in ["IDA", "VOLTA"]:
             mapa_colunas[f'{i}ª EMPRESA ({direcao})'] = f'{direcao.lower()}_{i}_empresa'
             mapa_colunas[f'{i}º TRAJETO ({direcao})'] = f'{direcao.lower()}_{i}_linha'
             mapa_colunas[f'{i}ª TARIFA ({direcao})'] = f'{direcao.lower()}_{i}_tarifa'
+    
     df_copy.rename(columns=mapa_colunas, inplace=True, errors='ignore')
-
+    
     for col in df_copy.select_dtypes(include=['object']).columns:
         df_copy[col] = df_copy[col].str.upper().str.strip()
 
     colunas_numericas = ['dias_uteis'] + [f'ida_{i}_tarifa' for i in range(1, 6)] + [f'volta_{i}_tarifa' for i in range(1, 6)]
     for col in colunas_numericas:
         if col in df_copy.columns:
-            # Lógica de limpeza robusta: remove "R$", espaços e depois substitui vírgula por ponto
-            df_copy[col] = df_copy[col].astype(str).str.replace('R$', '', regex=False).str.strip()
-            df_copy[col] = pd.to_numeric(df_copy[col].str.replace(',', '.'), errors='coerce')
-
+            df_copy[col] = pd.to_numeric(df_copy[col].astype(str).str.replace('R$', '', regex=False).str.strip().str.replace(',', '.'), errors='coerce')
+    
     df_copy.fillna(0, inplace=True)
     return df_copy
+    
 def show_auxilio_transporte():
     st.header("🚌 Gestão de Auxílio Transporte")
     st.markdown("---")
@@ -73,7 +78,29 @@ def show_auxilio_transporte():
     NOME_TABELA_SOLDOS = "soldos"
     supabase = init_supabase_client()
 
-    # --- NOVA LÓGICA DE ABAS E CARREGAMENTO DE DADOS ---
+   @st.cache_data(ttl=600)
+    def carregar_dados_completos():
+        df_transporte = load_data(NOME_TABELA_TRANSPORTE)
+        df_soldos = load_data(NOME_TABELA_SOLDOS)
+        
+        if df_transporte.empty:
+            return pd.DataFrame()
+
+        if 'graduacao' not in df_transporte.columns:
+             st.error(f"A tabela '{NOME_TABELA_TRANSPORTE}' precisa de uma coluna 'graduacao'.")
+             return pd.DataFrame()
+        
+        df_transporte['graduacao'] = df_transporte['graduacao'].astype(str).str.strip().str.upper()
+        df_soldos['graduacao'] = df_soldos['graduacao'].astype(str).str.strip().str.upper()
+
+        df_completo = pd.merge(df_transporte, df_soldos[['graduacao', 'soldo']], on='graduacao', how='left')
+        df_completo['soldo'].fillna(0, inplace=True)
+        return df_completo
+
+    try:
+        dados_completos_df = carregar_dados_completos()
+    except Exception as e:
+        st.error(f"Erro ao carregar dados do Supabase: {e}")    # --- NOVA LÓGICA DE ABAS E CARREGAMENTO DE DADOS ---
     # Agora temos uma aba dedicada para a gestão completa dos dados
     tab1, tab2, tab3, tab4 = st.tabs([
         "1. Gestão de Dados (Visualizar, Editar, Carregar)", 
