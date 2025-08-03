@@ -76,14 +76,18 @@ def calcular_auxilio_transporte(linha):
     except Exception as e:
         print(f"Erro no cálculo para NIP {linha.get('numero_interno', 'N/A')}: {e}")
         return pd.Series()
-    
+
+def clean_text(text):
+    """Função auxiliar para limpar e normalizar nomes de colunas para comparação."""
+    return re.sub(r'[^a-z0-9]', '', text.lower())
+
+
 def show_auxilio_transporte():
     st.header("🚌 Gestão de Auxílio Transporte")
     st.markdown("---")
 
-    # Estrutura de 5 abas restaurada
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "1. Tabela Geral",
+        "1. Tabela Geral e Importação",
         "2. Edição Individual",
         "3. Gerenciar Soldos", 
         "4. Mapeamento PDF", 
@@ -94,65 +98,82 @@ def show_auxilio_transporte():
     NOME_TABELA_TRANSPORTE = "auxilio_transporte_dados"
     NOME_TABELA_SOLDOS = "soldos"
     
-    # Carregamento e junção dos dados (feito uma vez no início)
-    @st.cache_data(ttl=600)
-    def carregar_dados_completos():
-        df_transporte = load_data(NOME_TABELA_TRANSPORTE)
-        df_soldos = load_data(NOME_TABELA_SOLDOS)
-        
-        if df_transporte.empty:
-            return pd.DataFrame()
+    # Define o "esquema" de colunas que o sistema espera no final.
+    schema_esperado = [
+        'numero_interno', 'nome_completo', 'graduacao', 'dias_uteis', 'ano_referencia',
+        'endereco', 'bairro', 'cidade', 'cep'
+    ] + [f'{d}_{i}_{t}' for i in range(1, 6) for d in ['ida', 'volta'] for t in ['empresa', 'linha', 'tarifa']]
 
-        if 'graduacao' not in df_transporte.columns:
-             st.error(f"A tabela '{NOME_TABELA_TRANSPORTE}' precisa de uma coluna 'graduacao'.")
-             return pd.DataFrame()
-        
-        df_transporte['graduacao'] = df_transporte['graduacao'].astype(str).str.strip().str.upper()
-        df_soldos['graduacao'] = df_soldos['graduacao'].astype(str).str.strip().str.upper()
-
-        df_completo = pd.merge(df_transporte, df_soldos[['graduacao', 'soldo']], on='graduacao', how='left')
-        df_completo['soldo'].fillna(0, inplace=True)
-        return df_completo
-
-    try:
-        dados_completos_df = carregar_dados_completos()
-    except Exception as e:
-        st.error(f"Erro ao carregar dados do Supabase: {e}")
-        # Inicializa um DataFrame vazio para evitar o NameError
-        dados_completos_df = pd.DataFrame()
-    
-    # --- ABA 1: TABELA GERAL ---
+    # --- ABA 1: TABELA GERAL E IMPORTAÇÃO ---
     with tab1:
-        st.subheader("Visualizar e Filtrar Tabela Geral")
+        st.subheader("Visualizar Dados e Importar Ficheiro CSV")
         
-        with st.expander("Adicionar/Atualizar em Massa via Ficheiro CSV"):
-            uploaded_file = st.file_uploader("Carregue um ficheiro CSV para adicionar/atualizar dados", type="csv")
+        with st.expander("Adicionar ou Atualizar em Massa via Ficheiro CSV"):
+            uploaded_file = st.file_uploader("Carregue um ficheiro CSV", type="csv", key="csv_uploader_main")
+            
             if uploaded_file:
-                if st.button("Processar e Enviar para o Banco de Dados"):
-                    with st.spinner("Processando e salvando..."):
-                        try:
-                            df_csv = pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
-                            df_preparado = preparar_dataframe(df_csv)
-                            
-                            supabase.table(NOME_TABELA_TRANSPORTE).upsert(
-                                df_preparado.to_dict(orient='records'),
-                                on_conflict='numero_interno,ano_referencia'
-                            ).execute()
-                            
-                            st.success(f"{len(df_preparado)} registos do CSV foram adicionados/atualizados!")
-                            carregar_dados_completos.clear()
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao processar o CSV: {e}")
+                df_raw = pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
+                colunas_do_csv = df_raw.columns.tolist()
+
+                st.markdown("##### Mapeamento de Colunas")
+                st.info("Verifique se a aplicação associou corretamente as colunas do seu ficheiro às colunas do sistema.")
+
+                with st.form("mapping_form"):
+                    mapeamento_usuario = {}
+                    for col_sistema in schema_esperado:
+                        # Lógica de mapeamento inteligente
+                        melhor_sugestao = ""
+                        clean_col_sistema = clean_text(col_sistema)
+                        for col_csv in colunas_do_csv:
+                            if clean_col_sistema in clean_text(col_csv):
+                                melhor_sugestao = col_csv
+                                break
+                        
+                        opcoes = ["-- Ignorar esta coluna --"] + colunas_do_csv
+                        index = opcoes.index(melhor_sugestao) if melhor_sugestao in opcoes else 0
+                        
+                        mapeamento_usuario[col_sistema] = st.selectbox(f"Coluna do Sistema: `{col_sistema}`", options=opcoes, index=index)
+
+                    if st.form_submit_button("1. Pré-visualizar Dados Mapeados"):
+                        df_mapeado = pd.DataFrame()
+                        for col_sistema, col_csv in mapeamento_usuario.items():
+                            if col_csv != "-- Ignorar esta coluna --":
+                                df_mapeado[col_sistema] = df_raw[col_csv]
+                        
+                        # Armazena o dataframe pré-processado na sessão
+                        st.session_state['df_mapeado_para_salvar'] = df_mapeado
+                        st.success("Mapeamento aplicado. Verifique a pré-visualização abaixo e clique no botão final para salvar.")
+
+                if 'df_mapeado_para_salvar' in st.session_state:
+                    st.markdown("##### Pré-visualização")
+                    df_preview = st.session_state['df_mapeado_para_salvar']
+                    st.dataframe(df_preview)
+
+                    if st.button("2. Confirmar e Salvar no Banco de Dados", type="primary"):
+                        with st.spinner("Processando e salvando..."):
+                            try:
+                                # Aplicamos a preparação final (maiúsculas, tipos numéricos, etc.)
+                                df_final_para_salvar = preparar_dataframe(df_preview)
+                                
+                                supabase.table(NOME_TABELA_TRANSPORTE).upsert(
+                                    df_final_para_salvar.to_dict(orient='records'),
+                                    on_conflict='numero_interno,ano_referencia'
+                                ).execute()
+                                
+                                st.success(f"{len(df_final_para_salvar)} registos foram adicionados/atualizados!")
+                                del st.session_state['df_mapeado_para_salvar'] # Limpa a sessão
+                                load_data.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao salvar no Supabase: {e}")
 
         st.markdown("---")
-        if dados_completos_df.empty:
-            st.warning("Nenhum dado encontrado na tabela.")
-        else:
-            nomes_unicos = sorted(dados_completos_df['nome_completo'].dropna().unique())
-            selecionados = st.multiselect("Filtrar por Nome:", options=nomes_unicos)
-            df_filtrado = dados_completos_df[dados_completos_df['nome_completo'].isin(selecionados)] if selecionados else dados_completos_df
-            st.dataframe(df_filtrado)
+        st.subheader("Dados Atuais no Banco de Dados")
+        try:
+            dados_atuais = load_data(NOME_TABELA_TRANSPORTE)
+            st.dataframe(dados_atuais)
+        except Exception as e:
+            st.error(f"Erro ao carregar dados existentes: {e}")
 
 
     # --- ABA 2: EDIÇÃO INDIVIDUAL (NOVA FUNCIONALIDADE) ---
