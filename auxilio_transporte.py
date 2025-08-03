@@ -66,21 +66,43 @@ def preparar_dataframe(df):
     df_copy.fillna(0, inplace=True)
     return df_copy
 
-# --- Função Principal da Página ---
-# --- Função Principal da Página (VERSÃO FINAL) ---
 def show_auxilio_transporte():
     st.header("🚌 Gestão de Auxílio Transporte")
     st.markdown("---")
 
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "1. Carregar & Editar Ficheiro",
-        "2. Gerenciar Soldos",
-        "3. Mapeamento PDF",
-        "4. Gerar Documentos"
+    # Nova estrutura de abas com a Edição Individual
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "1. Tabela Geral",
+        "2. Edição Individual", # NOVA ABA
+        "3. Gerenciar Soldos", 
+        "4. Mapeamento PDF", 
+        "5. Gerar Documentos"
     ])
 
     supabase = init_supabase_client()
- --- ABA 1: TABELA GERAL ---
+    NOME_TABELA_TRANSPORTE = "auxilio_transporte_dados"
+    NOME_TABELA_SOLDOS = "soldos"
+    
+    # Carregamento e junção dos dados (feito uma vez no início)
+    @st.cache_data(ttl=600)
+    def carregar_dados_completos():
+        df_transporte = load_data(NOME_TABELA_TRANSPORTE)
+        df_soldos = load_data(NOME_TABELA_SOLDOS)
+        
+        df_transporte['graduacao'] = df_transporte['graduacao'].astype(str).str.strip().str.upper()
+        df_soldos['graduacao'] = df_soldos['graduacao'].astype(str).str.strip().str.upper()
+
+        df_completo = pd.merge(df_transporte, df_soldos[['graduacao', 'soldo']], on='graduacao', how='left')
+        df_completo['soldo'].fillna(0, inplace=True)
+        return df_completo
+
+    try:
+        dados_completos_df = carregar_dados_completos()
+    except Exception as e:
+        st.error(f"Erro ao carregar dados do Supabase: {e}")
+        st.stop()
+
+    # --- ABA 1: TABELA GERAL ---
     with tab1:
         st.subheader("Visualizar e Filtrar Tabela Geral")
         if dados_completos_df.empty:
@@ -166,9 +188,10 @@ def show_auxilio_transporte():
                                 carregar_dados_completos.clear() # Limpa o cache para recarregar os dados
                             except Exception as e:
                                 st.error(f"Erro ao salvar: {e}")
+
+    # --- ABA 3: GERENCIAR SOLDOS ---
     with tab3:
         st.subheader("Gerenciar Tabela de Soldos")
-        st.info("As alterações feitas aqui são salvas diretamente no Supabase.")
         try:
             soldos_df = load_data("soldos")
             colunas_para_remover = ['id', 'created_at']
@@ -186,12 +209,12 @@ def show_auxilio_transporte():
             )
             if st.button("Salvar Alterações nos Soldos"):
                 with st.spinner("Salvando..."):
-                    supabase.table("soldos").upsert(
+                    supabase.table(NOME_TABELA_SOLDOS).upsert(
                         edited_soldos_df.to_dict(orient='records'),
                         on_conflict='graduacao'
                     ).execute()
                     st.success("Tabela de soldos atualizada!")
-                    load_data.clear()
+                    load_data.clear() # Limpa o cache para garantir que os dados sejam recarregados
                     st.rerun()
         except Exception as e:
             st.error(f"Erro ao carregar ou salvar soldos: {e}")
