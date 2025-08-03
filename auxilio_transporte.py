@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 import traceback
+import re # <-- ADICIONE ESTA LINHA
 
 # Importando as funções de conexão e de geração de PDF
 from config import init_supabase_client
