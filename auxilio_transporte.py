@@ -11,6 +11,45 @@ from pypdf import PdfReader
 
 # --- Bloco de Funções Essenciais ---
 
+def preparar_dataframe(df):
+    """Prepara o DataFrame do CSV com o mapeamento de colunas corrigido."""
+    df_copy = df.iloc[:, 1:].copy()
+    
+    # --- CORREÇÃO APLICADA AQUI ---
+    # Adicionamos as variações de nomes de colunas do seu CSV ao mapa
+    mapa_colunas = {
+        'NÚMERO INTERNO DO ALUNO': 'numero_interno', 
+        'NOME COMPLETO': 'nome_completo', 
+        'POSTO/GRAD': 'graduacao',
+        'DIAS ÚTEIS (MÁX 22)': 'dias_uteis', 
+        'ANO DE REFERÊNCIA': 'ano_referencia',
+        'ENDEREÇO COMPLETO': 'endereco', 
+        'BAIRRO': 'bairro', 
+        'CIDADE': 'cidade', 
+        'CEP': 'cep',
+        # Mapeamento explícito para a coluna problemática
+        '1º NUMERO DA LINHA E TRAJETO ': 'ida_1_linha', 
+    }
+    # Mapeamento dinâmico para as outras colunas de itinerário
+    for i in range(1, 6):
+        for direcao in ["IDA", "VOLTA"]:
+            mapa_colunas[f'{i}ª EMPRESA ({direcao})'] = f'{direcao.lower()}_{i}_empresa'
+            mapa_colunas[f'{i}º TRAJETO ({direcao})'] = f'{direcao.lower()}_{i}_linha'
+            mapa_colunas[f'{i}ª TARIFA ({direcao})'] = f'{direcao.lower()}_{i}_tarifa'
+    
+    df_copy.rename(columns=mapa_colunas, inplace=True, errors='ignore')
+    
+    for col in df_copy.select_dtypes(include=['object']).columns:
+        df_copy[col] = df_copy[col].str.upper().str.strip()
+
+    colunas_numericas = ['dias_uteis'] + [f'ida_{i}_tarifa' for i in range(1, 6)] + [f'volta_{i}_tarifa' for i in range(1, 6)]
+    for col in colunas_numericas:
+        if col in df_copy.columns:
+            df_copy[col] = pd.to_numeric(df_copy[col].astype(str).str.replace('R$', '', regex=False).str.strip().str.replace(',', '.'), errors='coerce')
+    
+    df_copy.fillna(0, inplace=True)
+    return df_copy
+
 def calcular_auxilio_transporte(linha):
     """Sua função de cálculo principal."""
     try:
@@ -37,48 +76,26 @@ def calcular_auxilio_transporte(linha):
     except Exception as e:
         print(f"Erro no cálculo para NIP {linha.get('numero_interno', 'N/A')}: {e}")
         return pd.Series()
-
-def preparar_dataframe(df):
-    """Prepara o DataFrame do CSV com o mapeamento de colunas corrigido."""
-    df_copy = df.iloc[:, 1:].copy()
-    
-    # --- CORREÇÃO APLICADA AQUI ---
-    # Adicionamos a coluna "1º NUMERO DA LINHA E TRAJETO" ao mapa
-    mapa_colunas = {
-        'NÚMERO INTERNO DO ALUNO': 'numero_interno', 'NOME COMPLETO': 'nome_completo', 'POSTO/GRAD': 'graduacao',
-        'DIAS ÚTEIS (MÁX 22)': 'dias_uteis', 'ANO DE REFERÊNCIA': 'ano_referencia',
-        'ENDEREÇO COMPLETO': 'endereco', 'BAIRRO': 'bairro', 'CIDADE': 'cidade', 'CEP': 'cep',
-        # Mapeamento explícito para a coluna problemática
-        '1º NUMERO DA LINHA E TRAJETO ': 'ida_1_linha', 
-    }
-    for i in range(1, 6):
-        for direcao in ["IDA", "VOLTA"]:
-            mapa_colunas[f'{i}ª EMPRESA ({direcao})'] = f'{direcao.lower()}_{i}_empresa'
-            mapa_colunas[f'{i}º TRAJETO ({direcao})'] = f'{direcao.lower()}_{i}_linha'
-            mapa_colunas[f'{i}ª TARIFA ({direcao})'] = f'{direcao.lower()}_{i}_tarifa'
-    
-    df_copy.rename(columns=mapa_colunas, inplace=True, errors='ignore')
-    
-    for col in df_copy.select_dtypes(include=['object']).columns:
-        df_copy[col] = df_copy[col].str.upper().str.strip()
-
-    colunas_numericas = ['dias_uteis'] + [f'ida_{i}_tarifa' for i in range(1, 6)] + [f'volta_{i}_tarifa' for i in range(1, 6)]
-    for col in colunas_numericas:
-        if col in df_copy.columns:
-            df_copy[col] = pd.to_numeric(df_copy[col].astype(str).str.replace('R$', '', regex=False).str.strip().str.replace(',', '.'), errors='coerce')
-    
-    df_copy.fillna(0, inplace=True)
-    return df_copy
     
 def show_auxilio_transporte():
     st.header("🚌 Gestão de Auxílio Transporte")
     st.markdown("---")
 
+    # Estrutura de 5 abas restaurada
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "1. Tabela Geral",
+        "2. Edição Individual",
+        "3. Gerenciar Soldos", 
+        "4. Mapeamento PDF", 
+        "5. Gerar Documentos"
+    ])
+
+    supabase = init_supabase_client()
     NOME_TABELA_TRANSPORTE = "auxilio_transporte_dados"
     NOME_TABELA_SOLDOS = "soldos"
-    supabase = init_supabase_client()
-
-   @st.cache_data(ttl=600)
+    
+    # Carregamento e junção dos dados (feito uma vez no início)
+    @st.cache_data(ttl=600)
     def carregar_dados_completos():
         df_transporte = load_data(NOME_TABELA_TRANSPORTE)
         df_soldos = load_data(NOME_TABELA_SOLDOS)
@@ -100,52 +117,15 @@ def show_auxilio_transporte():
     try:
         dados_completos_df = carregar_dados_completos()
     except Exception as e:
-        st.error(f"Erro ao carregar dados do Supabase: {e}")    # --- NOVA LÓGICA DE ABAS E CARREGAMENTO DE DADOS ---
-    # Agora temos uma aba dedicada para a gestão completa dos dados
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "1. Gestão de Dados (Visualizar, Editar, Carregar)", 
-        "2. Gerenciar Soldos", 
-        "3. Mapeamento PDF", 
-        "4. Gerar Documentos"
-    ])
-
+        st.error(f"Erro ao carregar dados do Supabase: {e}")
+        # Inicializa um DataFrame vazio para evitar o NameError
+        dados_completos_df = pd.DataFrame()
+    
+    # --- ABA 1: TABELA GERAL ---
     with tab1:
-        st.subheader("Visualizar e Editar Dados do Banco de Dados")
+        st.subheader("Visualizar e Filtrar Tabela Geral")
         
-        # Carrega os dados existentes de forma segura
-        try:
-            df_database = load_data(NOME_TABELA_TRANSPORTE)
-        except Exception as e:
-            st.error(f"Erro ao conectar à tabela '{NOME_TABELA_TRANSPORTE}': {e}")
-            df_database = pd.DataFrame() # Cria um DataFrame vazio em caso de erro
-
-        if df_database.empty:
-            st.info("A tabela de auxílio transporte no banco de dados está vazia. Você pode adicionar dados editando a tabela abaixo ou carregando um ficheiro CSV.")
-        
-        edited_df = st.data_editor(
-            df_database,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="db_data_editor"
-        )
-        
-        if st.button("Salvar alterações na Tabela"):
-            with st.spinner("Salvando..."):
-                try:
-                    supabase.table(NOME_TABELA_TRANSPORTE).upsert(
-                        edited_df.to_dict(orient='records'),
-                        on_conflict='numero_interno,ano_referencia'
-                    ).execute()
-                    st.success("Dados salvos no Supabase!")
-                    load_data.clear()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao salvar: {e}")
-
-        st.markdown("---")
-        
-        # Seção para upload de CSV
-        with st.expander("Adicionar ou Atualizar Dados via Ficheiro CSV"):
+        with st.expander("Adicionar/Atualizar em Massa via Ficheiro CSV"):
             uploaded_file = st.file_uploader("Carregue um ficheiro CSV para adicionar/atualizar dados", type="csv")
             if uploaded_file:
                 if st.button("Processar e Enviar para o Banco de Dados"):
@@ -159,11 +139,21 @@ def show_auxilio_transporte():
                                 on_conflict='numero_interno,ano_referencia'
                             ).execute()
                             
-                            st.success(f"{len(df_preparado)} registos do CSV foram adicionados/atualizados no Supabase!")
-                            load_data.clear()
+                            st.success(f"{len(df_preparado)} registos do CSV foram adicionados/atualizados!")
+                            carregar_dados_completos.clear()
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Erro ao processar ou salvar o CSV: {e}")
+                            st.error(f"Erro ao processar o CSV: {e}")
+
+        st.markdown("---")
+        if dados_completos_df.empty:
+            st.warning("Nenhum dado encontrado na tabela.")
+        else:
+            nomes_unicos = sorted(dados_completos_df['nome_completo'].dropna().unique())
+            selecionados = st.multiselect("Filtrar por Nome:", options=nomes_unicos)
+            df_filtrado = dados_completos_df[dados_completos_df['nome_completo'].isin(selecionados)] if selecionados else dados_completos_df
+            st.dataframe(df_filtrado)
+
 
     # --- ABA 2: EDIÇÃO INDIVIDUAL (NOVA FUNCIONALIDADE) ---
     with tab2:
