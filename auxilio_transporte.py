@@ -113,7 +113,7 @@ def show_auxilio_transporte():
                     st.rerun()
         except Exception as e:
             st.error(f"Erro ao carregar/salvar soldos: {e}")
-   # - --- ABA 3: MAPEAMENTO DO PDF ---
+    
     with tab3:
         st.subheader("Mapear Campos do PDF")
         if 'dados_completos' not in st.session_state:
