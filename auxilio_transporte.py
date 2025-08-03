@@ -39,7 +39,7 @@ def calcular_auxilio_transporte(linha):
         return pd.Series()
 
 def preparar_dataframe(df):
-    """Prepara o DataFrame do CSV, agora SEM a necessidade da coluna 'SOLDO'."""
+    """Prepara o DataFrame do CSV com limpeza de dados mais robusta."""
     df_copy = df.iloc[:, 1:].copy()
     mapa_colunas = {
         'NÚMERO INTERNO DO ALUNO': 'numero_interno', 'NOME COMPLETO': 'nome_completo', 'POSTO/GRAD': 'graduacao',
@@ -52,12 +52,17 @@ def preparar_dataframe(df):
             mapa_colunas[f'{i}º TRAJETO ({direcao})'] = f'{direcao.lower()}_{i}_linha'
             mapa_colunas[f'{i}ª TARIFA ({direcao})'] = f'{direcao.lower()}_{i}_tarifa'
     df_copy.rename(columns=mapa_colunas, inplace=True, errors='ignore')
+
     for col in df_copy.select_dtypes(include=['object']).columns:
         df_copy[col] = df_copy[col].str.upper().str.strip()
+
     colunas_numericas = ['dias_uteis'] + [f'ida_{i}_tarifa' for i in range(1, 6)] + [f'volta_{i}_tarifa' for i in range(1, 6)]
     for col in colunas_numericas:
         if col in df_copy.columns:
-            df_copy[col] = pd.to_numeric(df_copy[col].astype(str).str.replace(',', '.'), errors='coerce')
+            # Lógica de limpeza robusta: remove "R$", espaços e depois substitui vírgula por ponto
+            df_copy[col] = df_copy[col].astype(str).str.replace('R$', '', regex=False).str.strip()
+            df_copy[col] = pd.to_numeric(df_copy[col].str.replace(',', '.'), errors='coerce')
+
     df_copy.fillna(0, inplace=True)
     return df_copy
 
