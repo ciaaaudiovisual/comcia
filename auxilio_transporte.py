@@ -84,7 +84,6 @@ def show_auxilio_transporte():
     NOME_TABELA_SOLDOS = "soldos"
     NOME_TABELA_ALUNOS = "Alunos"
     
-    # Define o "esquema" de colunas que o sistema espera no final.
     schema_esperado = [
         'numero_interno', 'nome_completo', 'graduacao', 'dias_uteis', 'ano_referencia',
         'endereco', 'bairro', 'cidade', 'cep'
@@ -207,19 +206,21 @@ def show_auxilio_transporte():
 
             if dados_aluno or modo == "Adicionar Novo Cadastro":
                 with st.form("form_edicao_individual"):
-                st.markdown("#### Dados Pessoais e de Referência")
-                
-                # No modo de adição, os campos principais são editáveis; no modo de edição, são bloqueados.
-                if modo == "Adicionar Novo Cadastro":
-                    dados_aluno['numero_interno'] = st.text_input("Número Interno (NIP)*", value=dados_aluno.get('numero_interno', ''))
-                    dados_aluno['nome_completo'] = st.text_input("Nome Completo*", value=dados_aluno.get('nome_completo', ''))
-                    dados_aluno['graduacao'] = st.text_input("Graduação*", value=dados_aluno.get('graduacao', ''))
-                else:
-                    st.text_input("Número Interno (NIP)", value=dados_aluno.get('numero_interno', ''), disabled=True)
-                    st.text_input("Nome Completo", value=dados_aluno.get('nome_completo', ''), disabled=True)
-                    st.text_input("Graduação", value=dados_aluno.get('graduacao', ''), disabled=True)
-
-                dados_aluno['ano_referencia'] = st.number_input("Ano de Referência", value=int(dados_aluno.get('ano_referencia', 2025)))
+                    # --- CORREÇÃO DE INDENTAÇÃO A PARTIR DAQUI ---
+                    st.markdown("#### Dados Pessoais e de Referência")
+                    c1, c2, c3 = st.columns(3)
+                    
+                    if modo == "Adicionar Novo Cadastro":
+                        dados_aluno['numero_interno'] = c1.text_input("Número Interno (NIP)*", value=dados_aluno.get('numero_interno', ''))
+                        dados_aluno['nome_completo'] = c2.text_input("Nome Completo*", value=dados_aluno.get('nome_completo', ''))
+                        dados_aluno['graduacao'] = c3.text_input("Graduação*", value=dados_aluno.get('graduacao', ''))
+                    else:
+                        c1.text_input("Número Interno (NIP)", value=dados_aluno.get('numero_interno', ''), disabled=True)
+                        c2.text_input("Nome Completo", value=dados_aluno.get('nome_completo', ''), disabled=True)
+                        c3.text_input("Graduação", value=dados_aluno.get('graduacao', ''), disabled=True)
+                    
+                    dados_aluno['ano_referencia'] = st.number_input("Ano de Referência", value=int(dados_aluno.get('ano_referencia', 2025)))
+           
                 
                 st.markdown("#### Endereço")
                 c4, c5 = st.columns([3, 1])
