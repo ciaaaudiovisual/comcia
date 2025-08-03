@@ -179,69 +179,121 @@ def show_auxilio_transporte():
             st.error(f"Erro ao carregar dados existentes: {e}")
 
 
-    # --- ABA 2: EDIÇÃO INDIVIDUAL (NOVA FUNCIONALIDADE) ---
+    Com certeza. Abaixo está o código na íntegra para a Aba 2: Edição Individual, já com a lógica atualizada que permite tanto editar um cadastro existente quanto adicionar um novo.
+
+Pode substituir todo o bloco with tab2: no seu ficheiro auxilio_transporte.py por este código.
+
+Código Íntegral para a "Aba 2: Edição Individual"
+Python
+
+    # --- ABA 2: EDIÇÃO INDIVIDUAL (ATUALIZADA) ---
     with tab2:
-        st.subheader("Editar Cadastro Individual")
-        if dados_completos_df.empty:
-            st.warning("Não há dados para editar.")
-        else:
-            # Selecionar o militar para edição
-            nomes_para_selecao = dados_completos_df['nome_completo'].tolist()
-            aluno_selecionado = st.selectbox("Selecione um militar para editar:", options=[""] + nomes_para_selecao)
+        st.subheader("Adicionar ou Editar Cadastro Individual")
+        
+        # Carrega a lista de alunos para preenchimento automático
+        alunos_df = load_data(NOME_TABELA_ALUNOS)
+        
+        # Opção para o usuário escolher entre adicionar ou editar
+        modo = st.radio("Selecione a Ação:", ["Editar um Cadastro Existente", "Adicionar Novo Cadastro"], horizontal=True)
+        
+        dados_aluno = {}
+        
+        if modo == "Editar um Cadastro Existente":
+            if dados_completos_df.empty:
+                st.warning("Não há dados para editar na tabela de auxílio transporte.")
+            else:
+                nomes_para_selecao = [""] + sorted(dados_completos_df['nome_completo'].unique())
+                aluno_selecionado = st.selectbox("Selecione um militar para editar:", options=nomes_para_selecao, key="editar_aluno_select")
+                if aluno_selecionado:
+                    # Pega os dados do DataFrame já carregado e processado
+                    dados_aluno = dados_completos_df[dados_completos_df['nome_completo'] == aluno_selecionado].iloc[0].to_dict()
 
-            if aluno_selecionado:
-                # Pega a primeira ocorrência do nome selecionado
-                dados_aluno = dados_completos_df[dados_completos_df['nome_completo'] == aluno_selecionado].iloc[0].to_dict()
+        else: # Modo Adicionar Novo Cadastro
+            st.info("Preencha os dados abaixo para um novo cadastro. Você pode buscar um aluno da lista geral para preencher os dados básicos.")
+            # Busca inteligente a partir da tabela de Alunos
+            if not alunos_df.empty:
+                opcoes_alunos = [""] + sorted(alunos_df['nome_completo'].unique())
+                aluno_base = st.selectbox("Buscar dados de um aluno existente para preencher:", options=opcoes_alunos, key="adicionar_aluno_select")
+                if aluno_base:
+                    # Pega os dados da tabela Alunos como base
+                    dados_aluno = alunos_df[alunos_df['nome_completo'] == aluno_base].iloc[0].to_dict()
+
+        # O formulário é exibido se estivermos editando um aluno selecionado ou no modo de adição
+        if dados_aluno or modo == "Adicionar Novo Cadastro":
+            with st.form("form_edicao_individual"):
+                st.markdown("#### Dados Pessoais e de Referência")
                 
-                with st.form("form_edicao_individual"):
-                    st.markdown("#### Dados Pessoais e de Referência")
-                    c1, c2, c3 = st.columns(3)
-                    dados_aluno['nome_completo'] = c1.text_input("Nome Completo", value=dados_aluno.get('nome_completo', ''), disabled=True)
-                    dados_aluno['graduacao'] = c2.text_input("Graduação", value=dados_aluno.get('graduacao', ''), disabled=True)
-                    dados_aluno['ano_referencia'] = c3.number_input("Ano de Referência", value=int(dados_aluno.get('ano_referencia', 2025)))
+                # No modo de adição, os campos principais são editáveis; no modo de edição, são bloqueados.
+                if modo == "Adicionar Novo Cadastro":
+                    dados_aluno['numero_interno'] = st.text_input("Número Interno (NIP)*", value=dados_aluno.get('numero_interno', ''))
+                    dados_aluno['nome_completo'] = st.text_input("Nome Completo*", value=dados_aluno.get('nome_completo', ''))
+                    dados_aluno['graduacao'] = st.text_input("Graduação*", value=dados_aluno.get('graduacao', ''))
+                else:
+                    st.text_input("Número Interno (NIP)", value=dados_aluno.get('numero_interno', ''), disabled=True)
+                    st.text_input("Nome Completo", value=dados_aluno.get('nome_completo', ''), disabled=True)
+                    st.text_input("Graduação", value=dados_aluno.get('graduacao', ''), disabled=True)
 
-                    st.markdown("#### Endereço")
-                    c4, c5 = st.columns([3, 1])
-                    dados_aluno['endereco'] = c4.text_input("Endereço", value=dados_aluno.get('endereco', ''))
-                    dados_aluno['bairro'] = c5.text_input("Bairro", value=dados_aluno.get('bairro', ''))
-                    c6, c7 = st.columns(2)
-                    dados_aluno['cidade'] = c6.text_input("Cidade", value=dados_aluno.get('cidade', ''))
-                    dados_aluno['cep'] = c7.text_input("CEP", value=dados_aluno.get('cep', ''))
-                    
-                    st.markdown("#### Itinerários")
-                    dados_aluno['dias_uteis'] = st.number_input("Dias Úteis (máx 22)", min_value=0, max_value=22, value=int(dados_aluno.get('dias_uteis', 22)))
-                    
-                    for i in range(1, 6):
-                        with st.expander(f"{i}º Trajeto"):
-                            col_ida, col_volta = st.columns(2)
-                            with col_ida:
-                                st.markdown(f"**Ida {i}**")
-                                dados_aluno[f'ida_{i}_empresa'] = st.text_input(f"Empresa Ida {i}", value=dados_aluno.get(f'ida_{i}_empresa', ''), key=f'ida_emp_{i}')
-                                dados_aluno[f'ida_{i}_linha'] = st.text_input(f"Linha Ida {i}", value=dados_aluno.get(f'ida_{i}_linha', ''), key=f'ida_lin_{i}')
-                                dados_aluno[f'ida_{i}_tarifa'] = st.number_input(f"Tarifa Ida {i}", min_value=0.0, value=float(dados_aluno.get(f'ida_{i}_tarifa', 0.0)), format="%.2f", key=f'ida_tar_{i}')
-                            with col_volta:
-                                st.markdown(f"**Volta {i}**")
-                                dados_aluno[f'volta_{i}_empresa'] = st.text_input(f"Empresa Volta {i}", value=dados_aluno.get(f'volta_{i}_empresa', ''), key=f'vol_emp_{i}')
-                                dados_aluno[f'volta_{i}_linha'] = st.text_input(f"Linha Volta {i}", value=dados_aluno.get(f'volta_{i}_linha', ''), key=f'vol_lin_{i}')
-                                dados_aluno[f'volta_{i}_tarifa'] = st.number_input(f"Tarifa Volta {i}", min_value=0.0, value=float(dados_aluno.get(f'volta_{i}_tarifa', 0.0)), format="%.2f", key=f'vol_tar_{i}')
+                dados_aluno['ano_referencia'] = st.number_input("Ano de Referência", value=int(dados_aluno.get('ano_referencia', 2025)))
+                
+                st.markdown("#### Endereço")
+                c4, c5 = st.columns([3, 1])
+                dados_aluno['endereco'] = c4.text_input("Endereço", value=dados_aluno.get('endereco', ''))
+                dados_aluno['bairro'] = c5.text_input("Bairro", value=dados_aluno.get('bairro', ''))
+                c6, c7 = st.columns(2)
+                dados_aluno['cidade'] = c6.text_input("Cidade", value=dados_aluno.get('cidade', ''))
+                dados_aluno['cep'] = c7.text_input("CEP", value=dados_aluno.get('cep', ''))
+                
+                st.markdown("#### Itinerários")
+                dados_aluno['dias_uteis'] = st.number_input("Dias Úteis (máx 22)", min_value=0, max_value=22, value=int(dados_aluno.get('dias_uteis', 22)))
+                
+                for i in range(1, 6):
+                    with st.expander(f"{i}º Trajeto"):
+                        col_ida, col_volta = st.columns(2)
+                        with col_ida:
+                            st.markdown(f"**Ida {i}**")
+                            dados_aluno[f'ida_{i}_empresa'] = st.text_input(f"Empresa Ida {i}", value=dados_aluno.get(f'ida_{i}_empresa', ''), key=f'ida_emp_{i}')
+                            dados_aluno[f'ida_{i}_linha'] = st.text_input(f"Linha Ida {i}", value=dados_aluno.get(f'ida_{i}_linha', ''), key=f'ida_lin_{i}')
+                            dados_aluno[f'ida_{i}_tarifa'] = st.number_input(f"Tarifa Ida {i}", min_value=0.0, value=float(dados_aluno.get(f'ida_{i}_tarifa', 0.0)), format="%.2f", key=f'ida_tar_{i}')
+                        with col_volta:
+                            st.markdown(f"**Volta {i}**")
+                            dados_aluno[f'volta_{i}_empresa'] = st.text_input(f"Empresa Volta {i}", value=dados_aluno.get(f'volta_{i}_empresa', ''), key=f'vol_emp_{i}')
+                            dados_aluno[f'volta_{i}_linha'] = st.text_input(f"Linha Volta {i}", value=dados_aluno.get(f'volta_{i}_linha', ''), key=f'vol_lin_{i}')
+                            dados_aluno[f'volta_{i}_tarifa'] = st.number_input(f"Tarifa Volta {i}", min_value=0.0, value=float(dados_aluno.get(f'volta_{i}_tarifa', 0.0)), format="%.2f", key=f'vol_tar_{i}')
 
-                    # --- CAMPOS CALCULADOS (APENAS VISUALIZAÇÃO) ---
-                    st.markdown("---")
-                    st.markdown("#### Valores Calculados (Atualizados em tempo real)")
-                    valores_calculados = calcular_auxilio_transporte(dados_aluno)
-                    c8, c9, c10, c11, c12 = st.columns(5)
-                    c8.metric("Soldo", f"R$ {dados_aluno.get('soldo', 0.0):,.2f}")
-                    c9.metric("Despesa Diária", f"R$ {valores_calculados.get('despesa_diaria', 0.0):,.2f}")
-                    c10.metric("Despesa Mensal", f"R$ {valores_calculados.get('despesa_mensal_total', 0.0):,.2f}")
-                    c11.metric("Desconto 6%", f"R$ {valores_calculados.get('parcela_descontada_6_porcento', 0.0):,.2f}")
-                    c12.metric("Valor a Receber", f"R$ {valores_calculados.get('auxilio_transporte_pago', 0.0):,.2f}")
+                # --- CAMPOS CALCULADOS (APENAS VISUALIZAÇÃO) ---
+                st.markdown("---")
+                st.markdown("#### Valores Calculados (Atualizados em tempo real)")
+                # Para calcular, precisamos do soldo. Buscamos ele na tabela de soldos.
+                soldos_df = load_data(NOME_TABELA_SOLDOS)
+                soldo_do_aluno = 0.0
+                if not soldos_df.empty and 'graduacao' in dados_aluno:
+                    graduacao_upper = str(dados_aluno['graduacao']).upper().strip()
+                    soldos_df['graduacao_upper'] = soldos_df['graduacao'].astype(str).str.upper().str.strip()
+                    resultado_soldo = soldos_df[soldos_df['graduacao_upper'] == graduacao_upper]
+                    if not resultado_soldo.empty:
+                        soldo_do_aluno = resultado_soldo['soldo'].iloc[0]
+                dados_aluno['soldo'] = soldo_do_aluno
+                
+                valores_calculados = calcular_auxilio_transporte(dados_aluno)
+                c8, c9, c10, c11, c12 = st.columns(5)
+                c8.metric("Soldo", f"R$ {dados_aluno.get('soldo', 0.0):,.2f}")
+                c9.metric("Despesa Diária", f"R$ {valores_calculados.get('despesa_diaria', 0.0):,.2f}")
+                c10.metric("Despesa Mensal", f"R$ {valores_calculados.get('despesa_mensal_total', 0.0):,.2f}")
+                c11.metric("Desconto 6%", f"R$ {valores_calculados.get('parcela_descontada_6_porcento', 0.0):,.2f}")
+                c12.metric("Valor a Receber", f"R$ {valores_calculados.get('auxilio_pago', 0.0):,.2f}")
 
-                    if st.form_submit_button("Salvar Alterações", type="primary"):
+                if st.form_submit_button("Salvar Dados", type="primary"):
+                    if not dados_aluno.get('numero_interno') or not dados_aluno.get('nome_completo') or not dados_aluno.get('graduacao'):
+                        st.error("Os campos 'Número Interno', 'Nome Completo' e 'Graduação' são obrigatórios.")
+                    else:
                         with st.spinner("Salvando..."):
                             try:
-                                # Prepara o dicionário para salvar, removendo os campos calculados e o 'id'
+                                # Prepara o dicionário para salvar, removendo campos que não pertencem a esta tabela
                                 dados_para_salvar = dados_aluno.copy()
-                                campos_a_remover = ['id', 'created_at', 'despesa_diaria', 'despesa_mensal_total', 'parcela_descontada_6_porcento', 'auxilio_transporte_pago']
+                                campos_a_remover = [
+                                    'id', 'created_at', 'soldo', 'despesa_diaria', 'despesa_mensal_total', 
+                                    'parcela_descontada_6_porcento', 'auxilio_pago', 'om', 'status', 'turma'
+                                ]
                                 for campo in campos_a_remover:
                                     dados_para_salvar.pop(campo, None)
 
@@ -249,8 +301,9 @@ def show_auxilio_transporte():
                                     dados_para_salvar,
                                     on_conflict='numero_interno,ano_referencia'
                                 ).execute()
-                                st.success(f"Dados do(a) militar {aluno_selecionado} salvos com sucesso!")
-                                carregar_dados_completos.clear() # Limpa o cache para recarregar os dados
+                                st.success(f"Dados salvos com sucesso!")
+                                carregar_dados_completos.clear()
+                                st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao salvar: {e}")
 
