@@ -186,7 +186,7 @@ Pode substituir todo o bloco with tab2: no seu ficheiro auxilio_transporte.py po
 Código Íntegral para a "Aba 2: Edição Individual"
 Python
 
-    # --- ABA 2: EDIÇÃO INDIVIDUAL (ATUALIZADA) ---
+    ## --- ABA 2: EDIÇÃO INDIVIDUAL (ATUALIZADA) ---
     with tab2:
         st.subheader("Adicionar ou Editar Cadastro Individual")
         
