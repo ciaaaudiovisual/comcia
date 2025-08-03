@@ -98,7 +98,9 @@ def show_auxilio_transporte():
     supabase = init_supabase_client()
     NOME_TABELA_TRANSPORTE = "auxilio_transporte_dados"
     NOME_TABELA_SOLDOS = "soldos"
-    
+
+    dados_completos_df = pd.DataFrame() 
+
     # Define o "esquema" de colunas que o sistema espera no final.
     schema_esperado = [
         'numero_interno', 'nome_completo', 'graduacao', 'dias_uteis', 'ano_referencia',
