@@ -83,24 +83,29 @@ def show_auxilio_transporte():
     NOME_TABELA_TRANSPORTE = "auxilio_transporte_dados"
     NOME_TABELA_SOLDOS = "soldos"
     
-    # Carregamento e junção dos dados (feito uma vez no início)
-    @st.cache_data(ttl=600)
+ @st.cache_data(ttl=600)
     def carregar_dados_completos():
         df_transporte = load_data(NOME_TABELA_TRANSPORTE)
         df_soldos = load_data(NOME_TABELA_SOLDOS)
         
+        # --- CORREÇÃO: VERIFICA SE AS TABELAS ESTÃO VAZIAS ANTES DE PROCESSAR ---
+        if df_transporte.empty:
+            # Se a tabela principal estiver vazia, avisa o usuário e retorna um DataFrame vazio.
+            st.warning(f"A tabela '{NOME_TABELA_TRANSPORTE}' está vazia. Não há dados para processar.")
+            return pd.DataFrame()
+
+        if df_soldos.empty:
+            # Se a tabela de soldos estiver vazia, avisa, mas continua (o soldo será 0).
+            st.warning(f"A tabela '{NOME_TABELA_SOLDOS}' está vazia. Não será possível associar os soldos.")
+            df_soldos = pd.DataFrame(columns=['graduacao', 'soldo'])
+
+        # O código abaixo só será executado se a tabela de transporte tiver dados
         df_transporte['graduacao'] = df_transporte['graduacao'].astype(str).str.strip().str.upper()
         df_soldos['graduacao'] = df_soldos['graduacao'].astype(str).str.strip().str.upper()
 
         df_completo = pd.merge(df_transporte, df_soldos[['graduacao', 'soldo']], on='graduacao', how='left')
         df_completo['soldo'].fillna(0, inplace=True)
         return df_completo
-
-    try:
-        dados_completos_df = carregar_dados_completos()
-    except Exception as e:
-        st.error(f"Erro ao carregar dados do Supabase: {e}")
-        st.stop()
 
     # --- ABA 1: TABELA GERAL ---
     with tab1:
