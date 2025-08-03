@@ -80,40 +80,93 @@ def show_auxilio_transporte():
     ])
 
     supabase = init_supabase_client()
-
+ --- ABA 1: TABELA GERAL ---
     with tab1:
-        st.subheader("Carregar e Editar Ficheiro de Dados")
-        uploaded_file = st.file_uploader("Carregue o seu ficheiro CSV", type="csv", key="aux_transp_uploader")
+        st.subheader("Visualizar e Filtrar Tabela Geral")
+        if dados_completos_df.empty:
+            st.warning("Nenhum dado encontrado na tabela.")
+        else:
+            # Filtros (semelhante ao que já tínhamos)
+            nomes_unicos = sorted(dados_completos_df['nome_completo'].dropna().unique())
+            selecionados = st.multiselect("Filtrar por Nome:", options=nomes_unicos)
+            df_filtrado = dados_completos_df[dados_completos_df['nome_completo'].isin(selecionados)] if selecionados else dados_completos_df
+            st.dataframe(df_filtrado)
 
-        if uploaded_file:
-            if st.button(f"Processar Ficheiro: {uploaded_file.name}", type="primary"):
-                with st.spinner("Processando..."):
-                    try:
-                        if 'dados_do_csv' in st.session_state:
-                            del st.session_state['dados_do_csv']
-                        df_csv = pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
-                        df_preparado = preparar_dataframe(df_csv)
-                        st.session_state['dados_do_csv'] = df_preparado
-                        st.session_state['nome_ficheiro'] = uploaded_file.name
-                        st.success("Ficheiro processado! Os dados estão prontos para edição abaixo.")
-                    except Exception as e:
-                        st.error(f"Erro ao ler o ficheiro: {e}")
-                        st.error(traceback.format_exc())
-
-        if 'dados_do_csv' in st.session_state:
-            st.markdown("---")
-            st.markdown("##### Tabela de Dados para Edição")
-            st.info("Faça as correções necessárias na tabela. As alterações serão usadas nas próximas abas.")
-
-            df_editado = st.data_editor(
-                st.session_state['dados_do_csv'],
-                num_rows="dynamic",
-                use_container_width=True,
-                key="data_editor_transporte"
-            )
-            st.session_state['dados_do_csv'] = df_editado
-
+    # --- ABA 2: EDIÇÃO INDIVIDUAL (NOVA FUNCIONALIDADE) ---
     with tab2:
+        st.subheader("Editar Cadastro Individual")
+        if dados_completos_df.empty:
+            st.warning("Não há dados para editar.")
+        else:
+            # Selecionar o militar para edição
+            nomes_para_selecao = dados_completos_df['nome_completo'].tolist()
+            aluno_selecionado = st.selectbox("Selecione um militar para editar:", options=[""] + nomes_para_selecao)
+
+            if aluno_selecionado:
+                # Pega a primeira ocorrência do nome selecionado
+                dados_aluno = dados_completos_df[dados_completos_df['nome_completo'] == aluno_selecionado].iloc[0].to_dict()
+                
+                with st.form("form_edicao_individual"):
+                    st.markdown("#### Dados Pessoais e de Referência")
+                    c1, c2, c3 = st.columns(3)
+                    dados_aluno['nome_completo'] = c1.text_input("Nome Completo", value=dados_aluno.get('nome_completo', ''), disabled=True)
+                    dados_aluno['graduacao'] = c2.text_input("Graduação", value=dados_aluno.get('graduacao', ''), disabled=True)
+                    dados_aluno['ano_referencia'] = c3.number_input("Ano de Referência", value=int(dados_aluno.get('ano_referencia', 2025)))
+
+                    st.markdown("#### Endereço")
+                    c4, c5 = st.columns([3, 1])
+                    dados_aluno['endereco'] = c4.text_input("Endereço", value=dados_aluno.get('endereco', ''))
+                    dados_aluno['bairro'] = c5.text_input("Bairro", value=dados_aluno.get('bairro', ''))
+                    c6, c7 = st.columns(2)
+                    dados_aluno['cidade'] = c6.text_input("Cidade", value=dados_aluno.get('cidade', ''))
+                    dados_aluno['cep'] = c7.text_input("CEP", value=dados_aluno.get('cep', ''))
+                    
+                    st.markdown("#### Itinerários")
+                    dados_aluno['dias_uteis'] = st.number_input("Dias Úteis (máx 22)", min_value=0, max_value=22, value=int(dados_aluno.get('dias_uteis', 22)))
+                    
+                    for i in range(1, 6):
+                        with st.expander(f"{i}º Trajeto"):
+                            col_ida, col_volta = st.columns(2)
+                            with col_ida:
+                                st.markdown(f"**Ida {i}**")
+                                dados_aluno[f'ida_{i}_empresa'] = st.text_input(f"Empresa Ida {i}", value=dados_aluno.get(f'ida_{i}_empresa', ''), key=f'ida_emp_{i}')
+                                dados_aluno[f'ida_{i}_linha'] = st.text_input(f"Linha Ida {i}", value=dados_aluno.get(f'ida_{i}_linha', ''), key=f'ida_lin_{i}')
+                                dados_aluno[f'ida_{i}_tarifa'] = st.number_input(f"Tarifa Ida {i}", min_value=0.0, value=float(dados_aluno.get(f'ida_{i}_tarifa', 0.0)), format="%.2f", key=f'ida_tar_{i}')
+                            with col_volta:
+                                st.markdown(f"**Volta {i}**")
+                                dados_aluno[f'volta_{i}_empresa'] = st.text_input(f"Empresa Volta {i}", value=dados_aluno.get(f'volta_{i}_empresa', ''), key=f'vol_emp_{i}')
+                                dados_aluno[f'volta_{i}_linha'] = st.text_input(f"Linha Volta {i}", value=dados_aluno.get(f'volta_{i}_linha', ''), key=f'vol_lin_{i}')
+                                dados_aluno[f'volta_{i}_tarifa'] = st.number_input(f"Tarifa Volta {i}", min_value=0.0, value=float(dados_aluno.get(f'volta_{i}_tarifa', 0.0)), format="%.2f", key=f'vol_tar_{i}')
+
+                    # --- CAMPOS CALCULADOS (APENAS VISUALIZAÇÃO) ---
+                    st.markdown("---")
+                    st.markdown("#### Valores Calculados (Atualizados em tempo real)")
+                    valores_calculados = calcular_auxilio_transporte(dados_aluno)
+                    c8, c9, c10, c11, c12 = st.columns(5)
+                    c8.metric("Soldo", f"R$ {dados_aluno.get('soldo', 0.0):,.2f}")
+                    c9.metric("Despesa Diária", f"R$ {valores_calculados.get('despesa_diaria', 0.0):,.2f}")
+                    c10.metric("Despesa Mensal", f"R$ {valores_calculados.get('despesa_mensal_total', 0.0):,.2f}")
+                    c11.metric("Desconto 6%", f"R$ {valores_calculados.get('parcela_descontada_6_porcento', 0.0):,.2f}")
+                    c12.metric("Valor a Receber", f"R$ {valores_calculados.get('auxilio_transporte_pago', 0.0):,.2f}")
+
+                    if st.form_submit_button("Salvar Alterações", type="primary"):
+                        with st.spinner("Salvando..."):
+                            try:
+                                # Prepara o dicionário para salvar, removendo os campos calculados e o 'id'
+                                dados_para_salvar = dados_aluno.copy()
+                                campos_a_remover = ['id', 'created_at', 'despesa_diaria', 'despesa_mensal_total', 'parcela_descontada_6_porcento', 'auxilio_transporte_pago']
+                                for campo in campos_a_remover:
+                                    dados_para_salvar.pop(campo, None)
+
+                                supabase.table(NOME_TABELA_TRANSPORTE).upsert(
+                                    dados_para_salvar,
+                                    on_conflict='numero_interno,ano_referencia'
+                                ).execute()
+                                st.success(f"Dados do(a) militar {aluno_selecionado} salvos com sucesso!")
+                                carregar_dados_completos.clear() # Limpa o cache para recarregar os dados
+                            except Exception as e:
+                                st.error(f"Erro ao salvar: {e}")
+    with tab3:
         st.subheader("Gerenciar Tabela de Soldos")
         st.info("As alterações feitas aqui são salvas diretamente no Supabase.")
         try:
@@ -143,7 +196,7 @@ def show_auxilio_transporte():
         except Exception as e:
             st.error(f"Erro ao carregar ou salvar soldos: {e}")
 
-    with tab3:
+    with tab4:
         st.subheader("Mapear Campos do PDF")
         if 'dados_do_csv' not in st.session_state:
             st.warning("Por favor, carregue um ficheiro na aba '1. Carregar & Editar Ficheiro'.")
@@ -181,23 +234,39 @@ def show_auxilio_transporte():
                     st.error(f"Erro ao processar o PDF: {e}")
 
 
-    with tab4:
+    with tab5:
         st.subheader("Gerar Documentos Finais")
-        if 'dados_do_csv' not in st.session_state:
-            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar & Editar Ficheiro'.")
-        elif 'mapeamento_pdf' not in st.session_state or 'pdf_template_bytes' not in st.session_state:
-            st.warning("Por favor, carregue o modelo PDF e salve o mapeamento na aba '3. Mapeamento PDF'.")
-        else:
-            df_do_csv = st.session_state['dados_do_csv'].copy()
-            
-            with st.spinner("Buscando soldos e juntando dados..."):
+        st.info("Esta aba agora pode usar tanto os dados do CSV carregado quanto os dados salvos no banco de dados.")
+
+        # Opção para o utilizador escolher a fonte dos dados
+        fonte_dados = st.radio(
+            "Escolha a fonte de dados para gerar os PDFs:",
+            ["Usar dados do ficheiro CSV carregado nesta sessão", "Usar dados permanentes do Banco de Dados"],
+            horizontal=True
+        )
+
+        df_para_processar = None
+        if fonte_dados == "Usar dados do ficheiro CSV carregado nesta sessão":
+            if 'dados_do_csv' in st.session_state:
+                df_para_processar = st.session_state['dados_do_csv'].copy()
+            else:
+                st.warning("Nenhum ficheiro CSV foi carregado nesta sessão. Por favor, carregue um ficheiro na Aba 1.")
+        
+        else: # Usar dados do Banco de Dados
+            with st.spinner("Carregando dados do Supabase..."):
+                df_para_processar = load_data(NOME_TABELA_TRANSPORTE)
+
+        if df_para_processar is not None and not df_para_processar.empty:
+            with st.spinner("Buscando soldos atualizados e juntando dados..."):
+                # A lógica de junção e cálculo continua a mesma
                 df_soldos_atual = load_data("soldos")
-                df_do_csv['graduacao'] = df_do_csv['graduacao'].astype(str).str.strip()
+                df_para_processar['graduacao'] = df_para_processar['graduacao'].astype(str).str.strip()
                 df_soldos_atual['graduacao'] = df_soldos_atual['graduacao'].astype(str).str.strip()
-                df_completo = pd.merge(df_do_csv, df_soldos_atual[['graduacao', 'soldo']], on='graduacao', how='left')
+                df_completo = pd.merge(df_para_processar, df_soldos_atual[['graduacao', 'soldo']], on='graduacao', how='left')
                 df_completo['soldo'].fillna(0, inplace=True)
                 calculos_df = df_completo.apply(calcular_auxilio_transporte, axis=1)
                 df_com_calculo = pd.concat([df_completo, calculos_df], axis=1)
+
 
             st.markdown("#### Filtro para Seleção")
             nomes_validos = df_com_calculo['nome_completo'].dropna().unique()
