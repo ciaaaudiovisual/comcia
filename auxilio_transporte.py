@@ -61,9 +61,8 @@ def show_auxilio_transporte():
     st.header("🚌 Gestão de Auxílio Transporte")
     st.markdown("---")
 
-    # A nova estrutura de abas
     tab1, tab2, tab3, tab4 = st.tabs([
-        "1. Carregar Ficheiro de Dados", 
+        "1. Carregar & Editar Dados", 
         "2. Gerenciar Tabela de Soldos", 
         "3. Mapeamento do PDF", 
         "4. Gerar Documentos"
@@ -71,49 +70,63 @@ def show_auxilio_transporte():
 
     supabase = init_supabase_client()
 
-    # --- ABA 1: CARREGAR E EDITAR ---
+    # --- ABA 1: CARREGAR, JUNTAR E EDITAR DADOS ---
     with tab1:
-        st.subheader("Carregar Ficheiro de Dados")
-
-        # Mostra o ficheiro em memória e dá a opção de limpar
-        if 'dados_em_memoria' in st.session_state:
-            st.info(f"Ficheiro em memória: **{st.session_state['nome_ficheiro']}**")
-            if st.button("🗑️ Limpar Ficheiro e Recomeçar"):
-                for key in ['dados_em_memoria', 'nome_ficheiro', 'mapeamento_pdf', 'resultados_para_pdf']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.rerun()
-
-        uploaded_file = st.file_uploader("Carregue o seu ficheiro CSV", type="csv")
+        st.subheader("Carregar Ficheiro e Preparar Dados")
+        
+        uploaded_file = st.file_uploader("Carregue o seu ficheiro CSV de dados", type="csv")
 
         if uploaded_file:
             if st.button(f"Processar Ficheiro: {uploaded_file.name}", type="primary"):
-                with st.spinner("Processando..."):
+                with st.spinner("Processando ficheiro e buscando soldos..."):
                     try:
-                        df = pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
-                        df_preparado = preparar_dataframe(df)
-                        st.session_state['dados_em_memoria'] = df_preparado
-                        st.session_state['nome_ficheiro'] = uploaded_file.name
-                        st.success("Ficheiro processado! Pode editar os dados abaixo ou ir para as próximas abas.")
-                    except Exception as e:
-                        st.error(f"Erro ao ler ou preparar o ficheiro: {e}")
+                        # 1. Lê e prepara o CSV
+                        df_csv = pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
+                        df_preparado = preparar_dataframe(df_csv)
 
-        # Lógica de edição que só aparece se um ficheiro estiver carregado
-        if 'dados_em_memoria' in st.session_state:
+                        # 2. Carrega a tabela de soldos mais recente do Supabase
+                        df_soldos_atual = load_data("soldos")
+                        
+                        # 3. Prepara as chaves para a junção
+                        df_preparado['graduacao'] = df_preparado['graduacao'].astype(str).str.strip()
+                        df_soldos_atual['graduacao'] = df_soldos_atual['graduacao'].astype(str).str.strip()
+
+                        # 4. JUNÇÃO IMEDIATA: Adiciona o soldo aos dados do CSV
+                        df_completo = pd.merge(
+                            df_preparado,
+                            df_soldos_atual[['graduacao', 'soldo']],
+                            on='graduacao',
+                            how='left'
+                        )
+                        df_completo['soldo'].fillna(0, inplace=True)
+                        
+                        # 5. Armazena o DataFrame completo na sessão
+                        st.session_state['dados_completos'] = df_completo
+                        st.session_state['nome_ficheiro'] = uploaded_file.name
+                        st.success("Dados carregados e combinados com os soldos com sucesso!")
+
+                    except Exception as e:
+                        st.error(f"Erro ao processar: {e}")
+
+        if 'dados_completos' in st.session_state:
             st.markdown("---")
             st.markdown("##### Tabela de Dados para Edição")
-            st.info("As alterações feitas aqui são usadas nas outras abas. Para salvá-las permanentemente, baixe o CSV editado.")
+            st.info("A coluna 'Soldo' foi adicionada dinamicamente. As alterações feitas aqui serão usadas nas outras abas.")
 
+            # O editor agora opera sobre os dados já com o soldo
             df_editado = st.data_editor(
-                st.session_state['dados_em_memoria'], num_rows="dynamic", use_container_width=True
+                st.session_state['dados_completos'], num_rows="dynamic", use_container_width=True
             )
-            st.session_state['dados_em_memoria'] = df_editado # Atualiza a sessão com os dados editados
+            st.session_state['dados_completos'] = df_editado # Atualiza a sessão com os dados editados
 
-            csv_editado = df_editado.to_csv(index=False, sep=';').encode('latin-1')
+            st.markdown("##### Exportar Dados Atuais (com Soldo)")
+            csv_completo = df_editado.to_csv(index=False, sep=';').encode('latin-1')
             st.download_button(
-                label="📥 Baixar CSV Editado", data=csv_editado,
-                file_name=f"dados_editados_{st.session_state['nome_ficheiro']}"
+                label="📥 Baixar CSV Completo (com Soldo)", data=csv_completo,
+                file_name=f"dados_completos_{st.session_state['nome_ficheiro']}"
             )
+
+
  --- ABA 2: GERENCIAR TABELA DE SOLDOS (NOVA FUNCIONALIDADE) ---
     with tab2:
         st.subheader("Gerenciar Tabela de Soldos no Banco de Dados")
@@ -152,39 +165,25 @@ def show_auxilio_transporte():
         except Exception as e:
             st.error(f"Erro ao carregar ou salvar a tabela de soldos: {e}")
 
-   # --- ABA 2: MAPEAMENTO DO PDF ---
+   # - --- ABA 3: MAPEAMENTO DO PDF ---
     with tab3:
-        st.subheader("Mapear Campos do PDF para os Dados da Tabela")
-    
-        # Verifica se os dados da Aba 1 estão disponíveis na sessão
-        if 'dados_em_memoria' not in st.session_state:
-            st.warning("Por favor, carregue e processe um ficheiro na aba '1. Carregar e Editar Dados' primeiro.")
+        st.subheader("Mapear Campos do PDF")
+        if 'dados_completos' not in st.session_state:
+            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar & Editar Dados'.")
         else:
-            st.info("Faça o upload do seu modelo PDF preenchível (.pdf). A aplicação irá ler os campos de formulário disponíveis.")
-    
-            # Uploader para o modelo PDF
-            pdf_template_file = st.file_uploader(
-                "Carregue o seu modelo PDF",
-                type="pdf",
-                key="pdf_mapper_uploader"
-            )
-    
+            st.info("Faça o upload do seu modelo PDF preenchível.")
+            pdf_template_file = st.file_uploader("Carregue o modelo PDF", type="pdf", key="pdf_mapper_uploader")
+            
             if pdf_template_file:
-                try:
-                    # Usa a biblioteca pypdf para ler os campos do formulário
-                    reader = PdfReader(BytesIO(pdf_template_file.getvalue()))
-                    pdf_fields = list(reader.get_form_text_fields().keys())
-    
-                    if not pdf_fields:
-                        st.warning("Atenção: Nenhum campo de formulário editável foi encontrado neste PDF. Verifique se o seu ficheiro é um formulário preenchível.")
-                    else:
-                        st.success(f"{len(pdf_fields)} campos de formulário encontrados no PDF.")
-    
-                        # Prepara a lista de colunas disponíveis para o mapeamento
-                        # Inclui as colunas originais e as que serão calculadas posteriormente
-                        df_cols = st.session_state['dados_em_memoria'].columns.tolist()
-                        calculated_cols = ['despesa_diaria', 'despesa_mensal_total', 'parcela_descontada_6_porcento', 'auxilio_transporte_pago']
-                        all_system_columns = ["-- Não Mapear Este Campo --"] + sorted(df_cols + calculated_cols)
+                # O CÓDIGO A SEGUIR IRÁ FUNCIONAR CORRETAMENTE AGORA
+                reader = PdfReader(BytesIO(pdf_template_file.getvalue()))
+                pdf_fields = list(reader.get_form_text_fields().keys())
+                
+                # A lista de colunas agora inclui 'soldo'
+                df_cols = st.session_state['dados_completos'].columns.tolist()
+                calculated_cols = ['despesa_diaria', 'despesa_mensal_total', 'parcela_descontada_6_porcento', 'auxilio_transporte_pago']
+                all_system_columns = ["-- Não Mapear --"] + sorted(df_cols + calculated_cols)
+                
     
                         # Carrega um mapeamento já salvo na sessão, se houver
                         saved_mapping = st.session_state.get('mapeamento_pdf', {})
@@ -222,34 +221,19 @@ def show_auxilio_transporte():
     
                 except Exception as e:
                     st.error(f"Ocorreu um erro ao processar o ficheiro PDF: {e}")
-#- ABA 4: GERAR DOCUMENTOS ---
+# --- ABA 4: GERAR DOCUMENTOS ---
     with tab4:
         st.subheader("Gerar Documentos Finais")
-        if 'dados_em_memoria' not in st.session_state:
-            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar Ficheiro de Dados'.")
+        if 'dados_completos' not in st.session_state:
+            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar & Editar Dados'.")
         else:
-            df_do_csv = st.session_state['dados_em_memoria'].copy()
+            df_final = st.session_state['dados_completos'].copy()
             
-            with st.spinner("Buscando soldos atualizados e juntando dados..."):
-                # Carrega a tabela de soldos mais recente do Supabase
-                df_soldos_atual = load_data("soldos")
-                
-                # Prepara as chaves para a junção
-                df_do_csv['graduacao'] = df_do_csv['graduacao'].astype(str).str.strip()
-                df_soldos_atual['graduacao'] = df_soldos_atual['graduacao'].astype(str).str.strip()
+            # O DataFrame já tem o soldo, então só precisamos calcular
+            with st.spinner("Calculando valores finais..."):
+                calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
+                df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
 
-                # JUNÇÃO DINÂMICA: Adiciona o soldo aos dados do CSV
-                df_completo = pd.merge(
-                    df_do_csv,
-                    df_soldos_atual[['graduacao', 'soldo']],
-                    on='graduacao',
-                    how='left'
-                )
-                df_completo['soldo'].fillna(0, inplace=True)
-
-                # Aplica os cálculos ao DataFrame completo
-                calculos_df = df_completo.apply(calcular_auxilio_transporte, axis=1)
-                df_com_calculo = pd.concat([df_completo, calculos_df], axis=1)
 
 
             st.markdown("#### Filtro para Seleção")
