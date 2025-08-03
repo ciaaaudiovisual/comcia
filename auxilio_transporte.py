@@ -12,6 +12,31 @@ from pypdf import PdfReader
 
 # --- Bloco de Funções Essenciais ---
 
+def clean_text(text):
+    """Função auxiliar para limpar e normalizar nomes de colunas para comparação."""
+    # Remove acentos, caracteres especiais e espaços, e converte para minúsculas
+    if not isinstance(text, str):
+        return ""
+    text = text.lower()
+    text = re.sub(r'[^a-z0-9]', '', text)
+    return text
+
+def apply_data_cleaning(df):
+    """Aplica as conversões de tipo e formatação final ao DataFrame já mapeado."""
+    df_copy = df.copy()
+    for col in df_copy.select_dtypes(include=['object']).columns:
+        df_copy[col] = df_copy[col].str.upper().str.strip()
+
+    colunas_numericas = ['dias_uteis', 'soldo'] + [f'ida_{i}_tarifa' for i in range(1, 6)] + [f'volta_{i}_tarifa' for i in range(1, 6)]
+    for col in colunas_numericas:
+        if col in df_copy.columns:
+            # Lógica de limpeza robusta para valores monetários
+            df_copy[col] = df_copy[col].astype(str).str.replace('R$', '', regex=False).str.strip()
+            df_copy[col] = pd.to_numeric(df_copy[col].str.replace(',', '.'), errors='coerce')
+    
+    df_copy.fillna(0, inplace=True)
+    return df_copy
+    
 def calcular_auxilio_transporte(linha):
     """Sua função de cálculo principal."""
     try:
@@ -62,9 +87,7 @@ def preparar_dataframe(df):
     df_copy.fillna(0, inplace=True)
     return df_copy
 
-def clean_text(text):
-    """Função auxiliar para limpar e normalizar nomes de colunas para comparação."""
-    return re.sub(r'[^a-z0-9]', '', text.lower())
+
 
 # --- Função Principal da Página ---
 def show_auxilio_transporte():
