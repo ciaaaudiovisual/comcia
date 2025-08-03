@@ -148,7 +148,7 @@ def show_auxilio_transporte():
                 colunas_do_csv = df_raw.columns.tolist()
 
                 st.markdown("##### Mapeamento de Colunas")
-                st.info("Verifique se a aplicação associou corretamente as colunas do seu ficheiro às colunas do sistema.")
+                st.info("Verifique e corrija as associações entre as colunas do seu ficheiro e as colunas do sistema.")
 
                 with st.form("mapping_form"):
                     mapeamento_usuario = {}
@@ -167,8 +167,14 @@ def show_auxilio_transporte():
 
                     if st.form_submit_button("1. Pré-visualizar Dados Mapeados"):
                         df_mapeado = pd.DataFrame()
+                        mapeamento_inverso = {}
                         for col_sistema, col_csv in mapeamento_usuario.items():
                             if col_csv != "-- Ignorar esta coluna --":
+                                # Evita que a mesma coluna do CSV seja usada para múltiplos campos do sistema
+                                if col_csv in mapeamento_inverso:
+                                    st.error(f"Erro: A coluna '{col_csv}' do seu ficheiro foi mapeada para mais de um campo do sistema ('{mapeamento_inverso[col_csv]}' e '{col_sistema}'). Por favor, corrija o mapeamento.")
+                                    st.stop()
+                                mapeamento_inverso[col_csv] = col_sistema
                                 df_mapeado[col_sistema] = df_raw[col_csv]
                         
                         st.session_state['df_mapeado_para_salvar'] = df_mapeado
@@ -180,28 +186,34 @@ def show_auxilio_transporte():
                     st.dataframe(df_preview)
 
                     if st.button("2. Confirmar e Salvar no Banco de Dados", type="primary"):
-                        with st.spinner("Processando e salvando..."):
-                            try:
-                                df_final_para_salvar = preparar_dataframe(df_preview)
-                                
-                                supabase.table(NOME_TABELA_TRANSPORTE).upsert(
-                                    df_final_para_salvar.to_dict(orient='records'),
-                                    on_conflict='numero_interno,ano_referencia'
-                                ).execute()
-                                
-                                st.success(f"{len(df_final_para_salvar)} registos foram adicionados/atualizados!")
-                                del st.session_state['df_mapeado_para_salvar']
-                                load_data.clear()
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Erro ao salvar no Supabase: {e}")
+                        if 'numero_interno' not in df_preview.columns:
+                            st.error("Erro fatal: A coluna 'numero_interno' é obrigatória e não foi mapeada. Não é possível salvar.")
+                        else:
+                            with st.spinner("Processando e salvando..."):
+                                try:
+                                    # Aplica a limpeza final (maiúsculas, tipos numéricos, etc.)
+                                    df_final_para_salvar = apply_data_cleaning(df_preview)
+                                    
+                                    supabase.table(NOME_TABELA_TRANSPORTE).upsert(
+                                        df_final_para_salvar.to_dict(orient='records'),
+                                        on_conflict='numero_interno,ano_referencia'
+                                    ).execute()
+                                    
+                                    st.success(f"{len(df_final_para_salvar)} registos foram adicionados/atualizados!")
+                                    del st.session_state['df_mapeado_para_salvar'] # Limpa a sessão
+                                    load_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao salvar no Supabase: {e}")
+                                    st.error(traceback.format_exc())
 
         st.markdown("---")
         st.subheader("Dados Atuais no Banco de Dados")
-        if not dados_completos_df.empty:
-            st.dataframe(dados_completos_df)
-        else:
-            st.warning("Nenhum dado encontrado.")
+        try:
+            dados_atuais = load_data(NOME_TABELA_TRANSPORTE)
+            st.dataframe(dados_atuais)
+        except Exception as e:
+            st.error(f"Erro ao carregar dados existentes: {e}")
 
 
    
