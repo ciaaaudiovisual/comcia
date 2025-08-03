@@ -124,19 +124,76 @@ def show_auxilio_transporte():
                 file_name=f"dados_editados_{st.session_state['nome_ficheiro']}"
             )
 
-    # --- ABA 2: MAPEAMENTO DO PDF ---
+   # --- ABA 2: MAPEAMENTO DO PDF ---
     with tab2:
-        st.subheader("Mapear Campos do PDF")
+        st.subheader("Mapear Campos do PDF para os Dados da Tabela")
+    
+        # Verifica se os dados da Aba 1 estão disponíveis na sessão
         if 'dados_em_memoria' not in st.session_state:
-            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
+            st.warning("Por favor, carregue e processe um ficheiro na aba '1. Carregar e Editar Dados' primeiro.")
         else:
-            st.info("Faça o upload do seu modelo PDF preenchível para mapear os campos.")
-            pdf_template = st.file_uploader("Carregue o modelo PDF", type="pdf", key="pdf_uploader")
-
-            if pdf_template:
-                # O código de mapeamento iria aqui, usando o pdf_template e os dados da sessão
-                st.info("Funcionalidade de mapeamento a ser implementada aqui.")
-
+            st.info("Faça o upload do seu modelo PDF preenchível (.pdf). A aplicação irá ler os campos de formulário disponíveis.")
+    
+            # Uploader para o modelo PDF
+            pdf_template_file = st.file_uploader(
+                "Carregue o seu modelo PDF",
+                type="pdf",
+                key="pdf_mapper_uploader"
+            )
+    
+            if pdf_template_file:
+                try:
+                    # Usa a biblioteca pypdf para ler os campos do formulário
+                    reader = PdfReader(BytesIO(pdf_template_file.getvalue()))
+                    pdf_fields = list(reader.get_form_text_fields().keys())
+    
+                    if not pdf_fields:
+                        st.warning("Atenção: Nenhum campo de formulário editável foi encontrado neste PDF. Verifique se o seu ficheiro é um formulário preenchível.")
+                    else:
+                        st.success(f"{len(pdf_fields)} campos de formulário encontrados no PDF.")
+    
+                        # Prepara a lista de colunas disponíveis para o mapeamento
+                        # Inclui as colunas originais e as que serão calculadas posteriormente
+                        df_cols = st.session_state['dados_em_memoria'].columns.tolist()
+                        calculated_cols = ['despesa_diaria', 'despesa_mensal_total', 'parcela_descontada_6_porcento', 'auxilio_transporte_pago']
+                        all_system_columns = ["-- Não Mapear Este Campo --"] + sorted(df_cols + calculated_cols)
+    
+                        # Carrega um mapeamento já salvo na sessão, se houver
+                        saved_mapping = st.session_state.get('mapeamento_pdf', {})
+    
+                        with st.form("pdf_mapping_form"):
+                            st.markdown("##### Mapeie cada campo do PDF para uma coluna dos seus dados:")
+                            user_mapping = {}
+                            
+                            # Cria uma caixa de seleção para cada campo do PDF
+                            for field in sorted(pdf_fields):
+                                # Lógica de "mapeamento inteligente" para sugerir a melhor opção
+                                best_guess = saved_mapping.get(field, "-- Não Mapear Este Campo --")
+                                if best_guess == "-- Não Mapear Este Campo --":
+                                    field_simplified = field.lower().replace("_", "").replace(" ", "")
+                                    for col in all_system_columns:
+                                        col_simplified = col.lower().replace("_", "")
+                                        if field_simplified == col_simplified:
+                                            best_guess = col
+                                            break
+                                
+                                index = all_system_columns.index(best_guess) if best_guess in all_system_columns else 0
+    
+                                user_mapping[field] = st.selectbox(
+                                    f"Campo do PDF: `{field}`",
+                                    options=all_system_columns,
+                                    index=index
+                                )
+                            
+                            submitted = st.form_submit_button("Salvar Mapeamento", type="primary")
+                            if submitted:
+                                # Salva o mapeamento e o ficheiro PDF na sessão para uso na próxima aba
+                                st.session_state['mapeamento_pdf'] = user_mapping
+                                st.session_state['pdf_template_bytes'] = pdf_template_file.getvalue()
+                                st.success("Mapeamento salvo com sucesso! Já pode ir para a aba 'Gerar Documentos'.")
+    
+                except Exception as e:
+                    st.error(f"Ocorreu um erro ao processar o ficheiro PDF: {e}")
 # --- ABA 3: GERAR DOCUMENTOS ---
     with tab3:
         st.subheader("Gerar Documentos Finais")
