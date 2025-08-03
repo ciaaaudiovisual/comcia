@@ -2,91 +2,27 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-# Importando as funções de conexão do seu projeto
-from config import init_supabase_client
-from acoes import load_data
+# Tente importar as funções de PDF do seu ficheiro de utilitários.
+# Se ainda não o criou, pode manter esta linha comentada.
+# from pdf_utils import fill_pdf_auxilio, merge_pdfs
+# from pypdf import PdfReader
+
 
 # --- Bloco de Funções Essenciais ---
 
 def calcular_auxilio_transporte(linha):
-    # Sua função de cálculo principal (sem alterações)
+    """Calcula os valores do auxílio transporte para uma única linha de dados."""
     try:
         despesa_diaria = 0
+        # O loop agora vai de 1 a 5 para incluir a nova opção de transporte
         for i in range(1, 6):
             ida_tarifa = linha.get(f'ida_{i}_tarifa', 0.0)
             volta_tarifa = linha.get(f'volta_{i}_tarifa', 0.0)
             despesa_diaria += float(ida_tarifa if ida_tarifa else 0.0)
             despesa_diaria += float(volta_tarifa if volta_tarifa else 0.0)
+
         dias_trabalhados = min(int(linha.get('dias_uteis', 0) or 0), 22)
         despesa_mensal = despesa_diaria * dias_trabalhados
-        valor_soldo_bruto = linha.get('soldo')
-        try:
-            soldo = float(valor_soldo_bruto)
-        except (ValueError, TypeError):
-            soldo = 0.0
-        parcela_beneficiario = ((soldo * 0.06) / 30) * dias_trabalhados if soldo > 0 and dias_trabalhados > 0 else 0.0
-        auxilio_pago = max(0.0, despesa_mensal - parcela_beneficiario)
-        return pd.Series({
-            'despesa_diaria': round(despesa_diaria, 2), 'dias_trabalhados': dias_trabalhados,
-            'despesa_mensal_total': round(despesa_mensal, 2), 'parcela_descontada_6_porcento': round(parcela_beneficiario, 2),
-            'auxilio_transporte_pago': round(auxilio_pago, 2)
-        })
-    except Exception as e:
-        print(f"Erro no cálculo para NIP {linha.get('numero_interno', 'N/A')}: {e}")
-        return pd.Series()
-def validate_and_map_dataframe(df, required_columns, table_name):
-    """Verifica se um DataFrame contém as colunas necessárias. Se não, pede ao usuário para mapeá-las."""
-    if df.empty:
-        # Esta verificação garante que não tentemos mapear uma tabela vazia.
-        st.error(f"A tabela '{table_name}' no Supabase foi encontrada, mas está vazia. Por favor, adicione pelo menos uma linha de dados para continuar.")
-        return None
-
-    missing_cols = [col for col in required_columns if col not in df.columns]
-    
-    if not missing_cols:
-        return df
-
-    st.warning(f"Na tabela '{table_name}', as seguintes colunas essenciais não foram encontradas: `{', '.join(missing_cols)}`")
-    st.info("Por favor, mapeie as colunas em falta para as colunas existentes na sua tabela ou escolha deixar o campo vazio.")
-    
-    user_mapping = {}
-    cols_para_mapear = st.columns(len(missing_cols))
-    options = ['-- Deixar Vazio --'] + df.columns.tolist()
-
-    for i, col_name in enumerate(missing_cols):
-        user_mapping[col_name] = cols_para_mapear[i].selectbox(
-            f"Mapear coluna '{col_name}':", 
-            options=options,
-            key=f"map_{table_name}_{col_name}"
-        )
-    
-    if st.button(f"Aplicar Mapeamento para a Tabela '{table_name}'"):
-        df_corrigido = df.copy()
-        for system_col, user_col in user_mapping.items():
-            if user_col != '-- Deixar Vazio --':
-                df_corrigido[system_col] = df_corrigido[user_col]
-            else:
-                df_corrigido[system_col] = None
-        st.success(f"Mapeamento aplicado para '{table_name}'!")
-        # Atualiza o estado da sessão e recarrega para refletir a correção
-        st.session_state[f'df_{table_name}_validated'] = df_corrigido
-        st.rerun()
-    
-    return None
-
-def calcular_auxilio_transporte(linha):
-    # Sua função de cálculo principal (sem alterações)
-    try:
-        despesa_diaria = 0
-        for i in range(1, 6):
-            ida_tarifa = linha.get(f'ida_{i}_tarifa', 0.0)
-            volta_tarifa = linha.get(f'volta_{i}_tarifa', 0.0)
-            despesa_diaria += float(ida_tarifa if ida_tarifa else 0.0)
-            despesa_diaria += float(volta_tarifa if volta_tarifa else 0.0)
-        
-        dias_trabalhados = min(int(linha.get('dias_uteis', 0) or 0), 22)
-        despesa_mensal = despesa_diaria * dias_trabalhados
-        
         valor_soldo_bruto = linha.get('soldo')
         try:
             soldo = float(valor_soldo_bruto)
@@ -106,116 +42,131 @@ def calcular_auxilio_transporte(linha):
         print(f"Erro no cálculo para NIP {linha.get('numero_interno', 'N/A')}: {e}")
         return pd.Series()
 
+def preparar_dataframe(df):
+    """Limpa, renomeia e padroniza o DataFrame carregado a partir do CSV."""
+    df_copy = df.iloc[:, 1:].copy() # Remove a primeira coluna ("Carimbo de data/hora")
+    
+    mapa_colunas = {
+        'NÚMERO INTERNO DO ALUNO': 'numero_interno', 'NOME COMPLETO': 'nome_completo', 'POSTO/GRAD': 'graduacao',
+        'SOLDO': 'soldo', 'DIAS ÚTEIS (MÁX 22)': 'dias_uteis', 'ANO DE REFERÊNCIA': 'ano_referencia',
+        'ENDEREÇO COMPLETO': 'endereco', 'BAIRRO': 'bairro', 'CIDADE': 'cidade', 'CEP': 'cep'
+    }
+    for i in range(1, 6): # Atualizado para 5 transportes
+        for direcao in ["IDA", "VOLTA"]:
+            mapa_colunas[f'{i}ª EMPRESA ({direcao})'] = f'{direcao.lower()}_{i}_empresa'
+            # A coluna do trajeto no seu ficheiro usa 'º', então tratamos disso
+            mapa_colunas[f'{i}º TRAJETO ({direcao})'] = f'{direcao.lower()}_{i}_linha'
+            mapa_colunas[f'{i}ª TARIFA ({direcao})'] = f'{direcao.lower()}_{i}_tarifa'
+            
+    df_copy.rename(columns=mapa_colunas, inplace=True)
+    
+    # Converte todas as colunas de texto para MAIÚSCULAS
+    for col in df_copy.select_dtypes(include=['object']).columns:
+        df_copy[col] = df_copy[col].str.upper().str.strip()
+
+    # Converte colunas numéricas, tratando vírgulas e erros
+    colunas_numericas = ['dias_uteis', 'soldo'] + [f'ida_{i}_tarifa' for i in range(1, 6)] + [f'volta_{i}_tarifa' for i in range(1, 6)]
+    for col in colunas_numericas:
+        if col in df_copy.columns:
+            df_copy[col] = pd.to_numeric(df_copy[col].astype(str).str.replace(',', '.'), errors='coerce')
+    
+    df_copy.fillna(0, inplace=True)
+    return df_copy
 
 # --- Função Principal da Página ---
 def show_auxilio_transporte():
-    st.header("🚌 Gestão de Auxílio Transporte")
+    st.header("🚌 Gestão de Auxílio Transporte (Baseado em Ficheiro)")
     st.markdown("---")
-    
-    NOME_TABELA_TRANSPORTE = "auxilio_transporte_dados"
-    NOME_TABELA_ALUNOS = "Alunos"
-    NOME_TABELA_SOLDOS = "soldos"
 
-    try:
-        # Carregamento inicial dos dados
-        df_transporte_raw = load_data(NOME_TABELA_TRANSPORTE)
-        df_alunos_raw = load_data(NOME_TABELA_ALUNOS)
-        df_soldos_raw = load_data(NOME_TABELA_SOLDOS)
+    tab1, tab2, tab3 = st.tabs(["1. Carregar e Editar Dados", "2. Mapeamento do PDF", "3. Gerar Documentos"])
 
-        # Validação e Mapeamento Interativo
-        required_cols_transporte = ['numero_interno', 'ano_referencia']
-        required_cols_alunos = ['numero_interno', 'nome_completo', 'graduacao']
-        required_cols_soldos = ['graduacao', 'soldo']
-
-        # O estado da sessão ajuda a lembrar dos dataframes já validados
-        if f'df_{NOME_TABELA_TRANSPORTE}_validated' not in st.session_state:
-            st.session_state[f'df_{NOME_TABELA_TRANSPORTE}_validated'] = validate_and_map_dataframe(df_transporte_raw, required_cols_transporte, NOME_TABELA_TRANSPORTE)
-        
-        if f'df_{NOME_TABELA_ALUNOS}_validated' not in st.session_state:
-            st.session_state[f'df_{NOME_TABELA_ALUNOS}_validated'] = validate_and_map_dataframe(df_alunos_raw, required_cols_alunos, NOME_TABELA_ALUNOS)
-
-        if f'df_{NOME_TABELA_SOLDOS}_validated' not in st.session_state:
-            st.session_state[f'df_{NOME_TABELA_SOLDOS}_validated'] = validate_and_map_dataframe(df_soldos_raw, required_cols_soldos, NOME_TABELA_SOLDOS)
-
-        # Pega os dataframes validados da sessão
-        df_transporte = st.session_state[f'df_{NOME_TABELA_TRANSPORTE}_validated']
-        df_alunos = st.session_state[f'df_{NOME_TABELA_ALUNOS}_validated']
-        df_soldos = st.session_state[f'df_{NOME_TABELA_SOLDOS}_validated']
-        
-        # Se algum mapeamento estiver pendente, a aplicação aguarda a ação do usuário
-        if df_transporte is None or df_alunos is None or df_soldos is None:
-            st.warning("Aguardando a conclusão do mapeamento de colunas...")
-            st.stop()
-
-        with st.spinner("Unindo os dados..."):
-            df_transporte['numero_interno'] = df_transporte['numero_interno'].astype(str).str.strip()
-            df_alunos['numero_interno'] = df_alunos['numero_interno'].astype(str).str.strip()
-            df_alunos['graduacao'] = df_alunos['graduacao'].astype(str).str.strip()
-            df_soldos['graduacao'] = df_soldos['graduacao'].astype(str).str.strip()
-            df_com_aluno = pd.merge(df_transporte, df_alunos[['numero_interno', 'nome_completo', 'graduacao']], on='numero_interno', how='left')
-            df_completo = pd.merge(df_com_aluno, df_soldos[['graduacao', 'soldo']], on='graduacao', how='left')
-            df_completo['soldo'].fillna(0, inplace=True)
-            df_completo['nome_completo'].fillna("ALUNO NÃO ENCONTRADO", inplace=True)
-            st.session_state['dados_transporte_completos'] = df_completo
-    
-    except Exception as e:
-        st.error(f"Ocorreu um erro crítico durante o carregamento. Verifique se as tabelas existem. Erro: {e}")
-        st.stop()
-
-    tab1, tab2 = st.tabs(["1. Consultar, Filtrar e Editar", "2. Gerar Documentos"])
-
+    # --- ABA 1: CARREGAR E EDITAR ---
     with tab1:
-        st.subheader("Consultar e Editar Dados de Transporte")
-        df_para_mostrar = st.session_state['dados_transporte_completos'].copy()
+        st.subheader("Carregar Ficheiro de Dados")
 
-        # Filtros (funcionam da mesma forma)
-        # ... (código dos filtros aqui) ...
+        # Mostra o ficheiro em memória e dá a opção de limpar
+        if 'dados_em_memoria' in st.session_state:
+            st.info(f"Ficheiro em memória: **{st.session_state['nome_ficheiro']}**")
+            if st.button("🗑️ Limpar Ficheiro e Recomeçar"):
+                for key in ['dados_em_memoria', 'nome_ficheiro', 'mapeamento_pdf', 'resultados_para_pdf']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
 
-        st.markdown("##### Tabela de Dados")
-        st.info("As colunas 'Nome Completo' e 'Soldo' são carregadas dinamicamente e não são editáveis aqui.")
-        
-        # Colunas que não devem ser editadas pelo usuário nesta tela
-        colunas_desabilitadas = ['nome_completo', 'graduacao', 'soldo']
-        
-        df_editado = st.data_editor(df_para_mostrar, disabled=colunas_desabilitadas, use_container_width=True, key="editor_transporte", hide_index=True)
+        uploaded_file = st.file_uploader("Carregue o seu ficheiro CSV", type="csv")
 
-        if st.button("Salvar Alterações", type="primary"):
-            with st.spinner("Salvando..."):
-                try:
-                    # Antes de salvar, removemos as colunas que vieram de outras tabelas ('Alunos', 'soldos')
-                    colunas_para_remover = ['nome_completo', 'graduacao', 'soldo']
-                    df_para_salvar = pd.DataFrame(df_editado).drop(columns=colunas_para_remover, errors='ignore')
+        if uploaded_file:
+            if st.button(f"Processar Ficheiro: {uploaded_file.name}", type="primary"):
+                with st.spinner("Processando..."):
+                    try:
+                        df = pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
+                        df_preparado = preparar_dataframe(df)
+                        st.session_state['dados_em_memoria'] = df_preparado
+                        st.session_state['nome_ficheiro'] = uploaded_file.name
+                        st.success("Ficheiro processado! Pode editar os dados abaixo ou ir para as próximas abas.")
+                    except Exception as e:
+                        st.error(f"Erro ao ler ou preparar o ficheiro: {e}")
 
-                    supabase.table(NOME_TABELA_TRANSPORTE).upsert(
-                        df_para_salvar.to_dict(orient='records'),
-                        on_conflict='numero_interno,ano_referencia' # Chave para identificar o registro
-                    ).execute()
-                    st.success("Alterações salvas com sucesso!")
-                    load_data.clear()
-                    del st.session_state['dados_transporte_completos']
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao salvar as alterações: {e}")
+        # Lógica de edição que só aparece se um ficheiro estiver carregado
+        if 'dados_em_memoria' in st.session_state:
+            st.markdown("---")
+            st.markdown("##### Tabela de Dados para Edição")
+            st.info("As alterações feitas aqui são usadas nas outras abas. Para salvá-las permanentemente, baixe o CSV editado.")
 
+            df_editado = st.data_editor(
+                st.session_state['dados_em_memoria'], num_rows="dynamic", use_container_width=True
+            )
+            st.session_state['dados_em_memoria'] = df_editado # Atualiza a sessão com os dados editados
 
+            csv_editado = df_editado.to_csv(index=False, sep=';').encode('latin-1')
+            st.download_button(
+                label="📥 Baixar CSV Editado", data=csv_editado,
+                file_name=f"dados_editados_{st.session_state['nome_ficheiro']}"
+            )
 
+    # --- ABA 2: MAPEAMENTO DO PDF ---
     with tab2:
-        st.subheader("Gerar Documentos em PDF")
-        st.info("Esta aba usará os dados salvos no banco de dados para gerar os documentos.")
-        
-        # Filtra os dados com base na seleção da primeira aba
-        df_para_gerar = df_para_mostrar.copy()
-        
-        if df_para_gerar.empty:
-            st.warning("Nenhum dado selecionado para gerar documentos. Use os filtros na aba anterior.")
+        st.subheader("Mapear Campos do PDF")
+        if 'dados_em_memoria' not in st.session_state:
+            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
         else:
-            with st.spinner("Calculando valores para os documentos..."):
-                calculos_df = df_para_gerar.apply(calcular_auxilio_transporte, axis=1)
-                df_com_calculo = pd.concat([df_para_gerar.reset_index(drop=True), calculos_df.reset_index(drop=True)], axis=1)
-            
-            st.markdown(f"**{len(df_com_calculo)} registos selecionados para geração:**")
-            st.dataframe(df_com_calculo)
+            st.info("Faça o upload do seu modelo PDF preenchível para mapear os campos.")
+            pdf_template = st.file_uploader("Carregue o modelo PDF", type="pdf", key="pdf_uploader")
 
-            if st.button(f"Gerar PDF para os {len(df_com_calculo)} registos exibidos", type="primary"):
+            if pdf_template:
+                # O código de mapeamento iria aqui, usando o pdf_template e os dados da sessão
+                st.info("Funcionalidade de mapeamento a ser implementada aqui.")
+
+    # --- ABA 3: GERAR DOCUMENTOS ---
+    with tab3:
+        st.subheader("Gerar Documentos Finais")
+        if 'dados_em_memoria' not in st.session_state:
+            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
+        else:
+            df_final = st.session_state['dados_em_memoria'].copy()
+            
+            with st.spinner("Calculando valores..."):
+                calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
+                df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
+
+            st.markdown("#### Filtro para Seleção")
+            st.info("Selecione os militares para gerar o documento. Deixe em branco para incluir todos.")
+            
+            opcoes_filtro = sorted(df_com_calculo['nome_completo'].unique())
+            selecionados = st.multiselect("Selecione por Nome Completo:", options=opcoes_filtro)
+            
+            if selecionados:
+                df_para_gerar = df_com_calculo[df_com_calculo['nome_completo'].isin(selecionados)]
+            else:
+                df_para_gerar = df_com_calculo
+
+            st.dataframe(df_para_gerar)
+
+            if st.button(f"Gerar PDF para os {len(df_para_gerar)} selecionados", type="primary"):
                 st.info("Lógica de geração de PDF a ser conectada aqui.")
-                # Aqui entraria a sua lógica para chamar as funções de mapeamento e geração de PDF.
+                # Exemplo:
+                # if 'mapeamento_pdf' in st.session_state and pdf_template is not None:
+                #     pdf_final = gerar_pdfs_consolidados(df_para_gerar, pdf_template, st.session_state['mapeamento_pdf'])
+                #     st.download_button("Baixar PDFs", data=pdf_final, file_name="Declaracoes.pdf")
+                # else:
+                #     st.error("Por favor, carregue e salve o mapeamento do PDF na Aba 2.")
