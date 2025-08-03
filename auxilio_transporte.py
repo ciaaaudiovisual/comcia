@@ -1,13 +1,18 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
+import traceback
+
+# Importando as funções de conexão e de geração de PDF
+from config import init_supabase_client
+from acoes import load_data
 from pdf_utils import fill_pdf_auxilio, merge_pdfs
 from pypdf import PdfReader
 
-
+# --- Bloco de Funções Essenciais ---
 
 def calcular_auxilio_transporte(linha):
-    # Função de cálculo (sem alterações)
+    """Sua função de cálculo principal."""
     try:
         despesa_diaria = 0
         for i in range(1, 6):
@@ -17,7 +22,7 @@ def calcular_auxilio_transporte(linha):
             despesa_diaria += float(volta_tarifa if volta_tarifa else 0.0)
         dias_trabalhados = min(int(linha.get('dias_uteis', 0) or 0), 22)
         despesa_mensal = despesa_diaria * dias_trabalhados
-        valor_soldo_bruto = linha.get('soldo') # O soldo virá da junção com a tabela do Supabase
+        valor_soldo_bruto = linha.get('soldo')
         try:
             soldo = float(valor_soldo_bruto)
         except (ValueError, TypeError):
@@ -39,7 +44,7 @@ def preparar_dataframe(df):
     mapa_colunas = {
         'NÚMERO INTERNO DO ALUNO': 'numero_interno', 'NOME COMPLETO': 'nome_completo', 'POSTO/GRAD': 'graduacao',
         'DIAS ÚTEIS (MÁX 22)': 'dias_uteis', 'ANO DE REFERÊNCIA': 'ano_referencia',
-        'ENDEREÇO COMPLETO': 'endereco', 'BAIRRO': 'bairro', 'CIDADE': 'cidade', 'CEP': 'cep'
+        'ENDEREÇO COMPLETO': 'endereco', 'BAIRRO': 'bairro', 'CIDADE': 'cida_de', 'CEP': 'cep'
     }
     for i in range(1, 6):
         for direcao in ["IDA", "VOLTA"]:
@@ -62,109 +67,52 @@ def show_auxilio_transporte():
     st.markdown("---")
 
     tab1, tab2, tab3, tab4 = st.tabs([
-        "1. Carregar & Editar Dados", 
-        "2. Gerenciar Tabela de Soldos", 
-        "3. Mapeamento do PDF", 
+        "1. Carregar Ficheiro", 
+        "2. Gerenciar Soldos", 
+        "3. Mapeamento PDF", 
         "4. Gerar Documentos"
     ])
 
     supabase = init_supabase_client()
 
-    # --- ABA 1: CARREGAR, JUNTAR E EDITAR DADOS ---
     with tab1:
-        st.subheader("Carregar Ficheiro e Preparar Dados")
-        
-        uploaded_file = st.file_uploader("Carregue o seu ficheiro CSV de dados", type="csv")
-
+        st.subheader("Carregar Ficheiro de Dados do Mês")
+        uploaded_file = st.file_uploader("Carregue o seu ficheiro CSV", type="csv")
         if uploaded_file:
             if st.button(f"Processar Ficheiro: {uploaded_file.name}", type="primary"):
-                with st.spinner("Processando ficheiro e buscando soldos..."):
+                with st.spinner("Processando..."):
                     try:
-                        # 1. Lê e prepara o CSV
                         df_csv = pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
                         df_preparado = preparar_dataframe(df_csv)
-
-                        # 2. Carrega a tabela de soldos mais recente do Supabase
-                        df_soldos_atual = load_data("soldos")
-                        
-                        # 3. Prepara as chaves para a junção
-                        df_preparado['graduacao'] = df_preparado['graduacao'].astype(str).str.strip()
-                        df_soldos_atual['graduacao'] = df_soldos_atual['graduacao'].astype(str).str.strip()
-
-                        # 4. JUNÇÃO IMEDIATA: Adiciona o soldo aos dados do CSV
-                        df_completo = pd.merge(
-                            df_preparado,
-                            df_soldos_atual[['graduacao', 'soldo']],
-                            on='graduacao',
-                            how='left'
-                        )
-                        df_completo['soldo'].fillna(0, inplace=True)
-                        
-                        # 5. Armazena o DataFrame completo na sessão
-                        st.session_state['dados_completos'] = df_completo
+                        st.session_state['dados_do_csv'] = df_preparado
                         st.session_state['nome_ficheiro'] = uploaded_file.name
-                        st.success("Dados carregados e combinados com os soldos com sucesso!")
-
+                        st.success("Ficheiro processado!")
                     except Exception as e:
-                        st.error(f"Erro ao processar: {e}")
+                        st.error(f"Erro ao ler o ficheiro: {e}")
 
-        if 'dados_completos' in st.session_state:
-            st.markdown("---")
-            st.markdown("##### Tabela de Dados para Edição")
-            st.info("A coluna 'Soldo' foi adicionada dinamicamente. As alterações feitas aqui serão usadas nas outras abas.")
-
-            # O editor agora opera sobre os dados já com o soldo
-            df_editado = st.data_editor(
-                st.session_state['dados_completos'], num_rows="dynamic", use_container_width=True
-            )
-            st.session_state['dados_completos'] = df_editado # Atualiza a sessão com os dados editados
-
-            st.markdown("##### Exportar Dados Atuais (com Soldo)")
-            csv_completo = df_editado.to_csv(index=False, sep=';').encode('latin-1')
-            st.download_button(
-                label="📥 Baixar CSV Completo (com Soldo)", data=csv_completo,
-                file_name=f"dados_completos_{st.session_state['nome_ficheiro']}"
-            )
-
-
- --- ABA 2: GERENCIAR TABELA DE SOLDOS (NOVA FUNCIONALIDADE) ---
     with tab2:
-        st.subheader("Gerenciar Tabela de Soldos no Banco de Dados")
-        st.info("As alterações feitas aqui são salvas diretamente no Supabase e usadas para todos os cálculos.")
+        st.subheader("Gerenciar Tabela de Soldos")
+        st.info("As alterações feitas aqui são salvas no Supabase.")
         try:
             soldos_df = load_data("soldos")
-            
-            # Remove colunas do sistema antes de mostrar ao usuário
             colunas_para_remover = ['id', 'created_at']
             soldos_display = soldos_df.drop(columns=colunas_para_remover, errors='ignore')
-            
             colunas_config = {
                 "graduacao": st.column_config.TextColumn("Graduação", required=True),
                 "soldo": st.column_config.NumberColumn("Soldo (R$)", format="R$ %.2f", required=True)
             }
-            
-            # Editor para a tabela de soldos
-            edited_soldos_df = st.data_editor(
-                soldos_display,
-                column_config=colunas_config,
-                num_rows="dynamic",
-                use_container_width=True
-            )
-            
-            if st.button("Salvar Alterações nos Soldos", type="primary"):
+            edited_soldos_df = st.data_editor(soldos_display, column_config=colunas_config, num_rows="dynamic")
+            if st.button("Salvar Alterações nos Soldos"):
                 with st.spinner("Salvando..."):
-                    # Usamos 'upsert' para atualizar ou inserir novos registros
                     supabase.table("soldos").upsert(
                         edited_soldos_df.to_dict(orient='records'),
-                        on_conflict='graduacao' # 'graduacao' é a chave única
+                        on_conflict='graduacao'
                     ).execute()
-                    st.success("Tabela de soldos atualizada com sucesso!")
-                    load_data.clear() # Limpa o cache para garantir que os dados sejam recarregados
+                    st.success("Tabela de soldos atualizada!")
+                    load_data.clear()
                     st.rerun()
-
         except Exception as e:
-            st.error(f"Erro ao carregar ou salvar a tabela de soldos: {e}")
-
+            st.error(f"Erro ao carregar/salvar soldos: {e}")
    # - --- ABA 3: MAPEAMENTO DO PDF ---
     with tab3:
         st.subheader("Mapear Campos do PDF")
@@ -221,19 +169,22 @@ def show_auxilio_transporte():
     
                 except Exception as e:
                     st.error(f"Ocorreu um erro ao processar o ficheiro PDF: {e}")
-# --- ABA 4: GERAR DOCUMENTOS ---
+
     with tab4:
         st.subheader("Gerar Documentos Finais")
-        if 'dados_completos' not in st.session_state:
-            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar & Editar Dados'.")
+        if 'dados_do_csv' not in st.session_state:
+            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar Ficheiro'.")
         else:
-            df_final = st.session_state['dados_completos'].copy()
-            
-            # O DataFrame já tem o soldo, então só precisamos calcular
-            with st.spinner("Calculando valores finais..."):
-                calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
-                df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
-
+            df_do_csv = st.session_state['dados_do_csv'].copy()
+            with st.spinner("Buscando soldos e juntando dados..."):
+                df_soldos_atual = load_data("soldos")
+                df_do_csv['graduacao'] = df_do_csv['graduacao'].astype(str).str.strip()
+                df_soldos_atual['graduacao'] = df_soldos_atual['graduacao'].astype(str).str.strip()
+                df_completo = pd.merge(df_do_csv, df_soldos_atual[['graduacao', 'soldo']], on='graduacao', how='left')
+                df_completo['soldo'].fillna(0, inplace=True)
+                calculos_df = df_completo.apply(calcular_auxilio_transporte, axis=1)
+                df_com_calculo = pd.concat([df_completo, calculos_df], axis=1)
+           
 
 
             st.markdown("#### Filtro para Seleção")
