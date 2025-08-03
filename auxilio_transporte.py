@@ -190,43 +190,58 @@ def show_auxilio_transporte():
     
                 except Exception as e:
                     st.error(f"Ocorreu um erro ao processar o ficheiro PDF: {e}")
-# --- ABA 3: GERAR DOCUMENTOS ---
+# --- --- ABA 3: GERAR DOCUMENTOS ---
     with tab3:
         st.subheader("Gerar Documentos Finais")
         if 'dados_em_memoria' not in st.session_state:
             st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
+        elif 'mapeamento_pdf' not in st.session_state or 'pdf_template_bytes' not in st.session_state:
+            st.warning("Por favor, carregue e salve o mapeamento do PDF na aba '2. Mapeamento do PDF'.")
         else:
             df_final = st.session_state['dados_em_memoria'].copy()
-            
             with st.spinner("Calculando valores..."):
                 calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
                 df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
 
             st.markdown("#### Filtro para Seleção")
-            st.info("Selecione os militares para gerar o documento. Deixe em branco para incluir todos.")
-            
-            # --- INÍCIO DA CORREÇÃO ---
-            # Remove valores nulos, pega os nomes únicos e depois ordena.
             nomes_validos = df_com_calculo['nome_completo'].dropna().unique()
             opcoes_filtro = sorted(nomes_validos)
-            # --- FIM DA CORREÇÃO ---
-
             selecionados = st.multiselect("Selecione por Nome Completo:", options=opcoes_filtro)
             
-            if selecionados:
-                df_para_gerar = df_com_calculo[df_com_calculo['nome_completo'].isin(selecionados)]
-            else:
-                df_para_gerar = df_com_calculo
-
+            df_para_gerar = df_com_calculo[df_com_calculo['nome_completo'].isin(selecionados)] if selecionados else df_com_calculo
             st.dataframe(df_para_gerar)
 
             if st.button(f"Gerar PDF para os {len(df_para_gerar)} selecionados", type="primary"):
-                st.info("Lógica de geração de PDF a ser conectada aqui.")
+                with st.spinner("Gerando PDFs... Isso pode demorar um pouco."):
+                    try:
+                        template_bytes = st.session_state['pdf_template_bytes']
+                        mapping = st.session_state['mapeamento_pdf']
+                        
+                        filled_pdfs = []
+                        progress_bar = st.progress(0)
+                        total_docs = len(df_para_gerar)
 
+                        for i, (_, aluno_row) in enumerate(df_para_gerar.iterrows()):
+                            # Preenche o PDF para o aluno atual
+                            pdf_preenchido = fill_pdf_auxilio(template_bytes, aluno_row, mapping)
+                            filled_pdfs.append(pdf_preenchido)
+                            progress_bar.progress((i + 1) / total_docs, text=f"Gerando: {aluno_row['nome_completo']}")
 
-                # Exemplo:
-                # if 'mapeamento_pdf' in st.session_state and pdf_template is not None:
-                #     pdf_final = gerar_pdfs_consolidados(df_para_gerar, pdf_template, st.session_state['mapeamento_pdf'])
-                #     st.download_button("Baixar PDFs", data=pdf_final, file_name="Declaracoes.pdf")
-                # else:
-                #     st.error("Por favor, carregue e salve o mapeamento do PDF na Aba 2.")
+                        # Junta todos os PDFs num único ficheiro
+                        final_pdf_buffer = merge_pdfs(filled_pdfs)
+                        
+                        st.session_state['pdf_final_bytes'] = final_pdf_buffer.getvalue()
+                        progress_bar.empty()
+                        st.success("Documento consolidado gerado com sucesso!")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"Ocorreu um erro durante a geração dos PDFs: {e}")
+                        st.error(traceback.format_exc())
+
+                if 'pdf_final_bytes' in st.session_state:
+                    st.download_button(
+                        label="✅ Baixar Documento Consolidado (.pdf)",
+                        data=st.session_state['pdf_final_bytes'],
+                        file_name="Declaracoes_Auxilio_Transporte.pdf",
+                        mime="application/pdf"
+                    )
