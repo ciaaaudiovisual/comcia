@@ -96,7 +96,7 @@ def show_auxilio_transporte():
                         st.error(f"Erro ao ler o ficheiro: {e}")
                         st.error(traceback.format_exc())
 
-    with tab2:
+    with tab3:
         st.subheader("Gerenciar Tabela de Soldos")
         st.info("As alterações feitas aqui são salvas diretamente no Supabase.")
         try:
@@ -125,18 +125,43 @@ def show_auxilio_transporte():
                     st.rerun()
         except Exception as e:
             st.error(f"Erro ao carregar ou salvar soldos: {e}")
-
-    with tab3:
-        st.subheader("Mapear Campos do PDF")
-        if 'dados_do_csv' not in st.session_state:
-            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar Ficheiro'.")
+    with tab2:
+        st.subheader("Mapear Campos do PDF para os Dados da Tabela")
+        if 'dados_em_memoria' not in st.session_state:
+            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
         else:
-            st.info("Faça o upload do seu modelo PDF preenchível para mapear os campos.")
+            st.info("Faça o upload do seu modelo PDF preenchível.")
             pdf_template_file = st.file_uploader("Carregue o modelo PDF", type="pdf", key="pdf_mapper_uploader")
-
             if pdf_template_file:
-                # O código de mapeamento iria aqui
-                st.info("Funcionalidade de mapeamento a ser implementada aqui.")
+                try:
+                    reader = PdfReader(BytesIO(pdf_template_file.getvalue()))
+                    pdf_fields = list(reader.get_form_text_fields().keys())
+                    if not pdf_fields:
+                        st.warning("Nenhum campo de formulário editável foi encontrado neste PDF.")
+                    else:
+                        st.success(f"{len(pdf_fields)} campos encontrados.")
+                        df_cols = st.session_state['dados_em_memoria'].columns.tolist()
+                        calculated_cols = ['despesa_diaria', 'despesa_mensal_total', 'parcela_descontada_6_porcento', 'auxilio_transporte_pago']
+                        all_system_columns = ["-- Não Mapear Este Campo --"] + sorted(df_cols + calculated_cols)
+                        saved_mapping = st.session_state.get('mapeamento_pdf', {})
+                        with st.form("pdf_mapping_form"):
+                            user_mapping = {}
+                            for field in sorted(pdf_fields):
+                                best_guess = saved_mapping.get(field, "-- Não Mapear Este Campo --")
+                                if best_guess == "-- Não Mapear Este Campo --":
+                                    field_simplified = field.lower().replace("_", "").replace(" ", "")
+                                    for col in all_system_columns:
+                                        col_simplified = col.lower().replace("_", "")
+                                        if field_simplified == col_simplified:
+                                            best_guess = col; break
+                                index = all_system_columns.index(best_guess) if best_guess in all_system_columns else 0
+                                user_mapping[field] = st.selectbox(f"Campo do PDF: `{field}`", options=all_system_columns, index=index)
+                            if st.form_submit_button("Salvar Mapeamento", type="primary"):
+                                st.session_state['mapeamento_pdf'] = user_mapping
+                                st.session_state['pdf_template_bytes'] = pdf_template_file.getvalue()
+                                st.success("Mapeamento salvo!")
+                except Exception as e:
+                    st.error(f"Ocorreu um erro ao processar o PDF: {e}")
 
 
     with tab4:
