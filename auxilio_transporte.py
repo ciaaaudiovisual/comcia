@@ -96,7 +96,7 @@ def show_auxilio_transporte():
                         st.error(f"Erro ao ler o ficheiro: {e}")
                         st.error(traceback.format_exc())
 
-    with tab3:
+    with tab2:
         st.subheader("Gerenciar Tabela de Soldos")
         st.info("As alterações feitas aqui são salvas diretamente no Supabase.")
         try:
@@ -125,7 +125,9 @@ def show_auxilio_transporte():
                     st.rerun()
         except Exception as e:
             st.error(f"Erro ao carregar ou salvar soldos: {e}")
-    with tab2:
+
+
+    with tab3:
         st.subheader("Mapear Campos do PDF para os Dados da Tabela")
         if 'dados_em_memoria' not in st.session_state:
             st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
@@ -162,7 +164,6 @@ def show_auxilio_transporte():
                                 st.success("Mapeamento salvo!")
                 except Exception as e:
                     st.error(f"Ocorreu um erro ao processar o PDF: {e}")
-
 
     with tab4:
         st.subheader("Gerar Documentos Finais")
