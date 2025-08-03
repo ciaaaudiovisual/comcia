@@ -1,14 +1,10 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
-
-# Tente importar as funções de PDF do seu ficheiro de utilitários.
-# Se ainda não o criou, pode manter esta linha comentada.
-# from pdf_utils import fill_pdf_auxilio, merge_pdfs
-# from pypdf import PdfReader
+from pdf_utils import fill_pdf_auxilio, merge_pdfs
+from pypdf import PdfReader
 
 
-# --- Bloco de Funções Essenciais ---
 
 def calcular_auxilio_transporte(linha):
     """Calcula os valores do auxílio transporte para uma única linha de dados."""
