@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 import traceback
-import re # <-- ADICIONE ESTA LINHA
+import re
 
 # Importando as funções de conexão e de geração de PDF
 from config import init_supabase_client
@@ -11,45 +11,6 @@ from pdf_utils import fill_pdf_auxilio, merge_pdfs
 from pypdf import PdfReader
 
 # --- Bloco de Funções Essenciais ---
-
-def preparar_dataframe(df):
-    """Prepara o DataFrame do CSV com o mapeamento de colunas corrigido."""
-    df_copy = df.iloc[:, 1:].copy()
-    
-    # --- CORREÇÃO APLICADA AQUI ---
-    # Adicionamos as variações de nomes de colunas do seu CSV ao mapa
-    mapa_colunas = {
-        'NÚMERO INTERNO DO ALUNO': 'numero_interno', 
-        'NOME COMPLETO': 'nome_completo', 
-        'POSTO/GRAD': 'graduacao',
-        'DIAS ÚTEIS (MÁX 22)': 'dias_uteis', 
-        'ANO DE REFERÊNCIA': 'ano_referencia',
-        'ENDEREÇO COMPLETO': 'endereco', 
-        'BAIRRO': 'bairro', 
-        'CIDADE': 'cidade', 
-        'CEP': 'cep',
-        # Mapeamento explícito para a coluna problemática
-        '1º NUMERO DA LINHA E TRAJETO ': 'ida_1_linha', 
-    }
-    # Mapeamento dinâmico para as outras colunas de itinerário
-    for i in range(1, 6):
-        for direcao in ["IDA", "VOLTA"]:
-            mapa_colunas[f'{i}ª EMPRESA ({direcao})'] = f'{direcao.lower()}_{i}_empresa'
-            mapa_colunas[f'{i}º TRAJETO ({direcao})'] = f'{direcao.lower()}_{i}_linha'
-            mapa_colunas[f'{i}ª TARIFA ({direcao})'] = f'{direcao.lower()}_{i}_tarifa'
-    
-    df_copy.rename(columns=mapa_colunas, inplace=True, errors='ignore')
-    
-    for col in df_copy.select_dtypes(include=['object']).columns:
-        df_copy[col] = df_copy[col].str.upper().str.strip()
-
-    colunas_numericas = ['dias_uteis'] + [f'ida_{i}_tarifa' for i in range(1, 6)] + [f'volta_{i}_tarifa' for i in range(1, 6)]
-    for col in colunas_numericas:
-        if col in df_copy.columns:
-            df_copy[col] = pd.to_numeric(df_copy[col].astype(str).str.replace('R$', '', regex=False).str.strip().str.replace(',', '.'), errors='coerce')
-    
-    df_copy.fillna(0, inplace=True)
-    return df_copy
 
 def calcular_auxilio_transporte(linha):
     """Sua função de cálculo principal."""
@@ -78,11 +39,34 @@ def calcular_auxilio_transporte(linha):
         print(f"Erro no cálculo para NIP {linha.get('numero_interno', 'N/A')}: {e}")
         return pd.Series()
 
+def preparar_dataframe(df):
+    """Prepara o DataFrame do CSV, agora SEM a necessidade da coluna 'SOLDO'."""
+    df_copy = df.iloc[:, 1:].copy()
+    mapa_colunas = {
+        'NÚMERO INTERNO DO ALUNO': 'numero_interno', 'NOME COMPLETO': 'nome_completo', 'POSTO/GRAD': 'graduacao',
+        'DIAS ÚTEIS (MÁX 22)': 'dias_uteis', 'ANO DE REFERÊNCIA': 'ano_referencia',
+        'ENDEREÇO COMPLETO': 'endereco', 'BAIRRO': 'bairro', 'CIDADE': 'cidade', 'CEP': 'cep'
+    }
+    for i in range(1, 6):
+        for direcao in ["IDA", "VOLTA"]:
+            mapa_colunas[f'{i}ª EMPRESA ({direcao})'] = f'{direcao.lower()}_{i}_empresa'
+            mapa_colunas[f'{i}º TRAJETO ({direcao})'] = f'{direcao.lower()}_{i}_linha'
+            mapa_colunas[f'{i}ª TARIFA ({direcao})'] = f'{direcao.lower()}_{i}_tarifa'
+    df_copy.rename(columns=mapa_colunas, inplace=True, errors='ignore')
+    for col in df_copy.select_dtypes(include=['object']).columns:
+        df_copy[col] = df_copy[col].str.upper().str.strip()
+    colunas_numericas = ['dias_uteis'] + [f'ida_{i}_tarifa' for i in range(1, 6)] + [f'volta_{i}_tarifa' for i in range(1, 6)]
+    for col in colunas_numericas:
+        if col in df_copy.columns:
+            df_copy[col] = pd.to_numeric(df_copy[col].astype(str).str.replace(',', '.'), errors='coerce')
+    df_copy.fillna(0, inplace=True)
+    return df_copy
+
 def clean_text(text):
     """Função auxiliar para limpar e normalizar nomes de colunas para comparação."""
     return re.sub(r'[^a-z0-9]', '', text.lower())
 
-
+# --- Função Principal da Página ---
 def show_auxilio_transporte():
     st.header("🚌 Gestão de Auxílio Transporte")
     st.markdown("---")
@@ -98,16 +82,39 @@ def show_auxilio_transporte():
     supabase = init_supabase_client()
     NOME_TABELA_TRANSPORTE = "auxilio_transporte_dados"
     NOME_TABELA_SOLDOS = "soldos"
-
-    dados_completos_df = pd.DataFrame() 
-
+    NOME_TABELA_ALUNOS = "Alunos"
+    
     # Define o "esquema" de colunas que o sistema espera no final.
     schema_esperado = [
         'numero_interno', 'nome_completo', 'graduacao', 'dias_uteis', 'ano_referencia',
         'endereco', 'bairro', 'cidade', 'cep'
     ] + [f'{d}_{i}_{t}' for i in range(1, 6) for d in ['ida', 'volta'] for t in ['empresa', 'linha', 'tarifa']]
 
-    # --- ABA 1: TABELA GERAL E IMPORTAÇÃO ---
+    @st.cache_data(ttl=600)
+    def carregar_dados_completos():
+        df_transporte = load_data(NOME_TABELA_TRANSPORTE)
+        df_soldos = load_data(NOME_TABELA_SOLDOS)
+        
+        if df_transporte.empty:
+            return pd.DataFrame()
+
+        if 'graduacao' not in df_transporte.columns:
+             st.error(f"A tabela '{NOME_TABELA_TRANSPORTE}' precisa de uma coluna 'graduacao'.")
+             return pd.DataFrame()
+        
+        df_transporte['graduacao'] = df_transporte['graduacao'].astype(str).str.strip().str.upper()
+        df_soldos['graduacao'] = df_soldos['graduacao'].astype(str).str.strip().str.upper()
+
+        df_completo = pd.merge(df_transporte, df_soldos[['graduacao', 'soldo']], on='graduacao', how='left')
+        df_completo['soldo'].fillna(0, inplace=True)
+        return df_completo
+
+    dados_completos_df = pd.DataFrame()
+    try:
+        dados_completos_df = carregar_dados_completos()
+    except Exception as e:
+        st.error(f"Erro ao carregar dados do Supabase: {e}")
+    
     with tab1:
         st.subheader("Visualizar Dados e Importar Ficheiro CSV")
         
@@ -124,7 +131,6 @@ def show_auxilio_transporte():
                 with st.form("mapping_form"):
                     mapeamento_usuario = {}
                     for col_sistema in schema_esperado:
-                        # Lógica de mapeamento inteligente
                         melhor_sugestao = ""
                         clean_col_sistema = clean_text(col_sistema)
                         for col_csv in colunas_do_csv:
@@ -143,7 +149,6 @@ def show_auxilio_transporte():
                             if col_csv != "-- Ignorar esta coluna --":
                                 df_mapeado[col_sistema] = df_raw[col_csv]
                         
-                        # Armazena o dataframe pré-processado na sessão
                         st.session_state['df_mapeado_para_salvar'] = df_mapeado
                         st.success("Mapeamento aplicado. Verifique a pré-visualização abaixo e clique no botão final para salvar.")
 
@@ -155,7 +160,6 @@ def show_auxilio_transporte():
                     if st.button("2. Confirmar e Salvar no Banco de Dados", type="primary"):
                         with st.spinner("Processando e salvando..."):
                             try:
-                                # Aplicamos a preparação final (maiúsculas, tipos numéricos, etc.)
                                 df_final_para_salvar = preparar_dataframe(df_preview)
                                 
                                 supabase.table(NOME_TABELA_TRANSPORTE).upsert(
@@ -164,7 +168,7 @@ def show_auxilio_transporte():
                                 ).execute()
                                 
                                 st.success(f"{len(df_final_para_salvar)} registos foram adicionados/atualizados!")
-                                del st.session_state['df_mapeado_para_salvar'] # Limpa a sessão
+                                del st.session_state['df_mapeado_para_salvar']
                                 load_data.clear()
                                 st.rerun()
                             except Exception as e:
@@ -172,54 +176,37 @@ def show_auxilio_transporte():
 
         st.markdown("---")
         st.subheader("Dados Atuais no Banco de Dados")
-        try:
-            dados_atuais = load_data(NOME_TABELA_TRANSPORTE)
-            st.dataframe(dados_atuais)
-        except Exception as e:
-            st.error(f"Erro ao carregar dados existentes: {e}")
+        if not dados_completos_df.empty:
+            st.dataframe(dados_completos_df)
+        else:
+            st.warning("Nenhum dado encontrado.")
 
 
-    Com certeza. Abaixo está o código na íntegra para a Aba 2: Edição Individual, já com a lógica atualizada que permite tanto editar um cadastro existente quanto adicionar um novo.
-
-Pode substituir todo o bloco with tab2: no seu ficheiro auxilio_transporte.py por este código.
-
-
-
-    ## --- ABA 2: EDIÇÃO INDIVIDUAL (ATUALIZADA) ---
+   
     with tab2:
-        st.subheader("Adicionar ou Editar Cadastro Individual")
-        
-        # Carrega a lista de alunos para preenchimento automático
-        alunos_df = load_data(NOME_TABELA_ALUNOS)
-        
-        # Opção para o usuário escolher entre adicionar ou editar
-        modo = st.radio("Selecione a Ação:", ["Editar um Cadastro Existente", "Adicionar Novo Cadastro"], horizontal=True)
-        
-        dados_aluno = {}
-        
-        if modo == "Editar um Cadastro Existente":
-            if dados_completos_df.empty:
-                st.warning("Não há dados para editar na tabela de auxílio transporte.")
-            else:
+        st.subheader("Editar Cadastro Individual")
+        if dados_completos_df.empty:
+            st.warning("Não há dados para editar.")
+        else:
+            alunos_df = load_data(NOME_TABELA_ALUNOS)
+            modo = st.radio("Selecione a Ação:", ["Editar um Cadastro Existente", "Adicionar Novo Cadastro"], horizontal=True)
+            dados_aluno = {}
+            
+            if modo == "Editar um Cadastro Existente":
                 nomes_para_selecao = [""] + sorted(dados_completos_df['nome_completo'].unique())
                 aluno_selecionado = st.selectbox("Selecione um militar para editar:", options=nomes_para_selecao, key="editar_aluno_select")
                 if aluno_selecionado:
-                    # Pega os dados do DataFrame já carregado e processado
                     dados_aluno = dados_completos_df[dados_completos_df['nome_completo'] == aluno_selecionado].iloc[0].to_dict()
+            else:
+                st.info("Preencha os dados abaixo. Pode buscar um aluno da lista geral para preencher os dados básicos.")
+                if not alunos_df.empty:
+                    opcoes_alunos = [""] + sorted(alunos_df['nome_completo'].unique())
+                    aluno_base = st.selectbox("Buscar dados de um aluno existente:", options=opcoes_alunos, key="adicionar_aluno_select")
+                    if aluno_base:
+                        dados_aluno = alunos_df[alunos_df['nome_completo'] == aluno_base].iloc[0].to_dict()
 
-        else: # Modo Adicionar Novo Cadastro
-            st.info("Preencha os dados abaixo para um novo cadastro. Você pode buscar um aluno da lista geral para preencher os dados básicos.")
-            # Busca inteligente a partir da tabela de Alunos
-            if not alunos_df.empty:
-                opcoes_alunos = [""] + sorted(alunos_df['nome_completo'].unique())
-                aluno_base = st.selectbox("Buscar dados de um aluno existente para preencher:", options=opcoes_alunos, key="adicionar_aluno_select")
-                if aluno_base:
-                    # Pega os dados da tabela Alunos como base
-                    dados_aluno = alunos_df[alunos_df['nome_completo'] == aluno_base].iloc[0].to_dict()
-
-        # O formulário é exibido se estivermos editando um aluno selecionado ou no modo de adição
-        if dados_aluno or modo == "Adicionar Novo Cadastro":
-            with st.form("form_edicao_individual"):
+            if dados_aluno or modo == "Adicionar Novo Cadastro":
+                with st.form("form_edicao_individual"):
                 st.markdown("#### Dados Pessoais e de Referência")
                 
                 # No modo de adição, os campos principais são editáveis; no modo de edição, são bloqueados.
