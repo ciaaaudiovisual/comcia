@@ -62,14 +62,15 @@ def preparar_dataframe(df):
     return df_copy
 
 # --- Função Principal da Página ---
+# --- Função Principal da Página (VERSÃO FINAL) ---
 def show_auxilio_transporte():
     st.header("🚌 Gestão de Auxílio Transporte")
     st.markdown("---")
 
     tab1, tab2, tab3, tab4 = st.tabs([
-        "1. Carregar & Editar Ficheiro", 
-        "2. Gerenciar Soldos", 
-        "3. Mapeamento PDF", 
+        "1. Carregar & Editar Ficheiro",
+        "2. Gerenciar Soldos",
+        "3. Mapeamento PDF",
         "4. Gerar Documentos"
     ])
 
@@ -78,7 +79,7 @@ def show_auxilio_transporte():
     with tab1:
         st.subheader("Carregar e Editar Ficheiro de Dados")
         uploaded_file = st.file_uploader("Carregue o seu ficheiro CSV", type="csv", key="aux_transp_uploader")
-        
+
         if uploaded_file:
             if st.button(f"Processar Ficheiro: {uploaded_file.name}", type="primary"):
                 with st.spinner("Processando..."):
@@ -93,20 +94,18 @@ def show_auxilio_transporte():
                     except Exception as e:
                         st.error(f"Erro ao ler o ficheiro: {e}")
                         st.error(traceback.format_exc())
-        
-        # CORREÇÃO: Editor de dados reintegrado para permitir a manipulação dos dados carregados
+
         if 'dados_do_csv' in st.session_state:
             st.markdown("---")
             st.markdown("##### Tabela de Dados para Edição")
-            st.info("Faça as correções ou adições necessárias na tabela. As alterações serão usadas nas próximas abas.")
-            
+            st.info("Faça as correções necessárias na tabela. As alterações serão usadas nas próximas abas.")
+
             df_editado = st.data_editor(
                 st.session_state['dados_do_csv'],
                 num_rows="dynamic",
                 use_container_width=True,
                 key="data_editor_transporte"
             )
-            # Salva continuamente os dados editados na memória da sessão
             st.session_state['dados_do_csv'] = df_editado
 
     with tab2:
@@ -121,9 +120,9 @@ def show_auxilio_transporte():
                 "soldo": st.column_config.NumberColumn("Soldo (R$)", format="R$ %.2f", required=True)
             }
             edited_soldos_df = st.data_editor(
-                soldos_display, 
-                column_config=colunas_config, 
-                num_rows="dynamic", 
+                soldos_display,
+                column_config=colunas_config,
+                num_rows="dynamic",
                 use_container_width=True,
                 key="soldos_editor"
             )
@@ -139,77 +138,68 @@ def show_auxilio_transporte():
         except Exception as e:
             st.error(f"Erro ao carregar ou salvar soldos: {e}")
 
-
     with tab3:
-        st.subheader("Mapear Campos do PDF para os Dados da Tabela")
-        if 'dados_em_memoria' not in st.session_state:
-            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
+        st.subheader("Mapear Campos do PDF")
+        if 'dados_do_csv' not in st.session_state:
+            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar & Editar Ficheiro'.")
         else:
-            st.info("Faça o upload do seu modelo PDF preenchível.")
+            st.info("Faça o upload do seu modelo PDF preenchível para mapear os campos.")
             pdf_template_file = st.file_uploader("Carregue o modelo PDF", type="pdf", key="pdf_mapper_uploader")
+
             if pdf_template_file:
                 try:
                     reader = PdfReader(BytesIO(pdf_template_file.getvalue()))
                     pdf_fields = list(reader.get_form_text_fields().keys())
+
                     if not pdf_fields:
                         st.warning("Nenhum campo de formulário editável foi encontrado neste PDF.")
                     else:
-                        st.success(f"{len(pdf_fields)} campos encontrados.")
-                        df_cols = st.session_state['dados_em_memoria'].columns.tolist()
+                        st.success(f"{len(pdf_fields)} campos encontrados no PDF.")
+                        df_cols = st.session_state['dados_do_csv'].columns.tolist()
                         calculated_cols = ['despesa_diaria', 'despesa_mensal_total', 'parcela_descontada_6_porcento', 'auxilio_transporte_pago']
-                        all_system_columns = ["-- Não Mapear Este Campo --"] + sorted(df_cols + calculated_cols)
+                        all_system_columns = ["-- Não Mapear --"] + sorted(df_cols + calculated_cols)
                         saved_mapping = st.session_state.get('mapeamento_pdf', {})
+
                         with st.form("pdf_mapping_form"):
                             user_mapping = {}
+                            st.markdown("**Mapeie cada campo do PDF para uma coluna dos dados:**")
                             for field in sorted(pdf_fields):
-                                best_guess = saved_mapping.get(field, "-- Não Mapear Este Campo --")
-                                if best_guess == "-- Não Mapear Este Campo --":
-                                    field_simplified = field.lower().replace("_", "").replace(" ", "")
-                                    for col in all_system_columns:
-                                        col_simplified = col.lower().replace("_", "")
-                                        if field_simplified == col_simplified:
-                                            best_guess = col; break
+                                best_guess = saved_mapping.get(field, "-- Não Mapear --")
                                 index = all_system_columns.index(best_guess) if best_guess in all_system_columns else 0
                                 user_mapping[field] = st.selectbox(f"Campo do PDF: `{field}`", options=all_system_columns, index=index)
+                            
                             if st.form_submit_button("Salvar Mapeamento", type="primary"):
                                 st.session_state['mapeamento_pdf'] = user_mapping
                                 st.session_state['pdf_template_bytes'] = pdf_template_file.getvalue()
-                                st.success("Mapeamento salvo!")
+                                st.success("Mapeamento salvo com sucesso! Já pode ir para a aba 'Gerar Documentos'.")
                 except Exception as e:
-                    st.error(f"Ocorreu um erro ao processar o PDF: {e}")
+                    st.error(f"Erro ao processar o PDF: {e}")
+
 
     with tab4:
         st.subheader("Gerar Documentos Finais")
         if 'dados_do_csv' not in st.session_state:
-            st.warning("Por favor, carregue e edite um ficheiro na aba '1. Carregar & Editar Ficheiro'.")
+            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar & Editar Ficheiro'.")
+        elif 'mapeamento_pdf' not in st.session_state or 'pdf_template_bytes' not in st.session_state:
+            st.warning("Por favor, carregue o modelo PDF e salve o mapeamento na aba '3. Mapeamento PDF'.")
         else:
             df_do_csv = st.session_state['dados_do_csv'].copy()
             
-            with st.spinner("Buscando soldos atualizados e juntando dados..."):
+            with st.spinner("Buscando soldos e juntando dados..."):
                 df_soldos_atual = load_data("soldos")
-                
                 df_do_csv['graduacao'] = df_do_csv['graduacao'].astype(str).str.strip()
                 df_soldos_atual['graduacao'] = df_soldos_atual['graduacao'].astype(str).str.strip()
-                
                 df_completo = pd.merge(df_do_csv, df_soldos_atual[['graduacao', 'soldo']], on='graduacao', how='left')
                 df_completo['soldo'].fillna(0, inplace=True)
-                
                 calculos_df = df_completo.apply(calcular_auxilio_transporte, axis=1)
                 df_com_calculo = pd.concat([df_completo, calculos_df], axis=1)
 
             st.markdown("#### Filtro para Seleção")
-            st.info("Selecione os militares para gerar o documento. Deixe em branco para incluir todos.")
-            
             nomes_validos = df_com_calculo['nome_completo'].dropna().unique()
             opcoes_filtro = sorted(nomes_validos)
-            
             selecionados = st.multiselect("Selecione por Nome Completo:", options=opcoes_filtro)
             
-            if selecionados:
-                df_para_gerar = df_com_calculo[df_com_calculo['nome_completo'].isin(selecionados)]
-            else:
-                df_para_gerar = df_com_calculo
-
+            df_para_gerar = df_com_calculo[df_com_calculo['nome_completo'].isin(selecionados)] if selecionados else df_com_calculo
             st.dataframe(df_para_gerar)
 
             if st.button(f"Gerar PDF para os {len(df_para_gerar)} selecionados", type="primary"):
@@ -217,24 +207,21 @@ def show_auxilio_transporte():
                     try:
                         template_bytes = st.session_state['pdf_template_bytes']
                         mapping = st.session_state['mapeamento_pdf']
-                        
                         filled_pdfs = []
                         progress_bar = st.progress(0)
-                        total_docs = len(df_para_gerar)
-
+                        
                         for i, (_, aluno_row) in enumerate(df_para_gerar.iterrows()):
-                            # Preenche o PDF para o aluno atual
                             pdf_preenchido = fill_pdf_auxilio(template_bytes, aluno_row, mapping)
                             filled_pdfs.append(pdf_preenchido)
-                            progress_bar.progress((i + 1) / total_docs, text=f"Gerando: {aluno_row['nome_completo']}")
-
-                        # Junta todos os PDFs num único ficheiro
-                        final_pdf_buffer = merge_pdfs(filled_pdfs)
+                            progress_bar.progress((i + 1) / len(df_para_gerar), text=f"Gerando: {aluno_row['nome_completo']}")
                         
+                        final_pdf_buffer = merge_pdfs(filled_pdfs)
                         st.session_state['pdf_final_bytes'] = final_pdf_buffer.getvalue()
                         progress_bar.empty()
+                        
                         st.success("Documento consolidado gerado com sucesso!")
                         st.balloons()
+
                     except Exception as e:
                         st.error(f"Ocorreu um erro durante a geração dos PDFs: {e}")
                         st.error(traceback.format_exc())
