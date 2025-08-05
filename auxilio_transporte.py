@@ -155,7 +155,6 @@ def show_auxilio_transporte():
                                 st.success("Mapeamento salvo com sucesso! Já pode ir para a aba 'Gerar Documentos'.")
                 except Exception as e:
                     st.error(f"Erro ao processar o PDF: {e}")
-
     with tab3:
         st.subheader("Gerar Documentos Finais")
         if 'dados_em_memoria' not in st.session_state:
