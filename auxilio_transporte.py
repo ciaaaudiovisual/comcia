@@ -111,19 +111,30 @@ def show_auxilio_transporte():
         'numero_interno', 'nome_completo', 'graduacao', 'dias_uteis', 'ano_referencia',
         'endereco', 'bairro', 'cidade', 'cep'
     ] + [f'{d}_{i}_{t}' for i in range(1, 6) for d in ['ida', 'volta'] for t in ['empresa', 'linha', 'tarifa']]
-
     @st.cache_data(ttl=600)
     def carregar_dados_completos():
         df_transporte = load_data(NOME_TABELA_TRANSPORTE)
         df_soldos = load_data(NOME_TABELA_SOLDOS)
         
-        if df_transporte.empty:
-            return pd.DataFrame()
+        # --- CORREÇÃO: VERIFICAÇÃO ROBUSTA DAS COLUNAS ---
 
+        # Verifica se a tabela de transporte está vazia ou sem a coluna 'graduacao'
+        if df_transporte.empty:
+            return pd.DataFrame() # Retorna vazio se não houver dados de transporte
         if 'graduacao' not in df_transporte.columns:
-             st.error(f"A tabela '{NOME_TABELA_TRANSPORTE}' precisa de uma coluna 'graduacao'.")
+             st.error(f"A sua tabela '{NOME_TABELA_TRANSPORTE}' no Supabase precisa de ter uma coluna chamada 'graduacao'.")
              return pd.DataFrame()
+
+        # Verifica se a tabela de soldos está vazia ou sem as colunas necessárias
+        if df_soldos.empty:
+            st.warning(f"A tabela '{NOME_TABELA_SOLDOS}' está vazia. Não será possível associar os soldos.")
+            df_soldos = pd.DataFrame(columns=['graduacao', 'soldo'])
+        if 'graduacao' not in df_soldos.columns or 'soldo' not in df_soldos.columns:
+            st.error(f"A sua tabela '{NOME_TABELA_SOLDOS}' no Supabase precisa de ter as colunas 'graduacao' e 'soldo'.")
+            # Continua a execução, mas o soldo será 0
+            df_soldos = pd.DataFrame(columns=['graduacao', 'soldo'])
         
+        # Padronização e junção dos dados
         df_transporte['graduacao'] = df_transporte['graduacao'].astype(str).str.strip().str.upper()
         df_soldos['graduacao'] = df_soldos['graduacao'].astype(str).str.strip().str.upper()
 
