@@ -10,6 +10,21 @@ from pypdf import PdfReader
 
 # --- Bloco de Funções Essenciais ---
 
+def create_excel_template():
+    """Cria um template XLSX vazio com o cabeçalho correto para download."""
+    colunas_template = [
+        'Carimbo de data/hora', 'NÚMERO INTERNO DO ALUNO', 'NOME COMPLETO', 'POSTO/GRAD', 'SOLDO',
+        'DIAS ÚTEIS (MÁX 22)', 'ANO DE REFERÊNCIA', 'ENDEREÇO COMPLETO', 'BAIRRO', 'CIDADE', 'CEP',
+        '1ª EMPRESA (IDA)', '1º TRAJETO (IDA)', '1ª TARIFA (IDA)', '1ª EMPRESA (VOLTA)', '1º TRAJETO (VOLTA)', '1ª TARIFA (VOLTA)',
+        '2ª EMPRESA (IDA)', '2º TRAJETO (IDA)', '2ª TARIFA (IDA)', '2ª EMPRESA (VOLTA)', '2º TRAJETO (VOLTA)', '2ª TARIFA (VOLTA)',
+        # Adicione mais colunas até o 5º trajeto se necessário
+    ]
+    df_template = pd.DataFrame(columns=colunas_template)
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df_template.to_excel(writer, index=False, sheet_name='Modelo')
+    return output.getvalue()
+
 def calcular_auxilio_transporte(linha):
     """Calcula os valores do auxílio transporte para uma única linha de dados."""
     try:
@@ -21,8 +36,6 @@ def calcular_auxilio_transporte(linha):
             despesa_diaria += float(volta_tarifa if volta_tarifa else 0.0)
         dias_trabalhados = min(int(linha.get('dias_uteis', 0) or 0), 22)
         despesa_mensal = despesa_diaria * dias_trabalhados
-        
-        # O soldo agora vem diretamente do ficheiro carregado
         valor_soldo_bruto = linha.get('soldo')
         try:
             soldo = float(valor_soldo_bruto)
@@ -43,11 +56,11 @@ def calcular_auxilio_transporte(linha):
         return pd.Series()
 
 def preparar_dataframe(df):
-    """Prepara o DataFrame do CSV, agora INCLUINDO a coluna 'SOLDO'."""
+    """Prepara o DataFrame do CSV, incluindo a coluna 'SOLDO'."""
     df_copy = df.iloc[:, 1:].copy()
     mapa_colunas = {
         'NÚMERO INTERNO DO ALUNO': 'numero_interno', 'NOME COMPLETO': 'nome_completo', 'POSTO/GRAD': 'graduacao',
-        'SOLDO': 'soldo', # Adicionado o mapeamento para a coluna de soldo
+        'SOLDO': 'soldo',
         'DIAS ÚTEIS (MÁX 22)': 'dias_uteis', 'ANO DE REFERÊNCIA': 'ano_referencia',
         'ENDEREÇO COMPLETO': 'endereco', 'BAIRRO': 'bairro', 'CIDADE': 'cidade', 'CEP': 'cep'
     }
@@ -80,6 +93,16 @@ def show_auxilio_transporte():
 
     with tab1:
         st.subheader("Carregar e Editar Ficheiro de Dados")
+
+        # Botão para baixar o modelo de preenchimento
+        st.markdown("##### Modelo de Preenchimento")
+        modelo_bytes = create_excel_template()
+        st.download_button(
+            label="📥 Baixar Modelo Padrão (.xlsx)",
+            data=modelo_bytes,
+            file_name="modelo_auxilio_transporte.xlsx"
+        )
+        st.markdown("---")
 
         if 'dados_em_memoria' in st.session_state:
             st.info(f"Ficheiro em memória: **{st.session_state['nome_ficheiro']}**")
@@ -120,23 +143,23 @@ def show_auxilio_transporte():
             )
 
     with tab2:
-        st.subheader("Mapear Campos do PDF")
-        if 'dados_do_csv' not in st.session_state:
-            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar & Editar Ficheiro'.")
+        st.subheader("Mapear Campos do PDF para os Dados")
+        if 'dados_em_memoria' not in st.session_state:
+            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
         else:
-            st.info("Faça o upload do seu modelo PDF preenchível para mapear os campos.")
+            st.info("Faça o upload do seu modelo PDF preenchível.")
             pdf_template_file = st.file_uploader("Carregue o modelo PDF", type="pdf", key="pdf_mapper_uploader")
 
             if pdf_template_file:
                 try:
                     reader = PdfReader(BytesIO(pdf_template_file.getvalue()))
                     pdf_fields = list(reader.get_form_text_fields().keys())
-
+                    
                     if not pdf_fields:
                         st.warning("Nenhum campo de formulário editável foi encontrado neste PDF.")
                     else:
-                        st.success(f"{len(pdf_fields)} campos encontrados no PDF.")
-                        df_cols = st.session_state['dados_do_csv'].columns.tolist()
+                        st.success(f"{len(pdf_fields)} campos encontrados.")
+                        df_cols = st.session_state['dados_em_memoria'].columns.tolist()
                         calculated_cols = ['despesa_diaria', 'despesa_mensal_total', 'parcela_descontada_6_porcento', 'auxilio_transporte_pago']
                         all_system_columns = ["-- Não Mapear --"] + sorted(df_cols + calculated_cols)
                         saved_mapping = st.session_state.get('mapeamento_pdf', {})
@@ -152,18 +175,20 @@ def show_auxilio_transporte():
                             if st.form_submit_button("Salvar Mapeamento", type="primary"):
                                 st.session_state['mapeamento_pdf'] = user_mapping
                                 st.session_state['pdf_template_bytes'] = pdf_template_file.getvalue()
-                                st.success("Mapeamento salvo com sucesso! Já pode ir para a aba 'Gerar Documentos'.")
+                                st.success("Mapeamento salvo com sucesso!")
                 except Exception as e:
                     st.error(f"Erro ao processar o PDF: {e}")
+
     with tab3:
         st.subheader("Gerar Documentos Finais")
         if 'dados_em_memoria' not in st.session_state:
             st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
+        elif 'mapeamento_pdf' not in st.session_state or 'pdf_template_bytes' not in st.session_state:
+            st.warning("Por favor, carregue o modelo PDF e salve o mapeamento na aba '2. Mapeamento PDF'.")
         else:
             df_final = st.session_state['dados_em_memoria'].copy()
             
             with st.spinner("Calculando valores..."):
-                # Agora o cálculo é feito diretamente, sem buscar dados externos
                 calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
                 df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
 
@@ -176,4 +201,33 @@ def show_auxilio_transporte():
             st.dataframe(df_para_gerar)
 
             if st.button(f"Gerar PDF para os {len(df_para_gerar)} selecionados", type="primary"):
-                st.info("Lógica de geração de PDF a ser conectada aqui.")
+                with st.spinner("Gerando PDFs..."):
+                    try:
+                        template_bytes = st.session_state['pdf_template_bytes']
+                        mapping = st.session_state['mapeamento_pdf']
+                        filled_pdfs = []
+                        progress_bar = st.progress(0)
+                        
+                        for i, (_, aluno_row) in enumerate(df_para_gerar.iterrows()):
+                            pdf_preenchido = fill_pdf_auxilio(template_bytes, aluno_row, mapping)
+                            filled_pdfs.append(pdf_preenchido)
+                            progress_bar.progress((i + 1) / len(df_para_gerar), text=f"Gerando: {aluno_row['nome_completo']}")
+                        
+                        final_pdf_buffer = merge_pdfs(filled_pdfs)
+                        st.session_state['pdf_final_bytes'] = final_pdf_buffer.getvalue()
+                        progress_bar.empty()
+                        
+                        st.success("Documento consolidado gerado com sucesso!")
+                        st.balloons()
+
+                    except Exception as e:
+                        st.error(f"Ocorreu um erro durante a geração dos PDFs: {e}")
+                        st.error(traceback.format_exc())
+
+                if 'pdf_final_bytes' in st.session_state:
+                    st.download_button(
+                        label="✅ Baixar Documento Consolidado (.pdf)",
+                        data=st.session_state['pdf_final_bytes'],
+                        file_name="Declaracoes_Auxilio_Transporte.pdf",
+                        mime="application/pdf"
+                    )
