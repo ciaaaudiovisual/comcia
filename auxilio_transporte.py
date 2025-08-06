@@ -231,25 +231,32 @@ def show_auxilio_transporte():
                         st.error(f"Erro ao processar o PDF: {e}")
 
     with tab3:
-        st.subheader("Gerar Documentos Finais")
-        if 'dados_em_memoria' not in st.session_state:
-            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
-        elif 'mapeamento_pdf' not in st.session_state or 'pdf_template_bytes' not in st.session_state:
-            st.warning("Por favor, carregue o modelo PDF e salve o mapeamento na aba '2. Mapeamento PDF'.")
-        else:
-            df_final = st.session_state['dados_em_memoria'].copy()
-            
-            with st.spinner("Calculando valores..."):
-                calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
-                df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
+            st.subheader("Gerar Documentos Finais")
+            if 'dados_em_memoria' not in st.session_state:
+                st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
+            elif 'mapeamento_pdf' not in st.session_state or 'pdf_template_bytes' not in st.session_state:
+                st.warning("Por favor, carregue o modelo PDF e salve o mapeamento na aba '2. Mapeamento PDF'.")
+            else:
+                df_final = st.session_state['dados_em_memoria'].copy()
+                
+                with st.spinner("Calculando valores..."):
+                    calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
+                    df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
+    
+                st.markdown("#### Filtro para Seleção")
+                
+                # --- CORREÇÃO APLICADA AQUI ---
+                # Verifica se a coluna 'nome_completo' existe antes de a usar
+                if 'nome_completo' in df_com_calculo.columns:
+                    st.info("Selecione os militares para gerar o documento. Deixe em branco para incluir todos.")
+                    
+                    nomes_validos = df_com_calculo['nome_completo'].dropna().unique()
+                    opcoes_filtro = sorted(nomes_validos)
+                    selecionados = st.multiselect("Selecione por Nome Completo:", options=opcoes_filtro)
+                    
+                    df_para_gerar = df_com_calculo[df_com_calculo['nome_completo'].isin(selecionados)] if selecionados else df_com_calculo
+                    st.dataframe(df_para_gerar)
 
-            st.markdown("#### Filtro para Seleção")
-            nomes_validos = df_com_calculo['nome_completo'].dropna().unique()
-            opcoes_filtro = sorted(nomes_validos)
-            selecionados = st.multiselect("Selecione por Nome Completo:", options=opcoes_filtro)
-            
-            df_para_gerar = df_com_calculo[df_com_calculo['nome_completo'].isin(selecionados)] if selecionados else df_com_calculo
-            st.dataframe(df_para_gerar)
 
             if st.button(f"Gerar PDF para os {len(df_para_gerar)} selecionados", type="primary"):
                 with st.spinner("Gerando PDFs..."):
