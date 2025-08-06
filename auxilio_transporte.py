@@ -3,45 +3,14 @@ import pandas as pd
 from io import BytesIO
 import traceback
 import re
-from pdf_utils import fill_pdf_auxilio, merge_pdfs
-from pypdf import PdfReader
 from difflib import SequenceMatcher
 
+# Importe as suas funções de geração de PDF a partir do ficheiro de utilitários
+from pdf_utils import fill_pdf_auxilio, merge_pdfs
+from pypdf import PdfReader
+
 # --- Bloco de Funções Essenciais ---
-def clean_text(text):
-    """Função auxiliar para limpar e normalizar nomes de colunas para comparação."""
-    if not isinstance(text, str): return ""
-    # Remove acentos, caracteres especiais e espaços, e converte para minúsculas
-    text = text.lower()
-    text = re.sub(r'[^a-z0-9]', '', text)
-    return text
 
-def guess_best_match(target_column, available_columns, threshold=0.6):
-    """
-    Encontra a melhor correspondência para uma coluna-alvo numa lista de colunas disponíveis,
-    usando um algoritmo de semelhança de texto.
-    """
-    best_match = ""
-    highest_score = 0.0
-    clean_target = clean_text(target_column)
-
-    # Não compara com a opção "-- Não Mapear --"
-    for option in available_columns:
-        if option == "-- Não Mapear --":
-            continue
-            
-        clean_option = clean_text(option)
-        score = SequenceMatcher(None, clean_target, clean_option).ratio()
-        
-        if score > highest_score:
-            highest_score = score
-            best_match = option
-    
-    # Só retorna a sugestão se a pontuação for boa o suficiente
-    if highest_score >= threshold:
-        return best_match
-    return ""
-    
 def create_excel_template():
     """Cria um template XLSX vazio com o cabeçalho correto para download."""
     colunas_template = [
@@ -58,6 +27,63 @@ def create_excel_template():
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df_template.to_excel(writer, index=False, sheet_name='Modelo')
     return output.getvalue()
+
+def clean_text(text):
+    """Função auxiliar para limpar e normalizar nomes de colunas para comparação."""
+    if not isinstance(text, str): return ""
+    return re.sub(r'[^a-z0-9]', '', text.lower())
+
+def guess_best_match(target_column, available_columns, threshold=0.6):
+    """Encontra a melhor correspondência para uma coluna-alvo, usando um algoritmo de semelhança."""
+    best_match = ""
+    highest_score = 0.0
+    clean_target = clean_text(target_column)
+
+    for option in available_columns:
+        if option == "-- Não Mapear --": continue
+        clean_option = clean_text(option)
+        score = SequenceMatcher(None, clean_target, clean_option).ratio()
+        if score > highest_score:
+            highest_score = score
+            best_match = option
+    
+    if highest_score >= threshold:
+        return best_match
+    return ""
+
+def preparar_dataframe(df):
+    """Prepara o DataFrame do CSV com renomeação insensível a maiúsculas/minúsculas."""
+    df_copy = df.iloc[:, 1:].copy()
+    
+    mapa_colunas_lower = {
+        'numero interno do aluno': 'numero_interno', 'nome completo': 'nome_completo', 'posto/grad': 'graduacao',
+        'soldo': 'soldo', 'dias úteis (máx 22)': 'dias_uteis', 'ano de referência': 'ano_referencia',
+        'endereço completo': 'endereco', 'bairro': 'bairro', 'cidade': 'cidade', 'cep': 'cep'
+    }
+    for i in range(1, 6):
+        for direcao in ["ida", "volta"]:
+            mapa_colunas_lower[f'{i}ª empresa ({direcao})'] = f'{direcao}_{i}_empresa'
+            mapa_colunas_lower[f'{i}º trajeto ({direcao})'] = f'{direcao}_{i}_linha'
+            mapa_colunas_lower[f'{i}ª tarifa ({direcao})'] = f'{direcao}_{i}_tarifa'
+
+    rename_map = {col_original: mapa_colunas_lower.get(col_original.lower().strip()) 
+                  for col_original in df_copy.columns 
+                  if mapa_colunas_lower.get(col_original.lower().strip())}
+
+    df_copy.rename(columns=rename_map, inplace=True)
+    
+    for col in df_copy.select_dtypes(include=['object']).columns:
+        df_copy[col] = df_copy[col].str.upper().str.strip()
+
+    colunas_numericas = ['soldo', 'dias_uteis'] + [f'ida_{i}_tarifa' for i in range(1, 6)] + [f'volta_{i}_tarifa' for i in range(1, 6)]
+    for col in colunas_numericas:
+        if col in df_copy.columns:
+            s = df_copy[col].astype(str).str.replace(r'[^\d,.]', '', regex=True).str.replace(',', '.')
+            df_copy[col] = pd.to_numeric(s, errors='coerce')
+    
+    df_copy.fillna(0, inplace=True)
+    return df_copy
+
 
 def calcular_auxilio_transporte(linha):
     """Calcula os valores do auxílio transporte para uma única linha de dados."""
@@ -90,41 +116,6 @@ def calcular_auxilio_transporte(linha):
         print(f"Erro no cálculo para NIP {linha.get('numero_interno', 'N/A')}: {e}")
         return pd.Series()
 
-def preparar_dataframe(df):
-    """Prepara o DataFrame do CSV, incluindo a coluna 'SOLDO' e com renomeação insensível a maiúsculas/minúsculas."""
-    df_copy = df.iloc[:, 1:].copy()
-    
-    # Mapa de colunas com chaves em minúsculas para comparação
-    mapa_colunas_lower = {
-        'numero interno do aluno': 'numero_interno', 'nome completo': 'nome_completo', 'posto/grad': 'graduacao',
-        'soldo': 'soldo', 'dias úteis (máx 22)': 'dias_uteis', 'ano de referência': 'ano_referencia',
-        'endereço completo': 'endereco', 'bairro': 'bairro', 'cidade': 'cidade', 'cep': 'cep'
-    }
-    for i in range(1, 6):
-        for direcao in ["ida", "volta"]:
-            mapa_colunas_lower[f'{i}ª empresa ({direcao})'] = f'{direcao}_{i}_empresa'
-            mapa_colunas_lower[f'{i}º trajeto ({direcao})'] = f'{direcao}_{i}_linha'
-            mapa_colunas_lower[f'{i}ª tarifa ({direcao})'] = f'{direcao}_{i}_tarifa'
-
-    # Cria um dicionário de renomeação com base na correspondência insensível a maiúsculas/minúsculas
-    rename_map = {col_original: mapa_colunas_lower.get(col_original.lower().strip()) 
-                  for col_original in df_copy.columns 
-                  if mapa_colunas_lower.get(col_original.lower().strip())}
-
-    df_copy.rename(columns=rename_map, inplace=True)
-    
-    for col in df_copy.select_dtypes(include=['object']).columns:
-        df_copy[col] = df_copy[col].str.upper().str.strip()
-
-    colunas_numericas = ['soldo', 'dias_uteis'] + [f'ida_{i}_tarifa' for i in range(1, 6)] + [f'volta_{i}_tarifa' for i in range(1, 6)]
-    for col in colunas_numericas:
-        if col in df_copy.columns:
-            df_copy[col] = df_copy[col].astype(str).str.replace('R$', '', regex=False).str.strip()
-            df_copy[col] = pd.to_numeric(df_copy[col].str.replace(',', '.'), errors='coerce')
-    
-    df_copy.fillna(0, inplace=True)
-    return df_copy
-
 # --- Função Principal da Página ---
 def show_auxilio_transporte():
     st.header("🚌 Gestão de Auxílio Transporte (Baseado em Ficheiro)")
@@ -136,11 +127,7 @@ def show_auxilio_transporte():
         st.subheader("Carregar e Editar Ficheiro de Dados")
         st.markdown("##### Modelo de Preenchimento")
         modelo_bytes = create_excel_template()
-        st.download_button(
-            label="📥 Baixar Modelo Padrão (.xlsx)",
-            data=modelo_bytes,
-            file_name="modelo_auxilio_transporte.xlsx"
-        )
+        st.download_button("📥 Baixar Modelo Padrão (.xlsx)", data=modelo_bytes, file_name="modelo_auxilio_transporte.xlsx")
         st.markdown("---")
 
         if 'dados_em_memoria' in st.session_state:
@@ -152,7 +139,6 @@ def show_auxilio_transporte():
                 st.rerun()
 
         uploaded_file = st.file_uploader("Carregue o seu ficheiro CSV com todos os dados", type="csv")
-
         if uploaded_file:
             if st.button(f"Processar Ficheiro: {uploaded_file.name}", type="primary"):
                 with st.spinner("Processando..."):
@@ -168,32 +154,21 @@ def show_auxilio_transporte():
         if 'dados_em_memoria' in st.session_state:
             st.markdown("---")
             st.markdown("##### Tabela de Dados para Edição")
-            st.info("As alterações feitas aqui são usadas nas outras abas. Para salvá-las, baixe o CSV editado.")
-
-            df_editado = st.data_editor(
-                st.session_state['dados_em_memoria'], num_rows="dynamic", use_container_width=True
-            )
+            df_editado = st.data_editor(st.session_state['dados_em_memoria'], num_rows="dynamic", use_container_width=True)
             st.session_state['dados_em_memoria'] = df_editado 
-
             csv_editado = df_editado.to_csv(index=False, sep=';').encode('latin-1')
-            st.download_button(
-                label="📥 Baixar CSV Editado", data=csv_editado,
-                file_name=f"dados_editados_{st.session_state['nome_ficheiro']}"
-            )
+            st.download_button("📥 Baixar CSV Editado", data=csv_editado, file_name=f"dados_editados_{st.session_state['nome_ficheiro']}")
 
     with tab2:
         st.subheader("Mapear Campos do PDF para os Dados")
         if 'dados_em_memoria' not in st.session_state:
             st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
         else:
-            st.info("Faça o upload do seu modelo PDF preenchível.")
             pdf_template_file = st.file_uploader("Carregue o modelo PDF", type="pdf", key="pdf_mapper_uploader")
-
             if pdf_template_file:
                 try:
                     reader = PdfReader(BytesIO(pdf_template_file.getvalue()))
                     pdf_fields = list(reader.get_form_text_fields().keys())
-                    
                     if not pdf_fields:
                         st.warning("Nenhum campo de formulário editável foi encontrado neste PDF.")
                     else:
@@ -207,49 +182,42 @@ def show_auxilio_transporte():
                             user_mapping = {}
                             st.markdown("**Mapeie cada campo do PDF para uma coluna dos dados:**")
                             for field in sorted(pdf_fields):
-                                best_guess = saved_mapping.get(field, "-- Não Mapear --")
+                                best_guess = saved_mapping.get(field) or guess_best_match(field, all_system_columns) or "-- Não Mapear --"
                                 index = all_system_columns.index(best_guess) if best_guess in all_system_columns else 0
                                 user_mapping[field] = st.selectbox(f"Campo do PDF: `{field}`", options=all_system_columns, index=index)
                             
                             if st.form_submit_button("Salvar Mapeamento", type="primary"):
                                 st.session_state['mapeamento_pdf'] = user_mapping
                                 st.session_state['pdf_template_bytes'] = pdf_template_file.getvalue()
-                                st.success("Mapeamento salvo com sucesso!")
+                                st.success("Mapeamento salvo!")
                 except Exception as e:
                     st.error(f"Erro ao processar o PDF: {e}")
+ 
     with tab3:
-            st.subheader("Gerar Documentos Finais")
-            if 'dados_em_memoria' not in st.session_state:
-                st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
-            elif 'mapeamento_pdf' not in st.session_state or 'pdf_template_bytes' not in st.session_state:
-                st.warning("Por favor, carregue o modelo PDF e salve o mapeamento na aba '2. Mapeamento PDF'.")
+        st.subheader("Gerar Documentos Finais")
+        if 'dados_em_memoria' not in st.session_state:
+            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
+        elif 'mapeamento_pdf' not in st.session_state or 'pdf_template_bytes' not in st.session_state:
+            st.warning("Por favor, carregue o modelo PDF e salve o mapeamento na aba '2. Mapeamento PDF'.")
+        else:
+            df_final = st.session_state['dados_em_memoria'].copy()
+            colunas_essenciais = ['nome_completo', 'numero_interno']
+            colunas_em_falta = [col for col in colunas_essenciais if col not in df_final.columns]
+            if colunas_em_falta:
+                st.error(f"Erro: Colunas essenciais não foram encontradas: {', '.join(colunas_em_falta)}. Verifique o seu CSV.")
             else:
-                df_final = st.session_state['dados_em_memoria'].copy()
+                with st.spinner("Calculando valores..."):
+                    calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
+                    df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
                 
-                # Verificação robusta para garantir que as colunas essenciais existem após a preparação
-                colunas_essenciais = ['nome_completo', 'numero_interno']
-                colunas_em_falta = [col for col in colunas_essenciais if col not in df_final.columns]
-    
-                if colunas_em_falta:
-                    st.error(f"""
-                    Erro: Colunas essenciais não foram encontradas nos dados processados: **{', '.join(colunas_em_falta)}**.
+                st.markdown("#### Filtro para Seleção")
+                nomes_validos = df_com_calculo['nome_completo'].dropna().unique()
+                opcoes_filtro = sorted(nomes_validos)
+                selecionados = st.multiselect("Selecione por Nome Completo:", options=opcoes_filtro)
+                df_para_gerar = df_com_calculo[df_com_calculo['nome_completo'].isin(selecionados)] if selecionados else df_com_calculo
+                st.dataframe(df_para_gerar)
                     
-                    **Causa Provável:** O título da(s) coluna(s) no seu ficheiro CSV está muito diferente do esperado (ex: 'NOME COMPLETO', 'NÚMERO INTERNO DO ALUNO'). 
-                    
-                    Por favor, corrija o seu ficheiro CSV ou use o modelo padrão e carregue-o novamente na Aba 1.
-                    """)
-                else:
-                    with st.spinner("Calculando valores..."):
-                        calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
-                        df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
-    
-                    st.markdown("#### Filtro para Seleção")
-                    nomes_validos = df_com_calculo['nome_completo'].dropna().unique()
-                    opcoes_filtro = sorted(nomes_validos)
-                    selecionados = st.multiselect("Selecione por Nome Completo:", options=opcoes_filtro)
-                    
-                    df_para_gerar = df_com_calculo[df_com_calculo['nome_completo'].isin(selecionados)] if selecionados else df_com_calculo
-                    st.dataframe(df_para_gerar)
+                 
     
                     if st.button(f"Gerar PDF para os {len(df_para_gerar)} selecionados", type="primary"):
                         with st.spinner("Gerando PDFs..."):
