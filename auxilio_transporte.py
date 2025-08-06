@@ -3,6 +3,8 @@ import pandas as pd
 from io import BytesIO
 import traceback
 from PyPDF2 import PdfReader, PdfWriter
+import re
+from difflib import SequenceMatcher
 
 # --- FUNÇÕES DE LÓGICA E MANIPULAÇÃO DE PDF ---
 
@@ -11,15 +13,13 @@ def create_excel_template():
     colunas_template = [
         'NOME COMPLETO', 'POSTO/GRAD', 'NIP', 'ENDERECO_COMPLETO', 'BAIRRO', 'CIDADE', 'CEP',
         'SOLDO', 'DIAS_UTEIS', 'DESPESA_DIARIA',
-        'EMPRESA_IDA_1', 'TRAJETO_IDA_1', 'TARIFA_IDA_1', 
+        'EMPRESA_IDA_1', 'TRAJETO_IDA_1', 'TARIFA_IDA_1',
         'EMPRESA_VOLTA_1', 'TRAJETO_VOLTA_1', 'TARIFA_VOLTA_1',
     ]
     df_template = pd.DataFrame(columns=colunas_template)
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df_template.to_excel(writer, index=False, sheet_name='Modelo')
-    
-    # É crucial retornar o valor do buffer após ele ser escrito
     return output.getvalue()
 
 def get_pdf_form_fields(pdf_bytes: bytes) -> list:
@@ -34,35 +34,25 @@ def get_pdf_form_fields(pdf_bytes: bytes) -> list:
         return []
 
 def fill_pdf_form(template_bytes: bytes, data_row: pd.Series, mapping: dict) -> BytesIO:
-    """
-    Preenche um formulário PDF para uma única linha de dados.
-    Esta função é mais robusta e usa PyPDF2 diretamente.
-    """
+    """Preenche um formulário PDF para uma única linha de dados."""
     reader = PdfReader(BytesIO(template_bytes))
     writer = PdfWriter()
-    
-    # Copia todas as páginas do template original para o novo ficheiro
+
     for page in reader.pages:
         writer.add_page(page)
 
-    # Cria o dicionário com os dados a serem preenchidos
     fill_data = {}
     for pdf_field, csv_column in mapping.items():
         if csv_column != "-- Não Mapear --" and csv_column in data_row:
-            # Garante que o valor é uma string para evitar erros no preenchimento
             value = str(data_row[csv_column])
             fill_data[pdf_field] = value
 
-    # Preenche os campos do formulário no writer
-    # O método update_page_form_field_values é mais seguro
     for page in writer.pages:
         try:
             writer.update_page_form_field_values(page, fill_data)
         except Exception as e:
-            # Adiciona um aviso se houver erro no preenchimento de uma página específica
             st.warning(f"Aviso ao preencher a página: {e}")
 
-    # Escreve o resultado em um buffer de memória
     output_buffer = BytesIO()
     writer.write(output_buffer)
     output_buffer.seek(0)
@@ -72,7 +62,6 @@ def merge_pdfs(pdf_buffers: list) -> BytesIO:
     """Junta uma lista de PDFs (em BytesIO) em um único ficheiro."""
     merger = PdfWriter()
     for buffer in pdf_buffers:
-        # É importante voltar ao início do buffer antes de ler
         buffer.seek(0)
         try:
             reader = PdfReader(buffer)
@@ -80,14 +69,50 @@ def merge_pdfs(pdf_buffers: list) -> BytesIO:
                 merger.add_page(page)
         except Exception as e:
             st.error(f"Não foi possível juntar um dos PDFs gerados. Erro: {e}")
-            # Retorna um buffer vazio se houver erro
             return BytesIO()
-            
+
     output_buffer = BytesIO()
     merger.write(output_buffer)
     merger.close()
     output_buffer.seek(0)
     return output_buffer
+
+# --- FUNÇÕES DE SIMILARIDADE PARA MAPEAMENTO AUTOMÁTICO ---
+
+def clean_text(text: str) -> str:
+    """Normaliza o texto para comparação: minúsculas e apenas alfanuméricos."""
+    if not isinstance(text, str):
+        return ""
+    return re.sub(r'[^a-z0-9]', '', text.lower())
+
+def find_best_match(target_field: str, available_columns: list, threshold=0.6) -> str:
+    """
+    Encontra a melhor correspondência para um campo alvo dentro de uma lista de colunas.
+    Retorna o nome da coluna original se a similaridade for acima do limiar.
+    """
+    if not target_field or not available_columns:
+        return ""
+
+    clean_target = clean_text(target_field)
+    best_match = ""
+    highest_score = 0.0
+
+    for option in available_columns:
+        if option == "-- Não Mapear --":
+            continue
+        
+        clean_option = clean_text(option)
+        score = SequenceMatcher(None, clean_target, clean_option).ratio()
+
+        if score > highest_score:
+            highest_score = score
+            best_match = option
+    
+    # Retorna a melhor correspondência apenas se for boa o suficiente
+    if highest_score >= threshold:
+        return best_match
+    
+    return ""
 
 # --- FUNÇÃO PRINCIPAL DA PÁGINA ---
 
@@ -96,14 +121,12 @@ def show_auxilio_transporte():
     st.title("📄 Gerador de Documentos de Auxílio Transporte")
     st.markdown("---")
 
-    # Limpa o estado da sessão se a página for recarregada para evitar inconsistências
     if 'page_loaded' not in st.session_state:
         st.session_state.clear()
         st.session_state.page_loaded = True
 
     tab1, tab2, tab3 = st.tabs(["1. Carregar Dados", "2. Mapear Campos do PDF", "3. Gerar Documentos"])
 
-    # --- ABA 1: CARREGAR DADOS ---
     with tab1:
         st.header("Carregar Ficheiro de Dados")
         st.download_button("Baixar Modelo de Dados (.xlsx)", create_excel_template(), "modelo_auxilio_transporte.xlsx")
@@ -134,7 +157,6 @@ def show_auxilio_transporte():
                 use_container_width=True
             )
 
-    # --- ABA 2: MAPEAMENTO DO PDF ---
     with tab2:
         st.header("Carregar e Mapear Modelo PDF")
         if 'dados_carregados' not in st.session_state:
@@ -149,16 +171,21 @@ def show_auxilio_transporte():
                 if not pdf_fields:
                     st.warning("Nenhum campo de formulário editável foi encontrado neste PDF. Verifique o ficheiro.")
                 else:
-                    st.success(f"Encontrados {len(pdf_fields)} campos no PDF.")
+                    st.success(f"Encontrados {len(pdf_fields)} campos no PDF. Tentando mapear automaticamente...")
                     df_cols = ["-- Não Mapear --"] + sorted(st.session_state['dados_carregados'].columns.tolist())
                     
                     with st.form("pdf_mapping_form"):
                         st.markdown("##### Associe as colunas do seu ficheiro aos campos do PDF:")
                         user_mapping = {}
                         for field in sorted(pdf_fields):
+                            # LÓGICA DE AUTO-PREENCHIMENTO
+                            suggestion = find_best_match(field, df_cols)
+                            suggestion_index = df_cols.index(suggestion) if suggestion in df_cols else 0
+
                             user_mapping[field] = st.selectbox(
                                 f"Campo do PDF: `{field}`", 
                                 df_cols, 
+                                index=suggestion_index, # Define a sugestão como padrão
                                 key=f"map_{field}"
                             )
                         
@@ -166,7 +193,6 @@ def show_auxilio_transporte():
                             st.session_state.mapeamento_pdf = user_mapping
                             st.success("Mapeamento salvo com sucesso!")
 
-    # --- ABA 3: GERAR DOCUMENTOS ---
     with tab3:
         st.header("Gerar Documentos Finais")
         if 'dados_carregados' not in st.session_state:
@@ -191,7 +217,6 @@ def show_auxilio_transporte():
                                 filled_pdf_buffer = fill_pdf_form(template_bytes, row, mapping)
                                 filled_pdfs.append(filled_pdf_buffer)
                             
-                            # Verifica se algum PDF foi gerado antes de tentar juntá-los
                             if filled_pdfs:
                                 st.session_state.pdf_final_bytes = merge_pdfs(filled_pdfs).getvalue()
                                 st.success("Documento consolidado gerado com sucesso!")
@@ -212,6 +237,5 @@ def show_auxilio_transporte():
                     mime="application/pdf"
                 )
 
-# Ponto de entrada para executar a aplicação
 if __name__ == "__main__":
     show_auxilio_transporte()
