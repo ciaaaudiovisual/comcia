@@ -89,9 +89,9 @@ def calcular_auxilio_transporte(linha):
     except Exception as e:
         print(f"Erro no cálculo para NIP {linha.get('numero_interno', 'N/A')}: {e}")
         return pd.Series()
-
+        
 def preparar_dataframe(df):
-    """Prepara o DataFrame do CSV, incluindo a coluna 'SOLDO'."""
+    """Prepara o DataFrame do CSV com limpeza de dados mais robusta."""
     df_copy = df.iloc[:, 1:].copy()
     mapa_colunas = {
         'NÚMERO INTERNO DO ALUNO': 'numero_interno', 'NOME COMPLETO': 'nome_completo', 'POSTO/GRAD': 'graduacao',
@@ -110,11 +110,18 @@ def preparar_dataframe(df):
     for col in df_copy.select_dtypes(include=['object']).columns:
         df_copy[col] = df_copy[col].str.upper().str.strip()
 
+    # --- LÓGICA DE LIMPEZA DE NÚMEROS APRIMORADA ---
     colunas_numericas = ['soldo', 'dias_uteis'] + [f'ida_{i}_tarifa' for i in range(1, 6)] + [f'volta_{i}_tarifa' for i in range(1, 6)]
     for col in colunas_numericas:
         if col in df_copy.columns:
-            df_copy[col] = df_copy[col].astype(str).str.replace('R$', '', regex=False).str.strip()
-            df_copy[col] = pd.to_numeric(df_copy[col].str.replace(',', '.'), errors='coerce')
+            # 1. Converte para string para garantir que os métodos de texto funcionem
+            s = df_copy[col].astype(str)
+            # 2. Remove tudo que NÃO é um dígito, vírgula ou ponto
+            s = s.str.replace(r'[^\d,.]', '', regex=True)
+            # 3. Substitui a vírgula por ponto para a conversão decimal
+            s = s.str.replace(',', '.')
+            # 4. Converte para número, tratando erros
+            df_copy[col] = pd.to_numeric(s, errors='coerce')
     
     df_copy.fillna(0, inplace=True)
     return df_copy
