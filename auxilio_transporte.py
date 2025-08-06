@@ -3,8 +3,8 @@ import pandas as pd
 from io import BytesIO
 import traceback
 from PyPDF2 import PdfReader, PdfWriter
-# Importação necessária para a correção final do "flatten"
-from PyPDF2.generic import NameObject
+# A importação do fitz (PyMuPDF) é a mudança principal
+import fitz
 import re
 from difflib import SequenceMatcher
 
@@ -25,64 +25,58 @@ def create_excel_template():
     return output.getvalue()
 
 def get_pdf_form_fields(pdf_bytes: bytes) -> list:
-    """Extrai os nomes dos campos de formulário de um PDF."""
+    """Extrai os nomes dos campos de formulário usando PyMuPDF para consistência."""
+    fields = []
     try:
-        reader = PdfReader(BytesIO(pdf_bytes))
-        if reader.get_form_text_fields():
-            return list(reader.get_form_text_fields().keys())
-        return []
+        # Usa fitz para ler os campos, pois ele será usado para preencher
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        for page in doc:
+            for widget in page.widgets():
+                if widget.field_name and widget.field_name not in fields:
+                    fields.append(widget.field_name)
+        doc.close()
+        return fields
     except Exception as e:
         st.error(f"Erro ao ler os campos do PDF: {e}")
         return []
 
-# --- FUNÇÃO DE PREENCHIMENTO DE PDF COM A CORREÇÃO DEFINITIVA ---
+# --- FUNÇÃO DE PREENCHIMENTO REESCRITA COM PyMuPDF (fitz) ---
 def fill_pdf_form(template_bytes: bytes, data_row: pd.Series, mapping: dict) -> BytesIO:
     """
-    Preenche um formulário PDF para uma única linha de dados.
-    Esta versão contém a correção final para os erros de atributo e visibilidade.
+    Preenche um formulário PDF usando a biblioteca PyMuPDF (fitz).
+    Esta abordagem é mais robusta e resolve os problemas de visibilidade e AttributeError.
     """
-    reader = PdfReader(BytesIO(template_bytes))
-    writer = PdfWriter()
+    doc = fitz.open(stream=template_bytes, filetype="pdf")
 
-    # 1. Copia as páginas do template para o novo ficheiro.
-    # Isso garante que cada PDF gerado comece com uma cópia limpa.
-    for page in reader.pages:
-        writer.add_page(page)
+    for page in doc:
+        # itera sobre todos os campos (widgets) da página
+        for widget in page.widgets():
+            field_name = widget.field_name
+            # Verifica se o campo do PDF está no nosso mapeamento
+            if field_name in mapping:
+                csv_column = mapping[field_name]
+                # Verifica se a coluna mapeada existe nos dados do aluno
+                if csv_column != "-- Não Mapear --" and csv_column in data_row:
+                    value = str(data_row.get(csv_column, ''))
+                    # Preenche o valor do campo
+                    widget.field_value = value
+                    # Aplica a mudança (isso "achata" o campo, tornando-o visível)
+                    widget.update()
 
-    # 2. Preenche os campos do formulário com os dados da linha atual.
-    fill_data = {}
-    for pdf_field, csv_column in mapping.items():
-        if csv_column != "-- Não Mapear --" and csv_column in data_row:
-            value = str(data_row.get(csv_column, ''))
-            fill_data[pdf_field] = value
-    
-    for page in writer.pages:
-        try:
-            writer.update_page_form_field_values(page=page, fields=fill_data)
-        except Exception as e:
-            st.warning(f"Aviso ao preencher a página: {e}")
-
-    # 3. "Achata" os campos para que fiquem sempre visíveis.
-    # Esta é a correção final para o 'AttributeError'.
-    # Usamos NameObject("/Ff") ao invés de uma string.
-    for page in writer.pages:
-        if "/Annots" in page:
-            for annot in page["/Annots"]:
-                obj = annot.get_object()
-                if obj.get("/T") and obj.get("/V"): # Se é um campo de formulário com valor
-                    obj.update({
-                        NameObject("/Ff"): 1 # Define o campo como "apenas leitura"
-                    })
-
-    # 4. Escreve o PDF finalizado no buffer de memória.
+    # Salva o PDF modificado em um buffer de memória
     output_buffer = BytesIO()
-    writer.write(output_buffer)
+    doc.save(stream=output_buffer, garbage=3, deflate=True)
+    doc.close()
+    
     output_buffer.seek(0)
     return output_buffer
 
 
 def merge_pdfs(pdf_buffers: list) -> BytesIO:
-    """Junta uma lista de PDFs (em BytesIO) em um único ficheiro."""
+    """
+    Junta uma lista de PDFs. Esta função pode continuar usando PyPDF2,
+    pois é eficiente para esta tarefa específica.
+    """
     merger = PdfWriter()
     for buffer in pdf_buffers:
         buffer.seek(0)
@@ -101,13 +95,10 @@ def merge_pdfs(pdf_buffers: list) -> BytesIO:
 
 # --- FUNÇÕES DE SIMILARIDADE (SEM ALTERAÇÕES) ---
 def clean_text(text: str) -> str:
-    """Normaliza o texto para comparação: minúsculas e apenas alfanuméricos."""
-    if not isinstance(text, str):
-        return ""
+    if not isinstance(text, str): return ""
     return re.sub(r'[^a-z0-9]', '', text.lower())
 
 def find_best_match(target_field: str, available_columns: list, threshold=0.6) -> str:
-    """Encontra a melhor correspondência para um campo alvo dentro de uma lista de colunas."""
     if not target_field or not available_columns: return ""
     clean_target = clean_text(target_field)
     best_match = ""
