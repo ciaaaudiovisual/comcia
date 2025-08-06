@@ -123,42 +123,75 @@ def show_auxilio_transporte():
 
     tab1, tab2, tab3 = st.tabs(["1. Carregar e Editar Dados", "2. Mapeamento PDF", "3. Gerar Documentos"])
 
+
     with tab1:
-        st.subheader("Carregar e Editar Ficheiro de Dados")
-        st.markdown("##### Modelo de Preenchimento")
-        modelo_bytes = create_excel_template()
-        st.download_button("📥 Baixar Modelo Padrão (.xlsx)", data=modelo_bytes, file_name="modelo_auxilio_transporte.xlsx")
-        st.markdown("---")
+        st.subheader("Carregar e Mapear Ficheiro de Dados")
+        st.info("Este assistente irá ajudá-lo a carregar e a mapear os dados do seu ficheiro CSV para o formato correto do sistema.")
 
-        if 'dados_em_memoria' in st.session_state:
-            st.info(f"Ficheiro em memória: **{st.session_state['nome_ficheiro']}**")
-            if st.button("🗑️ Limpar Ficheiro e Recomeçar"):
-                for key in ['dados_em_memoria', 'nome_ficheiro', 'mapeamento_pdf', 'pdf_template_bytes']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.rerun()
-
+        # --- Etapa 1: Upload do Ficheiro ---
         uploaded_file = st.file_uploader("Carregue o seu ficheiro CSV com todos os dados", type="csv")
+        
+        # --- Etapa 2: Mapeamento Interativo ---
         if uploaded_file:
-            if st.button(f"Processar Ficheiro: {uploaded_file.name}", type="primary"):
-                with st.spinner("Processando..."):
-                    try:
-                        df = pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
-                        df_preparado = preparar_dataframe(df)
-                        st.session_state['dados_em_memoria'] = df_preparado
-                        st.session_state['nome_ficheiro'] = uploaded_file.name
-                        st.success("Ficheiro processado!")
-                    except Exception as e:
-                        st.error(f"Erro ao ler o ficheiro: {e}")
+            df_raw = pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
+            # Remove a primeira coluna de data/hora do Forms
+            if "Carimbo de data/hora" in df_raw.columns:
+                df_raw = df_raw.iloc[:, 1:]
+            
+            colunas_do_csv = df_raw.columns.tolist()
+            
+            # O "esquema" de colunas que o sistema precisa para os cálculos
+            schema_essencial = {
+                'numero_interno': 'obrigatório', 'nome_completo': 'obrigatório', 'graduacao': 'obrigatório',
+                'soldo': 'obrigatório', 'dias_uteis': 'obrigatório', 'ano_referencia': 'opcional',
+                'endereco': 'opcional', 'bairro': 'opcional', 'cidade': 'opcional', 'cep': 'opcional'
+            }
+            # Adiciona os campos de itinerário dinamicamente
+            for i in range(1, 6):
+                for t in ['empresa', 'linha', 'tarifa']:
+                    schema_essencial[f'ida_{i}_{t}'] = 'opcional'
+                    schema_essencial[f'volta_{i}_{t}'] = 'opcional'
 
+            with st.form("data_mapping_form"):
+                st.markdown("##### Mapeamento de Colunas de Dados")
+                st.warning("Associe as colunas do seu ficheiro (à direita) com as colunas que o sistema necessita (à esquerda).")
+                mapeamento_usuario = {}
+                for col_sistema, tipo in schema_essencial.items():
+                    melhor_sugestao = guess_best_match(col_sistema, colunas_do_csv)
+                    opcoes = ["-- Ignorar esta coluna --"] + colunas_do_csv
+                    index = opcoes.index(melhor_sugestao) if melhor_sugestao else 0
+                    mapeamento_usuario[col_sistema] = st.selectbox(f"Campo do Sistema: **`{col_sistema}`** ({tipo})", options=opcoes, index=index)
+
+                if st.form_submit_button("Aplicar Mapeamento e Processar", type="primary"):
+                    df_mapeado = pd.DataFrame()
+                    colunas_mapeadas = {}
+                    
+                    # Constrói o novo DataFrame com base no mapeamento
+                    for col_sistema, col_csv in mapeamento_usuario.items():
+                        if col_csv != "-- Ignorar esta coluna --":
+                            df_mapeado[col_sistema] = df_raw[col_csv]
+                    
+                    # Validação final
+                    colunas_obrigatorias_em_falta = [
+                        cs for cs, tipo in schema_essencial.items() 
+                        if tipo == 'obrigatório' and cs not in df_mapeado.columns
+                    ]
+                    
+                    if colunas_obrigatorias_em_falta:
+                        st.error(f"Erro: As seguintes colunas obrigatórias não foram mapeadas: **{', '.join(colunas_obrigatorias_em_falta)}**")
+                    else:
+                        # Limpeza final dos dados já mapeados
+                        df_processado = apply_data_cleaning(df_mapeado)
+                        st.session_state['dados_em_memoria'] = df_processado
+                        st.session_state['nome_ficheiro'] = uploaded_file.name
+                        st.success("Dados mapeados e processados com sucesso! Pode editar na tabela abaixo ou ir para as próximas abas.")
+            
         if 'dados_em_memoria' in st.session_state:
             st.markdown("---")
             st.markdown("##### Tabela de Dados para Edição")
             df_editado = st.data_editor(st.session_state['dados_em_memoria'], num_rows="dynamic", use_container_width=True)
             st.session_state['dados_em_memoria'] = df_editado 
-            csv_editado = df_editado.to_csv(index=False, sep=';').encode('latin-1')
-            st.download_button("📥 Baixar CSV Editado", data=csv_editado, file_name=f"dados_editados_{st.session_state['nome_ficheiro']}")
-
+            
     with tab2:
         st.subheader("Mapear Campos do PDF para os Dados")
         if 'dados_em_memoria' not in st.session_state:
