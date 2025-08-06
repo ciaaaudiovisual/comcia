@@ -17,7 +17,9 @@ def create_excel_template():
         'DIAS ÚTEIS (MÁX 22)', 'ANO DE REFERÊNCIA', 'ENDEREÇO COMPLETO', 'BAIRRO', 'CIDADE', 'CEP',
         '1ª EMPRESA (IDA)', '1º TRAJETO (IDA)', '1ª TARIFA (IDA)', '1ª EMPRESA (VOLTA)', '1º TRAJETO (VOLTA)', '1ª TARIFA (VOLTA)',
         '2ª EMPRESA (IDA)', '2º TRAJETO (IDA)', '2ª TARIFA (IDA)', '2ª EMPRESA (VOLTA)', '2º TRAJETO (VOLTA)', '2ª TARIFA (VOLTA)',
-        # Adicione mais colunas até o 5º trajeto se necessário
+        '3ª EMPRESA (IDA)', '3º TRAJETO (IDA)', '3ª TARIFA (IDA)', '3ª EMPRESA (VOLTA)', '3º TRAJETO (VOLTA)', '3ª TARIFA (VOLTA)',
+        '4ª EMPRESA (IDA)', '4º TRAJETO (IDA)', '4ª TARIFA (IDA)', '4ª EMPRESA (VOLTA)', '4º TRAJETO (VOLTA)', '4ª TARIFA (VOLTA)',
+        '5ª EMPRESA (IDA)', '5º TRAJETO (IDA)', '5ª TARIFA (IDA)', '5ª EMPRESA (VOLTA)', '5º TRAJETO (VOLTA)', '5ª TARIFA (VOLTA)'
     ]
     df_template = pd.DataFrame(columns=colunas_template)
     output = BytesIO()
@@ -36,6 +38,7 @@ def calcular_auxilio_transporte(linha):
             despesa_diaria += float(volta_tarifa if volta_tarifa else 0.0)
         dias_trabalhados = min(int(linha.get('dias_uteis', 0) or 0), 22)
         despesa_mensal = despesa_diaria * dias_trabalhados
+        
         valor_soldo_bruto = linha.get('soldo')
         try:
             soldo = float(valor_soldo_bruto)
@@ -94,7 +97,6 @@ def show_auxilio_transporte():
     with tab1:
         st.subheader("Carregar e Editar Ficheiro de Dados")
 
-        # Botão para baixar o modelo de preenchimento
         st.markdown("##### Modelo de Preenchimento")
         modelo_bytes = create_excel_template()
         st.download_button(
@@ -141,87 +143,43 @@ def show_auxilio_transporte():
                 label="📥 Baixar CSV Editado", data=csv_editado,
                 file_name=f"dados_editados_{st.session_state['nome_ficheiro']}"
             )
-   # --- ABA 2: EDIÇÃO INDIVIDUAL (VERSÃO CORRIGIDA E OTIMIZADA) ---
+
     with tab2:
-        st.subheader("Editar Cadastro Individual")
-        if dados_completos_df.empty:
-            st.warning("Não há dados para editar.")
+        st.subheader("Mapear Campos do PDF para os Dados")
+        if 'dados_em_memoria' not in st.session_state:
+            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
         else:
-            # Selecionar o militar para edição
-            nomes_para_selecao = [""] + sorted(dados_completos_df['nome_completo'].unique())
-            aluno_selecionado = st.selectbox("Selecione um militar para editar:", options=nomes_para_selecao)
+            st.info("Faça o upload do seu modelo PDF preenchível.")
+            pdf_template_file = st.file_uploader("Carregue o modelo PDF", type="pdf", key="pdf_mapper_uploader")
 
-            if aluno_selecionado:
-                # Pega os dados originais do militar selecionado
-                dados_aluno_originais = dados_completos_df[dados_completos_df['nome_completo'] == aluno_selecionado].iloc[0].to_dict()
-                
-                with st.form("form_edicao_individual"):
-                    # Cria um novo dicionário para armazenar os valores editados no formulário
-                    dados_aluno_editados = dados_aluno_originais.copy()
-
-                    st.markdown("#### Dados Pessoais e de Referência")
-                    c1, c2, c3 = st.columns(3)
-                    c1.text_input("Nome Completo", value=dados_aluno_editados.get('nome_completo', ''), disabled=True)
-                    c2.text_input("Graduação", value=dados_aluno_editados.get('graduacao', ''), disabled=True)
-                    # Lê o valor do widget e o armazena no dicionário de dados editados
-                    dados_aluno_editados['ano_referencia'] = c3.number_input("Ano de Referência", value=int(dados_aluno_editados.get('ano_referencia', 2025)))
-
-                    st.markdown("#### Endereço")
-                    c4, c5 = st.columns([3, 1])
-                    dados_aluno_editados['endereco'] = c4.text_input("Endereço", value=dados_aluno_editados.get('endereco', ''))
-                    dados_aluno_editados['bairro'] = c5.text_input("Bairro", value=dados_aluno_editados.get('bairro', ''))
-                    c6, c7 = st.columns(2)
-                    dados_aluno_editados['cidade'] = c6.text_input("Cidade", value=dados_aluno_editados.get('cidade', ''))
-                    dados_aluno_editados['cep'] = c7.text_input("CEP", value=dados_aluno_editados.get('cep', ''))
+            if pdf_template_file:
+                try:
+                    reader = PdfReader(BytesIO(pdf_template_file.getvalue()))
+                    pdf_fields = list(reader.get_form_text_fields().keys())
                     
-                    st.markdown("#### Itinerários")
-                    dados_aluno_editados['dias_uteis'] = st.number_input("Dias Úteis (máx 22)", min_value=0, max_value=22, value=int(dados_aluno_editados.get('dias_uteis', 22)))
-                    
-                    for i in range(1, 6):
-                        with st.expander(f"{i}º Trajeto"):
-                            col_ida, col_volta = st.columns(2)
-                            with col_ida:
-                                st.markdown(f"**Ida {i}**")
-                                dados_aluno_editados[f'ida_{i}_empresa'] = st.text_input(f"Empresa Ida {i}", value=dados_aluno_editados.get(f'ida_{i}_empresa', ''), key=f'ida_emp_{i}')
-                                dados_aluno_editados[f'ida_{i}_linha'] = st.text_input(f"Linha Ida {i}", value=dados_aluno_editados.get(f'ida_{i}_linha', ''), key=f'ida_lin_{i}')
-                                # CORREÇÃO: Lê o valor do widget e o armazena
-                                dados_aluno_editados[f'ida_{i}_tarifa'] = st.number_input(f"Tarifa Ida {i}", min_value=0.0, value=float(dados_aluno_editados.get(f'ida_{i}_tarifa', 0.0)), format="%.2f", key=f'ida_tar_{i}')
-                            with col_volta:
-                                st.markdown(f"**Volta {i}**")
-                                dados_aluno_editados[f'volta_{i}_empresa'] = st.text_input(f"Empresa Volta {i}", value=dados_aluno_editados.get(f'volta_{i}_empresa', ''), key=f'vol_emp_{i}')
-                                dados_aluno_editados[f'volta_{i}_linha'] = st.text_input(f"Linha Volta {i}", value=dados_aluno_editados.get(f'volta_{i}_linha', ''), key=f'vol_lin_{i}')
-                                # CORREÇÃO: Lê o valor do widget e o armazena
-                                dados_aluno_editados[f'volta_{i}_tarifa'] = st.number_input(f"Tarifa Volta {i}", min_value=0.0, value=float(dados_aluno_editados.get(f'volta_{i}_tarifa', 0.0)), format="%.2f", key=f'vol_tar_{i}')
+                    if not pdf_fields:
+                        st.warning("Nenhum campo de formulário editável foi encontrado neste PDF.")
+                    else:
+                        st.success(f"{len(pdf_fields)} campos encontrados.")
+                        df_cols = st.session_state['dados_em_memoria'].columns.tolist()
+                        calculated_cols = ['despesa_diaria', 'despesa_mensal_total', 'parcela_descontada_6_porcento', 'auxilio_transporte_pago']
+                        all_system_columns = ["-- Não Mapear --"] + sorted(df_cols + calculated_cols)
+                        saved_mapping = st.session_state.get('mapeamento_pdf', {})
 
-                    # --- CAMPOS CALCULADOS (ATUALIZADOS EM TEMPO REAL) ---
-                    st.markdown("---")
-                    st.markdown("#### Valores Calculados (Pré-visualização)")
-                    # CORREÇÃO: O cálculo é feito com os dados acabados de ler dos widgets
-                    valores_calculados = calcular_auxilio_transporte(dados_aluno_editados)
-                    
-                    c8, c9, c10, c11, c12 = st.columns(5)
-                    c8.metric("Soldo", f"R$ {dados_aluno_editados.get('soldo', 0.0):,.2f}")
-                    c9.metric("Despesa Diária", f"R$ {valores_calculados.get('despesa_diaria', 0.0):,.2f}")
-                    c10.metric("Despesa Mensal", f"R$ {valores_calculados.get('despesa_mensal_total', 0.0):,.2f}")
-                    c11.metric("Desconto 6%", f"R$ {valores_calculados.get('parcela_descontada_6_porcento', 0.0):,.2f}")
-                    c12.metric("Valor a Receber", f"R$ {valores_calculados.get('auxilio_pago', 0.0):,.2f}")
-
-                    if st.form_submit_button("Salvar Alterações", type="primary"):
-                        with st.spinner("Salvando..."):
-                            try:
-                                dados_para_salvar = dados_aluno_editados.copy()
-                                campos_a_remover = ['id', 'created_at', 'despesa_diaria', 'despesa_mensal_total', 'parcela_descontada_6_porcento', 'auxilio_pago']
-                                for campo in campos_a_remover:
-                                    dados_para_salvar.pop(campo, None)
-
-                                supabase.table(NOME_TABELA_TRANSPORTE).upsert(
-                                    dados_para_salvar,
-                                    on_conflict='numero_interno,ano_referencia'
-                                ).execute()
-                                st.success(f"Dados do(a) militar {aluno_selecionado} salvos com sucesso!")
-                                carregar_dados_completos.clear()
-                            except Exception as e:
-                                st.error(f"Erro ao salvar: {e}")
+                        with st.form("pdf_mapping_form"):
+                            user_mapping = {}
+                            st.markdown("**Mapeie cada campo do PDF para uma coluna dos dados:**")
+                            for field in sorted(pdf_fields):
+                                best_guess = saved_mapping.get(field, "-- Não Mapear --")
+                                index = all_system_columns.index(best_guess) if best_guess in all_system_columns else 0
+                                user_mapping[field] = st.selectbox(f"Campo do PDF: `{field}`", options=all_system_columns, index=index)
+                            
+                            if st.form_submit_button("Salvar Mapeamento", type="primary"):
+                                st.session_state['mapeamento_pdf'] = user_mapping
+                                st.session_state['pdf_template_bytes'] = pdf_template_file.getvalue()
+                                st.success("Mapeamento salvo com sucesso!")
+                except Exception as e:
+                    st.error(f"Erro ao processar o PDF: {e}")
 
     with tab3:
         st.subheader("Gerar Documentos Finais")
@@ -233,7 +191,7 @@ def show_auxilio_transporte():
             df_final = st.session_state['dados_em_memoria'].copy()
             
             with st.spinner("Calculando valores..."):
-                calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
+                calculos_df = df_final.apply(calculating_transport_allowance, axis=1) # Corrigido para o nome correto da função
                 df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
 
             st.markdown("#### Filtro para Seleção")
