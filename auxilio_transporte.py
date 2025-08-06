@@ -115,7 +115,6 @@ def calcular_auxilio_transporte(linha):
     except Exception as e:
         print(f"Erro no cálculo para NIP {linha.get('numero_interno', 'N/A')}: {e}")
         return pd.Series()
-
 # --- Função Principal da Página ---
 def show_auxilio_transporte():
     st.header("🚌 Gestão de Auxílio Transporte (Baseado em Ficheiro)")
