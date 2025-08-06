@@ -21,3 +21,4 @@ PyPDF2
 pypdf
 PyMuPDF
 fpdf
+pdfrw
