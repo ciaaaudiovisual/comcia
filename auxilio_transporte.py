@@ -53,7 +53,7 @@ def guess_best_match(target_column, available_columns, threshold=0.6):
 
 def preparar_dataframe(df):
     """Prepara o DataFrame do CSV com renomeação insensível a maiúsculas/minúsculas."""
-    df_copy = df.iloc[:, 1:].copy()
+    df_copy = df.copy() # <--- CORREÇÃO APLICADA AQUI
     
     mapa_colunas_lower = {
         'numero interno do aluno': 'numero_interno', 'nome completo': 'nome_completo', 'posto/grad': 'graduacao',
