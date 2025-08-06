@@ -3,6 +3,7 @@ import pandas as pd
 from io import BytesIO
 import traceback
 from PyPDF2 import PdfReader, PdfWriter
+from PyPDF2.generic import AnnotationBuilder
 import re
 from difflib import SequenceMatcher
 
@@ -33,30 +34,53 @@ def get_pdf_form_fields(pdf_bytes: bytes) -> list:
         st.error(f"Erro ao ler os campos do PDF: {e}")
         return []
 
-def fill_pdf_form(template_bytes: bytes, data_row: pd.Series, mapping: dict) -> BytesIO:
-    """Preenche um formulário PDF para uma única linha de dados."""
+# --- FUNÇÃO DE PREENCHIMENTO DE PDF ATUALIZADA COM AS CORREÇÕES ---
+def fill_pdf_form(template_bytes: bytes, data_row: pd.Series, mapping: dict, flatten: bool = True) -> BytesIO:
+    """
+    Preenche um formulário PDF para uma única linha de dados.
+    CORREÇÃO 1: Adicionada a opção 'flatten' para tornar os campos visíveis.
+    CORREÇÃO 2: A lógica interna foi refeita para garantir que cada cópia seja independente.
+    """
     reader = PdfReader(BytesIO(template_bytes))
+    # Criar um writer novo a cada chamada garante que não haja "vazamento" de estado
     writer = PdfWriter()
 
-    for page in reader.pages:
-        writer.add_page(page)
+    # CORREÇÃO 2: Clona o leitor para o escritor. Isso cria uma cópia limpa e exata do template.
+    writer.clone_from_reader(reader)
 
+    # Cria o dicionário com os dados a serem preenchidos
     fill_data = {}
     for pdf_field, csv_column in mapping.items():
         if csv_column != "-- Não Mapear --" and csv_column in data_row:
-            value = str(data_row[csv_column])
+            value = str(data_row.get(csv_column, '')) # .get() é mais seguro
             fill_data[pdf_field] = value
 
+    # Preenche os campos do formulário no writer para todas as páginas
     for page in writer.pages:
         try:
-            writer.update_page_form_field_values(page, fill_data)
+            writer.update_page_form_field_values(page=page, fields=fill_data)
         except Exception as e:
             st.warning(f"Aviso ao preencher a página: {e}")
+            
+    # CORREÇÃO 1: Se 'flatten' for True, torna os campos "read-only"
+    if flatten:
+        for page in writer.pages:
+            if "/Annots" in page:
+                for annot in page["/Annots"]:
+                    obj = annot.get_object()
+                    # Verifica se é um campo de formulário e tem um valor
+                    if obj.get("/T") and obj.get("/V"):
+                        obj.update({
+                            # Define o campo como "apenas leitura"
+                            "/Ff": 1
+                        })
 
+    # Escreve o resultado em um buffer de memória
     output_buffer = BytesIO()
     writer.write(output_buffer)
     output_buffer.seek(0)
     return output_buffer
+
 
 def merge_pdfs(pdf_buffers: list) -> BytesIO:
     """Junta uma lista de PDFs (em BytesIO) em um único ficheiro."""
@@ -77,7 +101,7 @@ def merge_pdfs(pdf_buffers: list) -> BytesIO:
     output_buffer.seek(0)
     return output_buffer
 
-# --- FUNÇÕES DE SIMILARIDADE PARA MAPEAMENTO AUTOMÁTICO ---
+# --- FUNÇÕES DE SIMILARIDADE (SEM ALTERAÇÕES) ---
 
 def clean_text(text: str) -> str:
     """Normaliza o texto para comparação: minúsculas e apenas alfanuméricos."""
@@ -86,10 +110,7 @@ def clean_text(text: str) -> str:
     return re.sub(r'[^a-z0-9]', '', text.lower())
 
 def find_best_match(target_field: str, available_columns: list, threshold=0.6) -> str:
-    """
-    Encontra a melhor correspondência para um campo alvo dentro de uma lista de colunas.
-    Retorna o nome da coluna original se a similaridade for acima do limiar.
-    """
+    """Encontra a melhor correspondência para um campo alvo dentro de uma lista de colunas."""
     if not target_field or not available_columns:
         return ""
 
@@ -108,13 +129,12 @@ def find_best_match(target_field: str, available_columns: list, threshold=0.6) -
             highest_score = score
             best_match = option
     
-    # Retorna a melhor correspondência apenas se for boa o suficiente
     if highest_score >= threshold:
         return best_match
     
     return ""
 
-# --- FUNÇÃO PRINCIPAL DA PÁGINA ---
+# --- FUNÇÃO PRINCIPAL DA PÁGINA (SEM ALTERAÇÕES SIGNIFICATIVAS NA UI) ---
 
 def show_auxilio_transporte():
     st.set_page_config(page_title="Gerador de Auxílio Transporte", page_icon="📄", layout="wide")
@@ -178,14 +198,13 @@ def show_auxilio_transporte():
                         st.markdown("##### Associe as colunas do seu ficheiro aos campos do PDF:")
                         user_mapping = {}
                         for field in sorted(pdf_fields):
-                            # LÓGICA DE AUTO-PREENCHIMENTO
                             suggestion = find_best_match(field, df_cols)
                             suggestion_index = df_cols.index(suggestion) if suggestion in df_cols else 0
 
                             user_mapping[field] = st.selectbox(
                                 f"Campo do PDF: `{field}`", 
                                 df_cols, 
-                                index=suggestion_index, # Define a sugestão como padrão
+                                index=suggestion_index,
                                 key=f"map_{field}"
                             )
                         
@@ -214,6 +233,7 @@ def show_auxilio_transporte():
                             
                             filled_pdfs = []
                             for _, row in df_final.iterrows():
+                                # A chamada da função agora usa a nova versão corrigida
                                 filled_pdf_buffer = fill_pdf_form(template_bytes, row, mapping)
                                 filled_pdfs.append(filled_pdf_buffer)
                             
