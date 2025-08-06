@@ -120,19 +120,49 @@ def show_auxilio_transporte():
     with tab1:
         st.header("Carregar Ficheiro de Dados")
         st.download_button("Baixar Modelo de Dados (.xlsx)", create_excel_template(), "modelo_auxilio_transporte.xlsx")
+        
         uploaded_file = st.file_uploader("Carregue o seu ficheiro (CSV ou Excel)", type=["csv", "xlsx"])
+        
         if uploaded_file:
             try:
-                df_raw = pd.read_csv(uploaded_file, sep=';', encoding='latin-1', dtype=str).fillna('') if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file, dtype=str).fillna('')
-                st.session_state['dados_carregados'], st.session_state['nome_ficheiro'] = df_raw, uploaded_file.name
+                # --- CORREÇÃO DE CODIFICAÇÃO DE CARACTERES ---
+                if uploaded_file.name.endswith('.csv'):
+                    encodings_to_try = ['utf-8', 'latin-1', 'cp1252']
+                    df_raw = None
+                    for encoding in encodings_to_try:
+                        try:
+                            uploaded_file.seek(0) # Volta ao início do ficheiro para cada tentativa
+                            df_raw = pd.read_csv(uploaded_file, sep=';', encoding=encoding, dtype=str).fillna('')
+                            st.toast(f"Ficheiro lido com sucesso (codificação: {encoding})", icon="✅")
+                            break # Para na primeira tentativa bem-sucedida
+                        except UnicodeDecodeError:
+                            continue # Tenta a próxima codificação
+                    
+                    if df_raw is None:
+                        st.error("Não foi possível ler o ficheiro CSV. Verifique a codificação do texto (recomenda-se salvar como UTF-8).")
+                        st.stop()
+                else: # Para ficheiros .xlsx
+                    df_raw = pd.read_excel(uploaded_file, dtype=str).fillna('')
+                # --- FIM DA CORREÇÃO ---
+                
+                st.session_state['dados_carregados'] = df_raw
+                st.session_state['nome_ficheiro'] = uploaded_file.name
                 st.success(f"Ficheiro '{uploaded_file.name}' carregado com sucesso!")
+
             except Exception as e:
                 st.error(f"Erro ao ler o ficheiro: {e}")
-                if 'dados_carregados' in st.session_state: del st.session_state['dados_carregados']
+                if 'dados_carregados' in st.session_state:
+                    del st.session_state['dados_carregados']
+
         if 'dados_carregados' in st.session_state:
             st.subheader("Edite os dados se necessário")
             st.info("As alterações feitas aqui serão usadas na geração do documento.")
-            st.session_state['dados_carregados'] = st.data_editor(st.session_state['dados_carregados'], num_rows="dynamic", use_container_width=True)
+            st.session_state['dados_carregados'] = st.data_editor(
+                st.session_state['dados_carregados'], 
+                num_rows="dynamic", 
+                use_container_width=True
+            )
+
 
     with tab2:
         st.header("Carregar e Mapear Modelo PDF")
