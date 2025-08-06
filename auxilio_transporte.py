@@ -199,19 +199,40 @@ def show_auxilio_transporte():
             if st.button(f"Gerar PDF para os {len(df_final)} registros", type="primary", use_container_width=True):
                 if df_final.empty: st.error("A tabela de dados está vazia.")
                 else:
-                    with st.spinner("Gerando documentos... Por favor, aguarde."):
-                        try:
-                            template_bytes, mapping = st.session_state.pdf_template_bytes, st.session_state.mapeamento_pdf
-                            filled_pdfs = [fill_pdf_form(template_bytes, row, mapping) for _, row in df_final.iterrows()]
-                            if filled_pdfs:
-                                st.session_state.pdf_final_bytes = merge_pdfs(filled_pdfs).getvalue()
-                                st.success("Documento consolidado gerado com sucesso!")
-                                st.balloons()
-                            else:
-                                st.error("Nenhum PDF pôde ser gerado. Verifique os logs de erro.")
-                        except Exception as e:
-                            st.error(f"Erro na geração dos PDFs: {e}")
-                            st.error(traceback.format_exc())
+                    # --- BLOCO DE GERAÇÃO COM DIAGNÓSTICOS ---
+                    progress_bar = st.progress(0.0)
+                    status_text = st.empty()
+                    total_records = len(df_final)
+                    
+                    try:
+                        template_bytes = st.session_state.pdf_template_bytes
+                        mapping = st.session_state.mapeamento_pdf
+                        
+                        filled_pdfs = []
+                        # Usar enumerate para ter um contador (i)
+                        for i, (index, row) in enumerate(df_final.iterrows()):
+                            # Pega o nome do aluno da coluna 'NOME COMPLETO' para exibir o status
+                            aluno_nome = row.get('NOME COMPLETO', f'Registro #{i+1}')
+                            status_text.info(f"⚙️ Processando: {aluno_nome} ({i + 1}/{total_records})")
+                            
+                            # A chamada para a função de preenchimento permanece a mesma
+                            filled_pdf_buffer = fill_pdf_form(template_bytes, row, mapping)
+                            filled_pdfs.append(filled_pdf_buffer)
+                            
+                            # Atualiza a barra de progresso
+                            progress_bar.progress((i + 1) / total_records)
+
+                        status_text.info("🔄 Juntando os PDFs...")
+                        if filled_pdfs:
+                            st.session_state.pdf_final_bytes = merge_pdfs(filled_pdfs).getvalue()
+                            status_text.success("✅ Documento consolidado gerado com sucesso!")
+                            st.balloons()
+                        else:
+                            status_text.error("Nenhum PDF pôde ser gerado. Verifique os logs de erro.")
+                    except Exception as e:
+                        status_text.error(f"Erro na geração dos PDFs: {e}")
+                        st.error(traceback.format_exc())
+
             if 'pdf_final_bytes' in st.session_state:
                 nome_arquivo_final = st.session_state.get('nome_ficheiro', 'Consolidado').split('.')[0]
                 st.download_button(label="✅ Baixar Documento Consolidado (.pdf)", data=st.session_state.pdf_final_bytes, file_name=f"Documentos_{nome_arquivo_final}.pdf", mime="application/pdf")
