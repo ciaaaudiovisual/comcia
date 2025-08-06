@@ -91,21 +91,27 @@ def calcular_auxilio_transporte(linha):
         return pd.Series()
 
 def preparar_dataframe(df):
-    """Prepara o DataFrame do CSV, incluindo a coluna 'SOLDO'."""
+    """Prepara o DataFrame do CSV, incluindo a coluna 'SOLDO' e com renomeação insensível a maiúsculas/minúsculas."""
     df_copy = df.iloc[:, 1:].copy()
-    mapa_colunas = {
-        'NÚMERO INTERNO DO ALUNO': 'numero_interno', 'NOME COMPLETO': 'nome_completo', 'POSTO/GRAD': 'graduacao',
-        'SOLDO': 'soldo',
-        'DIAS ÚTEIS (MÁX 22)': 'dias_uteis', 'ANO DE REFERÊNCIA': 'ano_referencia',
-        'ENDEREÇO COMPLETO': 'endereco', 'BAIRRO': 'bairro', 'CIDADE': 'cidade', 'CEP': 'cep'
+    
+    # Mapa de colunas com chaves em minúsculas para comparação
+    mapa_colunas_lower = {
+        'numero interno do aluno': 'numero_interno', 'nome completo': 'nome_completo', 'posto/grad': 'graduacao',
+        'soldo': 'soldo', 'dias úteis (máx 22)': 'dias_uteis', 'ano de referência': 'ano_referencia',
+        'endereço completo': 'endereco', 'bairro': 'bairro', 'cidade': 'cidade', 'cep': 'cep'
     }
     for i in range(1, 6):
-        for direcao in ["IDA", "VOLTA"]:
-            mapa_colunas[f'{i}ª EMPRESA ({direcao})'] = f'{direcao.lower()}_{i}_empresa'
-            mapa_colunas[f'{i}º TRAJETO ({direcao})'] = f'{direcao.lower()}_{i}_linha'
-            mapa_colunas[f'{i}ª TARIFA ({direcao})'] = f'{direcao.lower()}_{i}_tarifa'
-            
-    df_copy.rename(columns=mapa_colunas, inplace=True, errors='ignore')
+        for direcao in ["ida", "volta"]:
+            mapa_colunas_lower[f'{i}ª empresa ({direcao})'] = f'{direcao}_{i}_empresa'
+            mapa_colunas_lower[f'{i}º trajeto ({direcao})'] = f'{direcao}_{i}_linha'
+            mapa_colunas_lower[f'{i}ª tarifa ({direcao})'] = f'{direcao}_{i}_tarifa'
+
+    # Cria um dicionário de renomeação com base na correspondência insensível a maiúsculas/minúsculas
+    rename_map = {col_original: mapa_colunas_lower.get(col_original.lower().strip()) 
+                  for col_original in df_copy.columns 
+                  if mapa_colunas_lower.get(col_original.lower().strip())}
+
+    df_copy.rename(columns=rename_map, inplace=True)
     
     for col in df_copy.select_dtypes(include=['object']).columns:
         df_copy[col] = df_copy[col].str.upper().str.strip()
@@ -211,79 +217,68 @@ def show_auxilio_transporte():
                                 st.success("Mapeamento salvo com sucesso!")
                 except Exception as e:
                     st.error(f"Erro ao processar o PDF: {e}")
-
     with tab3:
-        st.subheader("Gerar Documentos Finais")
-        if 'dados_em_memoria' not in st.session_state:
-            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
-        elif 'mapeamento_pdf' not in st.session_state or 'pdf_template_bytes' not in st.session_state:
-            st.warning("Por favor, carregue o modelo PDF e salve o mapeamento na aba '2. Mapeamento PDF'.")
-        else:
-            df_final = st.session_state['dados_em_memoria'].copy()
-            
-            with st.spinner("Calculando valores..."):
-                calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
-                df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
-
-            st.markdown("#### Filtro para Seleção")
-            
-            # --- CORREÇÃO ROBUSTA APLICADA AQUI ---
-            # 1. Define as colunas que a aplicação PRECISA para funcionar
-            colunas_essenciais = ['nome_completo', 'numero_interno', 'graduacao']
-            
-            # 2. Verifica se todas as colunas essenciais existem
-            colunas_em_falta = [col for col in colunas_essenciais if col not in df_com_calculo.columns]
-            
-            if colunas_em_falta:
-                # 3. Se alguma coluna estiver em falta, mostra um erro claro e para
-                st.error(f"""
-                Erro: Colunas essenciais não foram encontradas nos dados processados: **{', '.join(colunas_em_falta)}**.
-                
-                **Possíveis Causas:**
-                - O título da(s) coluna(s) no seu ficheiro CSV não corresponde ao esperado (ex: 'NOME COMPLETO').
-                - A(s) coluna(s) não existe(m) no seu ficheiro CSV.
-
-                Por favor, corrija o seu ficheiro CSV e carregue-o novamente na Aba 1.
-                """)
+            st.subheader("Gerar Documentos Finais")
+            if 'dados_em_memoria' not in st.session_state:
+                st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
+            elif 'mapeamento_pdf' not in st.session_state or 'pdf_template_bytes' not in st.session_state:
+                st.warning("Por favor, carregue o modelo PDF e salve o mapeamento na aba '2. Mapeamento PDF'.")
             else:
-                # 4. Se tudo estiver correto, o resto do código é executado
-                st.info("Selecione os militares para gerar o documento. Deixe em branco para incluir todos.")
+                df_final = st.session_state['dados_em_memoria'].copy()
                 
-                nomes_validos = df_com_calculo['nome_completo'].dropna().unique()
-                opcoes_filtro = sorted(nomes_validos)
-                selecionados = st.multiselect("Selecione por Nome Completo:", options=opcoes_filtro)
-                
-                df_para_gerar = df_com_calculo[df_com_calculo['nome_completo'].isin(selecionados)] if selecionados else df_com_calculo
-                st.dataframe(df_para_gerar)
-
-                if st.button(f"Gerar PDF para os {len(df_para_gerar)} selecionados", type="primary"):
-                    with st.spinner("Gerando PDFs..."):
-                        try:
-                            template_bytes = st.session_state['pdf_template_bytes']
-                            mapping = st.session_state['mapeamento_pdf']
-                            filled_pdfs = []
-                            progress_bar = st.progress(0)
-                            
-                            for i, (_, aluno_row) in enumerate(df_para_gerar.iterrows()):
-                                pdf_preenchido = fill_pdf_auxilio(template_bytes, aluno_row, mapping)
-                                filled_pdfs.append(pdf_preenchido)
-                                progress_bar.progress((i + 1) / len(df_para_gerar), text=f"Gerando: {aluno_row['nome_completo']}")
-                            
-                            final_pdf_buffer = merge_pdfs(filled_pdfs)
-                            st.session_state['pdf_final_bytes'] = final_pdf_buffer.getvalue()
-                            progress_bar.empty()
-                            
-                            st.success("Documento consolidado gerado com sucesso!")
-                            st.balloons()
-
-                        except Exception as e:
-                            st.error(f"Ocorreu um erro durante a geração dos PDFs: {e}")
-                            st.error(traceback.format_exc())
-
-                    if 'pdf_final_bytes' in st.session_state:
-                        st.download_button(
-                            label="✅ Baixar Documento Consolidado (.pdf)",
-                            data=st.session_state['pdf_final_bytes'],
-                            file_name="Declaracoes_Auxilio_Transporte.pdf",
-                            mime="application/pdf"
-                        )
+                # Verificação robusta para garantir que as colunas essenciais existem após a preparação
+                colunas_essenciais = ['nome_completo', 'numero_interno']
+                colunas_em_falta = [col for col in colunas_essenciais if col not in df_final.columns]
+    
+                if colunas_em_falta:
+                    st.error(f"""
+                    Erro: Colunas essenciais não foram encontradas nos dados processados: **{', '.join(colunas_em_falta)}**.
+                    
+                    **Causa Provável:** O título da(s) coluna(s) no seu ficheiro CSV está muito diferente do esperado (ex: 'NOME COMPLETO', 'NÚMERO INTERNO DO ALUNO'). 
+                    
+                    Por favor, corrija o seu ficheiro CSV ou use o modelo padrão e carregue-o novamente na Aba 1.
+                    """)
+                else:
+                    with st.spinner("Calculando valores..."):
+                        calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
+                        df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
+    
+                    st.markdown("#### Filtro para Seleção")
+                    nomes_validos = df_com_calculo['nome_completo'].dropna().unique()
+                    opcoes_filtro = sorted(nomes_validos)
+                    selecionados = st.multiselect("Selecione por Nome Completo:", options=opcoes_filtro)
+                    
+                    df_para_gerar = df_com_calculo[df_com_calculo['nome_completo'].isin(selecionados)] if selecionados else df_com_calculo
+                    st.dataframe(df_para_gerar)
+    
+                    if st.button(f"Gerar PDF para os {len(df_para_gerar)} selecionados", type="primary"):
+                        with st.spinner("Gerando PDFs..."):
+                            try:
+                                template_bytes = st.session_state['pdf_template_bytes']
+                                mapping = st.session_state['mapeamento_pdf']
+                                filled_pdfs = []
+                                progress_bar = st.progress(0)
+                                
+                                for i, (_, aluno_row) in enumerate(df_para_gerar.iterrows()):
+                                    pdf_preenchido = fill_pdf_auxilio(template_bytes, aluno_row, mapping)
+                                    filled_pdfs.append(pdf_preenchido)
+                                    progress_bar.progress((i + 1) / len(df_para_gerar), text=f"Gerando: {aluno_row['nome_completo']}")
+                                
+                                final_pdf_buffer = merge_pdfs(filled_pdfs)
+                                st.session_state['pdf_final_bytes'] = final_pdf_buffer.getvalue()
+                                progress_bar.empty()
+                                
+                                st.success("Documento consolidado gerado com sucesso!")
+                                st.balloons()
+    
+                            except Exception as e:
+                                st.error(f"Ocorreu um erro durante a geração dos PDFs: {e}")
+                                st.error(traceback.format_exc())
+    
+                        if 'pdf_final_bytes' in st.session_state:
+                            st.download_button(
+                                label="✅ Baixar Documento Consolidado (.pdf)",
+                                data=st.session_state['pdf_final_bytes'],
+                                file_name="Declaracoes_Auxilio_Transporte.pdf",
+                                mime="application/pdf"
+                            )
