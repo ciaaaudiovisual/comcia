@@ -28,7 +28,6 @@ def get_pdf_form_fields(pdf_bytes: bytes) -> list:
     """Extrai os nomes dos campos de formulário usando PyMuPDF para consistência."""
     fields = []
     try:
-        # Usa fitz para ler os campos, pois ele será usado para preencher
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         for page in doc:
             for widget in page.widgets():
@@ -44,28 +43,22 @@ def get_pdf_form_fields(pdf_bytes: bytes) -> list:
 def fill_pdf_form(template_bytes: bytes, data_row: pd.Series, mapping: dict) -> BytesIO:
     """
     Preenche um formulário PDF usando a biblioteca PyMuPDF (fitz).
-    Esta abordagem é mais robusta e resolve os problemas de visibilidade e AttributeError.
     """
     doc = fitz.open(stream=template_bytes, filetype="pdf")
 
     for page in doc:
-        # itera sobre todos os campos (widgets) da página
         for widget in page.widgets():
             field_name = widget.field_name
-            # Verifica se o campo do PDF está no nosso mapeamento
             if field_name in mapping:
                 csv_column = mapping[field_name]
-                # Verifica se a coluna mapeada existe nos dados do aluno
                 if csv_column != "-- Não Mapear --" and csv_column in data_row:
                     value = str(data_row.get(csv_column, ''))
-                    # Preenche o valor do campo
                     widget.field_value = value
-                    # Aplica a mudança (isso "achata" o campo, tornando-o visível)
                     widget.update()
 
-    # Salva o PDF modificado em um buffer de memória
     output_buffer = BytesIO()
-    doc.save(stream=output_buffer, garbage=3, deflate=True)
+    # CORREÇÃO FINAL: O método save() recebe o buffer diretamente, sem a palavra-chave 'stream'.
+    doc.save(output_buffer, garbage=3, deflate=True)
     doc.close()
     
     output_buffer.seek(0)
@@ -74,8 +67,7 @@ def fill_pdf_form(template_bytes: bytes, data_row: pd.Series, mapping: dict) -> 
 
 def merge_pdfs(pdf_buffers: list) -> BytesIO:
     """
-    Junta uma lista de PDFs. Esta função pode continuar usando PyPDF2,
-    pois é eficiente para esta tarefa específica.
+    Junta uma lista de PDFs. Esta função pode continuar usando PyPDF2.
     """
     merger = PdfWriter()
     for buffer in pdf_buffers:
