@@ -65,7 +65,7 @@ def show_auxilio_transporte():
         st.info("Carregue um ficheiro CSV e associe as suas colunas aos campos que o sistema utilizará para preencher o PDF.")
         
         st.download_button(
-            label="Baixar Modelo CSV (.xlsx)",
+            label="Baixar Modelo de Dados (.xlsx)",
             data=create_excel_template(),
             file_name="modelo_dados.xlsx",
             mime="application/vnd.ms-excel"
@@ -75,32 +75,46 @@ def show_auxilio_transporte():
         
         if uploaded_file:
             try:
-                # Ler o ficheiro CSV carregado
                 df_raw = pd.read_csv(uploaded_file, sep=';', encoding='latin-1', dtype=str).fillna('')
                 colunas_do_csv = df_raw.columns.tolist()
                 
-                # Define os campos padrão que o sistema pode esperar. Pode adaptar esta lista.
+                # Define nomes de campos ideais/sugeridos para padronização
                 schema_sugerido = [
                     'nome_completo', 'posto_grad', 'nip', 'numero_interno', 'endereco', 'bairro', 'cidade', 'cep',
-                    'tarifa_ida_1', 'tarifa_volta_1', 'tarifa_ida_2', 'tarifa_volta_2', 
-                    'soldo', 'dias_uteis', 'despesa_diaria' # Campos que podem vir prontos do CSV
+                    'tarifa_ida_1', 'tarifa_volta_1', 'soldo', 'dias_uteis'
                 ]
+
+                # **** INÍCIO DA CORREÇÃO ****
+                # Combina as colunas sugeridas com as colunas reais do seu ficheiro.
+                # Isto garante que NENHUMA coluna do seu CSV seja ignorada.
+                campos_para_mapear = sorted(list(set(schema_sugerido + colunas_do_csv)))
+                # **** FIM DA CORREÇÃO ****
 
                 with st.form("data_mapping_form"):
                     st.markdown("##### Mapeamento de Colunas")
-                    st.warning("Associe as colunas do seu ficheiro (à direita) com os campos do sistema (à esquerda).")
+                    st.warning("Associe as colunas do seu ficheiro (à direita) aos campos do sistema (à esquerda).")
+                    st.info("Para manter uma coluna do seu ficheiro com o nome original, simplesmente mapeie-a para ela mesma.")
                     
                     mapeamento_usuario = {}
-                    for campo_sistema in sorted(schema_sugerido):
+                    # Itera sobre a lista combinada para que nenhuma coluna fique de fora
+                    for campo_sistema in campos_para_mapear:
                         melhor_sugestao = guess_best_match(campo_sistema, colunas_do_csv)
-                        opcoes = ["-- Não Mapear --"] + colunas_do_csv
-                        index = opcoes.index(melhor_sugestao) if melhor_sugestao else 0
-                        mapeamento_usuario[campo_sistema] = st.selectbox(f"Campo do Sistema: **`{campo_sistema}`**", options=opcoes, index=index)
+                        
+                        # Define a seleção padrão de forma inteligente
+                        if melhor_sugestao:
+                            default_selection = melhor_sugestao
+                        elif campo_sistema in colunas_do_csv:
+                            default_selection = campo_sistema
+                        else:
+                            default_selection = "-- Não Mapear --"
 
-                    if st.form_submit_button("Aplicar Mapeamento", type="primary"):
+                        opcoes = ["-- Não Mapear --"] + colunas_do_csv
+                        index = opcoes.index(default_selection) if default_selection in opcoes else 0
+                        mapeamento_usuario[campo_sistema] = st.selectbox(f"Campo do Sistema: **`{campo_sistema}`**", options=opcoes, index=index, key=f"map_{campo_sistema}")
+
+                    if st.form_submit_button("Aplicar Mapeamento e Carregar Dados", type="primary"):
                         df_mapeado = pd.DataFrame()
                         
-                        # Constrói o novo DataFrame com base no mapeamento do utilizador
                         for campo_sistema, col_csv in mapeamento_usuario.items():
                             if col_csv != "-- Não Mapear --":
                                 df_mapeado[campo_sistema] = df_raw[col_csv]
@@ -108,12 +122,11 @@ def show_auxilio_transporte():
                         if df_mapeado.empty:
                             st.error("Nenhuma coluna foi mapeada. Por favor, mapeie pelo menos uma coluna.")
                         else:
-                            # Guarda os dados processados na sessão
                             st.session_state['dados_em_memoria'] = df_mapeado
                             st.session_state['nome_ficheiro'] = uploaded_file.name
                             st.success("Dados mapeados com sucesso! Pode editar na tabela abaixo ou avançar para as próximas abas.")
             except Exception as e:
-                st.error(f"Erro ao ler o ficheiro CSV: {e}")
+                st.error(f"Erro ao ler ou processar o ficheiro CSV: {e}")
                 st.error(traceback.format_exc())
 
         if 'dados_em_memoria' in st.session_state:
@@ -122,6 +135,7 @@ def show_auxilio_transporte():
             st.info("Aqui pode fazer ajustes manuais nos dados antes de gerar os documentos.")
             df_editado = st.data_editor(st.session_state['dados_em_memoria'], num_rows="dynamic", use_container_width=True)
             st.session_state['dados_em_memoria'] = df_editado 
+            
             
     with tab2:
         st.subheader("Mapear Campos do PDF")
