@@ -134,54 +134,59 @@ def show_auxilio_transporte():
     tab1, tab2, tab3 = st.tabs(["1. Carregar e Editar Dados", "2. Mapeamento PDF", "3. Gerar Documentos"])
 
     with tab1:
-        st.subheader("Carregar e Editar Ficheiro de Dados")
-
-        st.markdown("##### Modelo de Preenchimento")
-        modelo_bytes = create_excel_template()
-        st.download_button(
-            label="📥 Baixar Modelo Padrão (.xlsx)",
-            data=modelo_bytes,
-            file_name="modelo_auxilio_transporte.xlsx"
-        )
-        st.markdown("---")
-
-        if 'dados_em_memoria' in st.session_state:
-            st.info(f"Ficheiro em memória: **{st.session_state['nome_ficheiro']}**")
-            if st.button("🗑️ Limpar Ficheiro e Recomeçar"):
-                for key in ['dados_em_memoria', 'nome_ficheiro', 'mapeamento_pdf', 'pdf_template_bytes']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.rerun()
-
-        uploaded_file = st.file_uploader("Carregue o seu ficheiro CSV com todos os dados", type="csv")
-
-        if uploaded_file:
-            if st.button(f"Processar Ficheiro: {uploaded_file.name}", type="primary"):
-                with st.spinner("Processando..."):
-                    try:
-                        df = pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
-                        df_preparado = preparar_dataframe(df)
-                        st.session_state['dados_em_memoria'] = df_preparado
-                        st.session_state['nome_ficheiro'] = uploaded_file.name
-                        st.success("Ficheiro processado!")
-                    except Exception as e:
-                        st.error(f"Erro ao ler o ficheiro: {e}")
-
-        if 'dados_em_memoria' in st.session_state:
-            st.markdown("---")
-            st.markdown("##### Tabela de Dados para Edição")
-            st.info("As alterações feitas aqui são usadas nas outras abas. Para salvá-las, baixe o CSV editado.")
-
-            df_editado = st.data_editor(
-                st.session_state['dados_em_memoria'], num_rows="dynamic", use_container_width=True
-            )
-            st.session_state['dados_em_memoria'] = df_editado 
-
-            csv_editado = df_editado.to_csv(index=False, sep=';').encode('latin-1')
+            st.subheader("Carregar e Editar Ficheiro de Dados")
+    
+            st.markdown("##### Modelo de Preenchimento")
+            modelo_bytes = create_excel_template()
             st.download_button(
-                label="📥 Baixar CSV Editado", data=csv_editado,
-                file_name=f"dados_editados_{st.session_state['nome_ficheiro']}"
+                label="📥 Baixar Modelo Padrão (.xlsx)",
+                data=modelo_bytes,
+                file_name="modelo_auxilio_transporte.xlsx"
             )
+            st.markdown("---")
+    
+            if 'dados_em_memoria' in st.session_state:
+                st.info(f"Ficheiro em memória: **{st.session_state['nome_ficheiro']}**")
+                if st.button("🗑️ Limpar Ficheiro e Recomeçar"):
+                    for key in ['dados_em_memoria', 'nome_ficheiro', 'mapeamento_pdf', 'pdf_template_bytes']:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.rerun()
+    
+            # --- LINHA CRÍTICA DA CORREÇÃO ---
+            # Certifique-se de que o parâmetro type="csv" está presente.
+            uploaded_file = st.file_uploader(
+                "Carregue o seu ficheiro CSV com todos os dados", 
+                type="csv" # <--- Esta parte é essencial
+            )
+    
+            if uploaded_file:
+                if st.button(f"Processar Ficheiro: {uploaded_file.name}", type="primary"):
+                    with st.spinner("Processando..."):
+                        try:
+                            df = pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
+                            df_preparado = preparar_dataframe(df)
+                            st.session_state['dados_em_memoria'] = df_preparado
+                            st.session_state['nome_ficheiro'] = uploaded_file.name
+                            st.success("Ficheiro processado!")
+                        except Exception as e:
+                            st.error(f"Erro ao ler o ficheiro: {e}")
+    
+            if 'dados_em_memoria' in st.session_state:
+                st.markdown("---")
+                st.markdown("##### Tabela de Dados para Edição")
+                st.info("As alterações feitas aqui são usadas nas outras abas. Para salvá-las, baixe o CSV editado.")
+    
+                df_editado = st.data_editor(
+                    st.session_state['dados_em_memoria'], num_rows="dynamic", use_container_width=True
+                )
+                st.session_state['dados_em_memoria'] = df_editado 
+    
+                csv_editado = df_editado.to_csv(index=False, sep=';').encode('latin-1')
+                st.download_button(
+                    label="📥 Baixar CSV Editado", data=csv_editado,
+                    file_name=f"dados_editados_{st.session_state['nome_ficheiro']}"
+                )
     
     with tab2:
             st.subheader("Mapear Campos do PDF para os Dados")
