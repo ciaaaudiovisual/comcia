@@ -181,7 +181,7 @@ def show_auxilio_transporte():
                         st.error(f"Erro: As seguintes colunas obrigatórias não foram mapeadas: **{', '.join(colunas_obrigatorias_em_falta)}**")
                     else:
                         # Limpeza final dos dados já mapeados
-                        df_processado = apply_data_cleaning(df_mapeado)
+                        df_processado = preparar_dataframe(df_mapeado) # <--- CORREÇÃO APLICADA AQUI
                         st.session_state['dados_em_memoria'] = df_processado
                         st.session_state['nome_ficheiro'] = uploaded_file.name
                         st.success("Dados mapeados e processados com sucesso! Pode editar na tabela abaixo ou ir para as próximas abas.")
