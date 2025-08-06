@@ -1,54 +1,58 @@
-# Conteúdo para o ficheiro: pdf_utils.py
-
-import pandas as pd
 from io import BytesIO
-from pypdf import PdfReader, PdfWriter
+from pdfrw import PdfReader, PdfWriter, IndirectPdfDict
+from PyPDF2 import PdfMerger
 
-def fill_pdf_auxilio(template_bytes, aluno_data, pdf_mapping):
+def fill_pdf_auxilio(template_bytes, data, mapping):
     """
-    Preenche um único formulário PDF com os dados de um aluno.
+    Preenche um formulário PDF com base nos dados fornecidos.
+    - template_bytes: O conteúdo do modelo PDF em bytes.
+    - data: Uma linha (Pandas Series) com os dados do aluno.
+    - mapping: Um dicionário que mapeia nomes de campos do PDF para nomes de colunas nos dados.
     """
-    reader = PdfReader(BytesIO(template_bytes))
-    writer = PdfWriter(clone_from=reader)
+    # Cria um fluxo de bytes em memória para o pdfrw ler
+    template_stream = BytesIO(template_bytes)
+    template = PdfReader(template_stream)
     
-    fill_data = {}
-    for pdf_field, df_column in pdf_mapping.items():
-        if not df_column or df_column == "-- Não Mapear Este Campo --":
-            continue
+    # Dicionário para armazenar os dados a serem preenchidos
+    data_to_fill = {}
+    for pdf_field, data_col in mapping.items():
+        if data_col != '-- Não Mapear --' and data_col in data:
+            data_to_fill[f'({pdf_field})'] = data[data_col]
 
-        valor = aluno_data.get(df_column)
-        if pd.isna(valor):
-            valor = ''
-        
-        campos_moeda = ['despesa_diaria', 'despesa_mensal_total', 'parcela_descontada_6_porcento', 'auxilio_transporte_pago', 'soldo']
-        if df_column in campos_moeda or 'tarifa' in df_column:
-            try:
-                valor_numerico = float(valor)
-                valor_formatado = f"R$ {valor_numerico:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                fill_data[pdf_field] = valor_formatado
-            except (ValueError, TypeError):
-                fill_data[pdf_field] = "R$ 0,00"
-        else:
-            fill_data[pdf_field] = str(valor)
+    if template.Root.AcroForm and template.Root.AcroForm.Fields:
+        for page in template.pages:
+            annotations = page.get('/Annots')
+            if annotations:
+                for annotation in annotations:
+                    field_key = annotation.get('/T')
+                    if field_key in data_to_fill:
+                        # Preenche o valor e define o campo como somente leitura
+                        annotation.update(
+                            PdfWriter.PdfDict(V=str(data_to_fill[field_key]), Ff=1)
+                        )
 
-    if writer.get_form_text_fields():
-        for page in writer.pages:
-            writer.update_page_form_field_values(page, fill_data)
-            
+    # Salva o PDF preenchido num buffer de memória
     output_buffer = BytesIO()
-    writer.write(output_buffer)
+    PdfWriter().write(output_buffer, template)
     output_buffer.seek(0)
+    
     return output_buffer
 
-def merge_pdfs(pdf_buffers):
-    """Junta vários PDFs (em memória) num único ficheiro."""
-    merger = PdfWriter()
-    for buffer in pdf_buffers:
-        reader = PdfReader(buffer)
-        for page in reader.pages:
-            merger.add_page(page)
-            
-    merged_pdf_buffer = BytesIO()
-    merger.write(merged_pdf_buffer)
-    merged_pdf_buffer.seek(0)
-    return merged_pdf_buffer
+
+def merge_pdfs(pdf_list):
+    """
+    Junta vários PDFs (em buffers de memória) num único ficheiro.
+    - pdf_list: Uma lista de buffers BytesIO, cada um contendo um PDF.
+    """
+    merger = PdfMerger()
+    
+    for pdf_buffer in pdf_list:
+        pdf_buffer.seek(0)
+        merger.append(pdf_buffer)
+        
+    output_buffer = BytesIO()
+    merger.write(output_buffer)
+    merger.close()
+    
+    output_buffer.seek(0)
+    return output_buffer
