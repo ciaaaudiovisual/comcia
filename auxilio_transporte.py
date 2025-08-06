@@ -3,13 +3,45 @@ import pandas as pd
 from io import BytesIO
 import traceback
 import re
-
-# Importe as suas funções de geração de PDF a partir do ficheiro de utilitários
 from pdf_utils import fill_pdf_auxilio, merge_pdfs
 from pypdf import PdfReader
+from difflib import SequenceMatcher
 
 # --- Bloco de Funções Essenciais ---
+def clean_text(text):
+    """Função auxiliar para limpar e normalizar nomes de colunas para comparação."""
+    if not isinstance(text, str): return ""
+    # Remove acentos, caracteres especiais e espaços, e converte para minúsculas
+    text = text.lower()
+    text = re.sub(r'[^a-z0-9]', '', text)
+    return text
 
+def guess_best_match(target_column, available_columns, threshold=0.6):
+    """
+    Encontra a melhor correspondência para uma coluna-alvo numa lista de colunas disponíveis,
+    usando um algoritmo de semelhança de texto.
+    """
+    best_match = ""
+    highest_score = 0.0
+    clean_target = clean_text(target_column)
+
+    # Não compara com a opção "-- Não Mapear --"
+    for option in available_columns:
+        if option == "-- Não Mapear --":
+            continue
+            
+        clean_option = clean_text(option)
+        score = SequenceMatcher(None, clean_target, clean_option).ratio()
+        
+        if score > highest_score:
+            highest_score = score
+            best_match = option
+    
+    # Só retorna a sugestão se a pontuação for boa o suficiente
+    if highest_score >= threshold:
+        return best_match
+    return ""
+    
 def create_excel_template():
     """Cria um template XLSX vazio com o cabeçalho correto para download."""
     colunas_template = [
@@ -143,44 +175,50 @@ def show_auxilio_transporte():
                 label="📥 Baixar CSV Editado", data=csv_editado,
                 file_name=f"dados_editados_{st.session_state['nome_ficheiro']}"
             )
-
+    
     with tab2:
-        st.subheader("Mapear Campos do PDF para os Dados")
-        if 'dados_em_memoria' not in st.session_state:
-            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
-        else:
-            st.info("Faça o upload do seu modelo PDF preenchível.")
-            pdf_template_file = st.file_uploader("Carregue o modelo PDF", type="pdf", key="pdf_mapper_uploader")
+            st.subheader("Mapear Campos do PDF para os Dados")
+            if 'dados_em_memoria' not in st.session_state:
+                st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
+            else:
+                st.info("Faça o upload do seu modelo PDF preenchível.")
+                pdf_template_file = st.file_uploader("Carregue o modelo PDF", type="pdf", key="pdf_mapper_uploader")
+    
+                if pdf_template_file:
+                    try:
+                        reader = PdfReader(BytesIO(pdf_template_file.getvalue()))
+                        pdf_fields = list(reader.get_form_text_fields().keys())
+                        
+                        if not pdf_fields:
+                            st.warning("Nenhum campo de formulário editável foi encontrado neste PDF.")
+                        else:
+                            st.success(f"{len(pdf_fields)} campos encontrados.")
+                            df_cols = st.session_state['dados_em_memoria'].columns.tolist()
+                            calculated_cols = ['despesa_diaria', 'despesa_mensal_total', 'parcela_descontada_6_porcento', 'auxilio_transporte_pago']
+                            all_system_columns = ["-- Não Mapear --"] + sorted(df_cols + calculated_cols)
+                            saved_mapping = st.session_state.get('mapeamento_pdf', {})
+    
+                            with st.form("pdf_mapping_form"):
+                                user_mapping = {}
+                                st.markdown("**Mapeie cada campo do PDF para uma coluna dos dados:**")
+                                for field in sorted(pdf_fields):
+                                    # --- LÓGICA DE MAPEAMENTO INTELIGENTE APLICADA AQUI ---
+                                    # Primeiro tenta encontrar uma sugestão por semelhança
+                                    best_guess = guess_best_match(field, all_system_columns)
+                                    # Depois, verifica se existe um mapeamento já salvo pelo usuário, que tem prioridade
+                                    best_guess = saved_mapping.get(field, best_guess if best_guess else "-- Não Mapear --")
+                                    
+                                    index = all_system_columns.index(best_guess) if best_guess in all_system_columns else 0
+                                    user_mapping[field] = st.selectbox(f"Campo do PDF: `{field}`", options=all_system_columns, index=index)
+                                
+                                if st.form_submit_button("Salvar Mapeamento", type="primary"):
+                                    st.session_state['mapeamento_pdf'] = user_mapping
+                                    st.session_state['pdf_template_bytes'] = pdf_template_file.getvalue()
+                                    st.success("Mapeamento salvo com sucesso!")
+                    except Exception as e:
+                        st.error(f"Erro ao processar o PDF: {e}")
 
-            if pdf_template_file:
-                try:
-                    reader = PdfReader(BytesIO(pdf_template_file.getvalue()))
-                    pdf_fields = list(reader.get_form_text_fields().keys())
-                    
-                    if not pdf_fields:
-                        st.warning("Nenhum campo de formulário editável foi encontrado neste PDF.")
-                    else:
-                        st.success(f"{len(pdf_fields)} campos encontrados.")
-                        df_cols = st.session_state['dados_em_memoria'].columns.tolist()
-                        calculated_cols = ['despesa_diaria', 'despesa_mensal_total', 'parcela_descontada_6_porcento', 'auxilio_transporte_pago']
-                        all_system_columns = ["-- Não Mapear --"] + sorted(df_cols + calculated_cols)
-                        saved_mapping = st.session_state.get('mapeamento_pdf', {})
-
-                        with st.form("pdf_mapping_form"):
-                            user_mapping = {}
-                            st.markdown("**Mapeie cada campo do PDF para uma coluna dos dados:**")
-                            for field in sorted(pdf_fields):
-                                best_guess = saved_mapping.get(field, "-- Não Mapear --")
-                                index = all_system_columns.index(best_guess) if best_guess in all_system_columns else 0
-                                user_mapping[field] = st.selectbox(f"Campo do PDF: `{field}`", options=all_system_columns, index=index)
-                            
-                            if st.form_submit_button("Salvar Mapeamento", type="primary"):
-                                st.session_state['mapeamento_pdf'] = user_mapping
-                                st.session_state['pdf_template_bytes'] = pdf_template_file.getvalue()
-                                st.success("Mapeamento salvo com sucesso!")
-                except Exception as e:
-                    st.error(f"Erro ao processar o PDF: {e}")
-with tab3:
+    with tab3:
         st.subheader("Gerar Documentos Finais")
         if 'dados_em_memoria' not in st.session_state:
             st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
@@ -190,7 +228,6 @@ with tab3:
             df_final = st.session_state['dados_em_memoria'].copy()
             
             with st.spinner("Calculando valores..."):
-                # --- CORREÇÃO APLICADA AQUI ---
                 calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
                 df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
 
