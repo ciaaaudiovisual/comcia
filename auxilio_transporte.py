@@ -53,7 +53,7 @@ def guess_best_match(target_column, available_columns, threshold=0.6):
 
 
 # --- Função Principal da Página ---
-def show_gerador_pdf_app():
+def show_auxilio_transporte():
     st.header("📄 Gerador de Documentos a partir de CSV")
     st.markdown("---")
 
