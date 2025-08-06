@@ -33,47 +33,35 @@ def get_pdf_form_fields(pdf_bytes: bytes) -> list:
         st.error(f"Erro ao ler os campos do PDF: {e}")
         return []
 
-# --- FUNÇÃO DE PREENCHIMENTO DE PDF ATUALIZADA COM A CORREÇÃO DO ERRO ---
-def fill_pdf_form(template_bytes: bytes, data_row: pd.Series, mapping: dict, flatten: bool = True) -> BytesIO:
+# --- FUNÇÃO DE PREENCHIMENTO DE PDF ATUALIZADA COM A CORREÇÃO FINAL ---
+def fill_pdf_form(template_bytes: bytes, data_row: pd.Series, mapping: dict) -> BytesIO:
     """
     Preenche um formulário PDF para uma única linha de dados.
-    Esta versão corrige o AttributeError.
+    Esta versão usa o método oficial flatten_pages() para garantir a visibilidade.
     """
     reader = PdfReader(BytesIO(template_bytes))
     writer = PdfWriter()
 
-    # CORREÇÃO: Substituí o método inexistente 'clone_from_reader'
-    # pela forma correta de copiar as páginas do template para o novo ficheiro.
-    # Isso garante que cada PDF gerado comece com uma cópia limpa do template.
     for page in reader.pages:
         writer.add_page(page)
 
-    # Cria o dicionário com os dados a serem preenchidos
     fill_data = {}
     for pdf_field, csv_column in mapping.items():
         if csv_column != "-- Não Mapear --" and csv_column in data_row:
             value = str(data_row.get(csv_column, ''))
             fill_data[pdf_field] = value
 
-    # Preenche os campos do formulário no writer para todas as páginas
     for page in writer.pages:
         try:
             writer.update_page_form_field_values(page=page, fields=fill_data)
         except Exception as e:
             st.warning(f"Aviso ao preencher a página: {e}")
-            
-    # Lógica de "achatar" (flatten) os campos para torná-los visíveis (mantida)
-    if flatten:
-        for page in writer.pages:
-            if "/Annots" in page:
-                for annot in page["/Annots"]:
-                    obj = annot.get_object()
-                    if obj.get("/T") and obj.get("/V"):
-                        obj.update({
-                            "/Ff": 1 # Define o campo como "apenas leitura"
-                        })
 
-    # Escreve o resultado em um buffer de memória
+    # CORREÇÃO FINAL: Usa o método 'flatten_pages' para "achatar" o PDF.
+    # Isso converte os campos de formulário em conteúdo estático, tornando-os
+    # sempre visíveis e evitando o erro 'AttributeError'.
+    writer.flatten_pages()
+
     output_buffer = BytesIO()
     writer.write(output_buffer)
     output_buffer.seek(0)
@@ -111,25 +99,19 @@ def find_best_match(target_field: str, available_columns: list, threshold=0.6) -
     """Encontra a melhor correspondência para um campo alvo dentro de uma lista de colunas."""
     if not target_field or not available_columns:
         return ""
-
     clean_target = clean_text(target_field)
     best_match = ""
     highest_score = 0.0
-
     for option in available_columns:
         if option == "-- Não Mapear --":
             continue
-        
         clean_option = clean_text(option)
         score = SequenceMatcher(None, clean_target, clean_option).ratio()
-
         if score > highest_score:
             highest_score = score
             best_match = option
-    
     if highest_score >= threshold:
         return best_match
-    
     return ""
 
 # --- FUNÇÃO PRINCIPAL DA PÁGINA (SEM ALTERAÇÕES SIGNIFICATIVAS NA UI) ---
@@ -198,14 +180,12 @@ def show_auxilio_transporte():
                         for field in sorted(pdf_fields):
                             suggestion = find_best_match(field, df_cols)
                             suggestion_index = df_cols.index(suggestion) if suggestion in df_cols else 0
-
                             user_mapping[field] = st.selectbox(
                                 f"Campo do PDF: `{field}`", 
                                 df_cols, 
                                 index=suggestion_index,
                                 key=f"map_{field}"
                             )
-                        
                         if st.form_submit_button("Salvar Mapeamento", type="primary"):
                             st.session_state.mapeamento_pdf = user_mapping
                             st.success("Mapeamento salvo com sucesso!")
@@ -240,7 +220,6 @@ def show_auxilio_transporte():
                                 st.balloons()
                             else:
                                 st.error("Nenhum PDF pôde ser gerado. Verifique os logs de erro.")
-
                         except Exception as e:
                             st.error(f"Erro na geração dos PDFs: {e}")
                             st.error(traceback.format_exc())
