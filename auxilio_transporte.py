@@ -89,9 +89,9 @@ def calcular_auxilio_transporte(linha):
     except Exception as e:
         print(f"Erro no cálculo para NIP {linha.get('numero_interno', 'N/A')}: {e}")
         return pd.Series()
-        
+
 def preparar_dataframe(df):
-    """Prepara o DataFrame do CSV com limpeza de dados mais robusta."""
+    """Prepara o DataFrame do CSV, incluindo a coluna 'SOLDO'."""
     df_copy = df.iloc[:, 1:].copy()
     mapa_colunas = {
         'NÚMERO INTERNO DO ALUNO': 'numero_interno', 'NOME COMPLETO': 'nome_completo', 'POSTO/GRAD': 'graduacao',
@@ -110,18 +110,11 @@ def preparar_dataframe(df):
     for col in df_copy.select_dtypes(include=['object']).columns:
         df_copy[col] = df_copy[col].str.upper().str.strip()
 
-    # --- LÓGICA DE LIMPEZA DE NÚMEROS APRIMORADA ---
     colunas_numericas = ['soldo', 'dias_uteis'] + [f'ida_{i}_tarifa' for i in range(1, 6)] + [f'volta_{i}_tarifa' for i in range(1, 6)]
     for col in colunas_numericas:
         if col in df_copy.columns:
-            # 1. Converte para string para garantir que os métodos de texto funcionem
-            s = df_copy[col].astype(str)
-            # 2. Remove tudo que NÃO é um dígito, vírgula ou ponto
-            s = s.str.replace(r'[^\d,.]', '', regex=True)
-            # 3. Substitui a vírgula por ponto para a conversão decimal
-            s = s.str.replace(',', '.')
-            # 4. Converte para número, tratando erros
-            df_copy[col] = pd.to_numeric(s, errors='coerce')
+            df_copy[col] = df_copy[col].astype(str).str.replace('R$', '', regex=False).str.strip()
+            df_copy[col] = pd.to_numeric(df_copy[col].str.replace(',', '.'), errors='coerce')
     
     df_copy.fillna(0, inplace=True)
     return df_copy
@@ -134,158 +127,163 @@ def show_auxilio_transporte():
     tab1, tab2, tab3 = st.tabs(["1. Carregar e Editar Dados", "2. Mapeamento PDF", "3. Gerar Documentos"])
 
     with tab1:
-            st.subheader("Carregar e Editar Ficheiro de Dados")
-    
-            st.markdown("##### Modelo de Preenchimento")
-            modelo_bytes = create_excel_template()
-            st.download_button(
-                label="📥 Baixar Modelo Padrão (.xlsx)",
-                data=modelo_bytes,
-                file_name="modelo_auxilio_transporte.xlsx"
-            )
-            st.markdown("---")
-    
-            if 'dados_em_memoria' in st.session_state:
-                st.info(f"Ficheiro em memória: **{st.session_state['nome_ficheiro']}**")
-                if st.button("🗑️ Limpar Ficheiro e Recomeçar"):
-                    for key in ['dados_em_memoria', 'nome_ficheiro', 'mapeamento_pdf', 'pdf_template_bytes']:
-                        if key in st.session_state:
-                            del st.session_state[key]
-                    st.rerun()
-    
-            # --- LINHA CRÍTICA DA CORREÇÃO ---
-            # Certifique-se de que o parâmetro type="csv" está presente.
-            uploaded_file = st.file_uploader(
-                "Carregue o seu ficheiro CSV com todos os dados", 
-                type="csv" # <--- Esta parte é essencial
-            )
-    
-            if uploaded_file:
-                if st.button(f"Processar Ficheiro: {uploaded_file.name}", type="primary"):
-                    with st.spinner("Processando..."):
-                        try:
-                            df = pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
-                            df_preparado = preparar_dataframe(df)
-                            st.session_state['dados_em_memoria'] = df_preparado
-                            st.session_state['nome_ficheiro'] = uploaded_file.name
-                            st.success("Ficheiro processado!")
-                        except Exception as e:
-                            st.error(f"Erro ao ler o ficheiro: {e}")
-    
-            if 'dados_em_memoria' in st.session_state:
-                st.markdown("---")
-                st.markdown("##### Tabela de Dados para Edição")
-                st.info("As alterações feitas aqui são usadas nas outras abas. Para salvá-las, baixe o CSV editado.")
-    
-                df_editado = st.data_editor(
-                    st.session_state['dados_em_memoria'], num_rows="dynamic", use_container_width=True
-                )
-                st.session_state['dados_em_memoria'] = df_editado 
-    
-                csv_editado = df_editado.to_csv(index=False, sep=';').encode('latin-1')
-                st.download_button(
-                    label="📥 Baixar CSV Editado", data=csv_editado,
-                    file_name=f"dados_editados_{st.session_state['nome_ficheiro']}"
-                )
-    
-    with tab2:
-            st.subheader("Mapear Campos do PDF para os Dados")
-            if 'dados_em_memoria' not in st.session_state:
-                st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
-            else:
-                st.info("Faça o upload do seu modelo PDF preenchível.")
-                pdf_template_file = st.file_uploader("Carregue o modelo PDF", type="pdf", key="pdf_mapper_uploader")
-    
-                if pdf_template_file:
+        st.subheader("Carregar e Editar Ficheiro de Dados")
+        st.markdown("##### Modelo de Preenchimento")
+        modelo_bytes = create_excel_template()
+        st.download_button(
+            label="📥 Baixar Modelo Padrão (.xlsx)",
+            data=modelo_bytes,
+            file_name="modelo_auxilio_transporte.xlsx"
+        )
+        st.markdown("---")
+
+        if 'dados_em_memoria' in st.session_state:
+            st.info(f"Ficheiro em memória: **{st.session_state['nome_ficheiro']}**")
+            if st.button("🗑️ Limpar Ficheiro e Recomeçar"):
+                for key in ['dados_em_memoria', 'nome_ficheiro', 'mapeamento_pdf', 'pdf_template_bytes']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
+
+        uploaded_file = st.file_uploader("Carregue o seu ficheiro CSV com todos os dados", type="csv")
+
+        if uploaded_file:
+            if st.button(f"Processar Ficheiro: {uploaded_file.name}", type="primary"):
+                with st.spinner("Processando..."):
                     try:
-                        reader = PdfReader(BytesIO(pdf_template_file.getvalue()))
-                        pdf_fields = list(reader.get_form_text_fields().keys())
-                        
-                        if not pdf_fields:
-                            st.warning("Nenhum campo de formulário editável foi encontrado neste PDF.")
-                        else:
-                            st.success(f"{len(pdf_fields)} campos encontrados.")
-                            df_cols = st.session_state['dados_em_memoria'].columns.tolist()
-                            calculated_cols = ['despesa_diaria', 'despesa_mensal_total', 'parcela_descontada_6_porcento', 'auxilio_transporte_pago']
-                            all_system_columns = ["-- Não Mapear --"] + sorted(df_cols + calculated_cols)
-                            saved_mapping = st.session_state.get('mapeamento_pdf', {})
-    
-                            with st.form("pdf_mapping_form"):
-                                user_mapping = {}
-                                st.markdown("**Mapeie cada campo do PDF para uma coluna dos dados:**")
-                                for field in sorted(pdf_fields):
-                                    # --- LÓGICA DE MAPEAMENTO INTELIGENTE APLICADA AQUI ---
-                                    # Primeiro tenta encontrar uma sugestão por semelhança
-                                    best_guess = guess_best_match(field, all_system_columns)
-                                    # Depois, verifica se existe um mapeamento já salvo pelo usuário, que tem prioridade
-                                    best_guess = saved_mapping.get(field, best_guess if best_guess else "-- Não Mapear --")
-                                    
-                                    index = all_system_columns.index(best_guess) if best_guess in all_system_columns else 0
-                                    user_mapping[field] = st.selectbox(f"Campo do PDF: `{field}`", options=all_system_columns, index=index)
-                                
-                                if st.form_submit_button("Salvar Mapeamento", type="primary"):
-                                    st.session_state['mapeamento_pdf'] = user_mapping
-                                    st.session_state['pdf_template_bytes'] = pdf_template_file.getvalue()
-                                    st.success("Mapeamento salvo com sucesso!")
+                        df = pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
+                        df_preparado = preparar_dataframe(df)
+                        st.session_state['dados_em_memoria'] = df_preparado
+                        st.session_state['nome_ficheiro'] = uploaded_file.name
+                        st.success("Ficheiro processado!")
                     except Exception as e:
-                        st.error(f"Erro ao processar o PDF: {e}")
+                        st.error(f"Erro ao ler o ficheiro: {e}")
+
+        if 'dados_em_memoria' in st.session_state:
+            st.markdown("---")
+            st.markdown("##### Tabela de Dados para Edição")
+            st.info("As alterações feitas aqui são usadas nas outras abas. Para salvá-las, baixe o CSV editado.")
+
+            df_editado = st.data_editor(
+                st.session_state['dados_em_memoria'], num_rows="dynamic", use_container_width=True
+            )
+            st.session_state['dados_em_memoria'] = df_editado 
+
+            csv_editado = df_editado.to_csv(index=False, sep=';').encode('latin-1')
+            st.download_button(
+                label="📥 Baixar CSV Editado", data=csv_editado,
+                file_name=f"dados_editados_{st.session_state['nome_ficheiro']}"
+            )
+
+    with tab2:
+        st.subheader("Mapear Campos do PDF para os Dados")
+        if 'dados_em_memoria' not in st.session_state:
+            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
+        else:
+            st.info("Faça o upload do seu modelo PDF preenchível.")
+            pdf_template_file = st.file_uploader("Carregue o modelo PDF", type="pdf", key="pdf_mapper_uploader")
+
+            if pdf_template_file:
+                try:
+                    reader = PdfReader(BytesIO(pdf_template_file.getvalue()))
+                    pdf_fields = list(reader.get_form_text_fields().keys())
+                    
+                    if not pdf_fields:
+                        st.warning("Nenhum campo de formulário editável foi encontrado neste PDF.")
+                    else:
+                        st.success(f"{len(pdf_fields)} campos encontrados.")
+                        df_cols = st.session_state['dados_em_memoria'].columns.tolist()
+                        calculated_cols = ['despesa_diaria', 'despesa_mensal_total', 'parcela_descontada_6_porcento', 'auxilio_transporte_pago']
+                        all_system_columns = ["-- Não Mapear --"] + sorted(df_cols + calculated_cols)
+                        saved_mapping = st.session_state.get('mapeamento_pdf', {})
+
+                        with st.form("pdf_mapping_form"):
+                            user_mapping = {}
+                            st.markdown("**Mapeie cada campo do PDF para uma coluna dos dados:**")
+                            for field in sorted(pdf_fields):
+                                best_guess = saved_mapping.get(field, "-- Não Mapear --")
+                                index = all_system_columns.index(best_guess) if best_guess in all_system_columns else 0
+                                user_mapping[field] = st.selectbox(f"Campo do PDF: `{field}`", options=all_system_columns, index=index)
+                            
+                            if st.form_submit_button("Salvar Mapeamento", type="primary"):
+                                st.session_state['mapeamento_pdf'] = user_mapping
+                                st.session_state['pdf_template_bytes'] = pdf_template_file.getvalue()
+                                st.success("Mapeamento salvo com sucesso!")
+                except Exception as e:
+                    st.error(f"Erro ao processar o PDF: {e}")
 
     with tab3:
-            st.subheader("Gerar Documentos Finais")
-            if 'dados_em_memoria' not in st.session_state:
-                st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
-            elif 'mapeamento_pdf' not in st.session_state or 'pdf_template_bytes' not in st.session_state:
-                st.warning("Por favor, carregue o modelo PDF e salve o mapeamento na aba '2. Mapeamento PDF'.")
+        st.subheader("Gerar Documentos Finais")
+        if 'dados_em_memoria' not in st.session_state:
+            st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
+        elif 'mapeamento_pdf' not in st.session_state or 'pdf_template_bytes' not in st.session_state:
+            st.warning("Por favor, carregue o modelo PDF e salve o mapeamento na aba '2. Mapeamento PDF'.")
+        else:
+            df_final = st.session_state['dados_em_memoria'].copy()
+            
+            with st.spinner("Calculando valores..."):
+                calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
+                df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
+
+            st.markdown("#### Filtro para Seleção")
+            
+            # --- CORREÇÃO ROBUSTA APLICADA AQUI ---
+            # 1. Define as colunas que a aplicação PRECISA para funcionar
+            colunas_essenciais = ['nome_completo', 'numero_interno', 'graduacao']
+            
+            # 2. Verifica se todas as colunas essenciais existem
+            colunas_em_falta = [col for col in colunas_essenciais if col not in df_com_calculo.columns]
+            
+            if colunas_em_falta:
+                # 3. Se alguma coluna estiver em falta, mostra um erro claro e para
+                st.error(f"""
+                Erro: Colunas essenciais não foram encontradas nos dados processados: **{', '.join(colunas_em_falta)}**.
+                
+                **Possíveis Causas:**
+                - O título da(s) coluna(s) no seu ficheiro CSV não corresponde ao esperado (ex: 'NOME COMPLETO').
+                - A(s) coluna(s) não existe(m) no seu ficheiro CSV.
+
+                Por favor, corrija o seu ficheiro CSV e carregue-o novamente na Aba 1.
+                """)
             else:
-                df_final = st.session_state['dados_em_memoria'].copy()
+                # 4. Se tudo estiver correto, o resto do código é executado
+                st.info("Selecione os militares para gerar o documento. Deixe em branco para incluir todos.")
                 
-                with st.spinner("Calculando valores..."):
-                    calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
-                    df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
-    
-                st.markdown("#### Filtro para Seleção")
+                nomes_validos = df_com_calculo['nome_completo'].dropna().unique()
+                opcoes_filtro = sorted(nomes_validos)
+                selecionados = st.multiselect("Selecione por Nome Completo:", options=opcoes_filtro)
                 
-                # --- CORREÇÃO APLICADA AQUI ---
-                # Verifica se a coluna 'nome_completo' existe antes de a usar
-                if 'nome_completo' in df_com_calculo.columns:
-                    st.info("Selecione os militares para gerar o documento. Deixe em branco para incluir todos.")
-                    
-                    nomes_validos = df_com_calculo['nome_completo'].dropna().unique()
-                    opcoes_filtro = sorted(nomes_validos)
-                    selecionados = st.multiselect("Selecione por Nome Completo:", options=opcoes_filtro)
-                    
-                    df_para_gerar = df_com_calculo[df_com_calculo['nome_completo'].isin(selecionados)] if selecionados else df_com_calculo
-                    st.dataframe(df_para_gerar)
+                df_para_gerar = df_com_calculo[df_com_calculo['nome_completo'].isin(selecionados)] if selecionados else df_com_calculo
+                st.dataframe(df_para_gerar)
 
+                if st.button(f"Gerar PDF para os {len(df_para_gerar)} selecionados", type="primary"):
+                    with st.spinner("Gerando PDFs..."):
+                        try:
+                            template_bytes = st.session_state['pdf_template_bytes']
+                            mapping = st.session_state['mapeamento_pdf']
+                            filled_pdfs = []
+                            progress_bar = st.progress(0)
+                            
+                            for i, (_, aluno_row) in enumerate(df_para_gerar.iterrows()):
+                                pdf_preenchido = fill_pdf_auxilio(template_bytes, aluno_row, mapping)
+                                filled_pdfs.append(pdf_preenchido)
+                                progress_bar.progress((i + 1) / len(df_para_gerar), text=f"Gerando: {aluno_row['nome_completo']}")
+                            
+                            final_pdf_buffer = merge_pdfs(filled_pdfs)
+                            st.session_state['pdf_final_bytes'] = final_pdf_buffer.getvalue()
+                            progress_bar.empty()
+                            
+                            st.success("Documento consolidado gerado com sucesso!")
+                            st.balloons()
 
-            if st.button(f"Gerar PDF para os {len(df_para_gerar)} selecionados", type="primary"):
-                with st.spinner("Gerando PDFs..."):
-                    try:
-                        template_bytes = st.session_state['pdf_template_bytes']
-                        mapping = st.session_state['mapeamento_pdf']
-                        filled_pdfs = []
-                        progress_bar = st.progress(0)
-                        
-                        for i, (_, aluno_row) in enumerate(df_para_gerar.iterrows()):
-                            pdf_preenchido = fill_pdf_auxilio(template_bytes, aluno_row, mapping)
-                            filled_pdfs.append(pdf_preenchido)
-                            progress_bar.progress((i + 1) / len(df_para_gerar), text=f"Gerando: {aluno_row['nome_completo']}")
-                        
-                        final_pdf_buffer = merge_pdfs(filled_pdfs)
-                        st.session_state['pdf_final_bytes'] = final_pdf_buffer.getvalue()
-                        progress_bar.empty()
-                        
-                        st.success("Documento consolidado gerado com sucesso!")
-                        st.balloons()
+                        except Exception as e:
+                            st.error(f"Ocorreu um erro durante a geração dos PDFs: {e}")
+                            st.error(traceback.format_exc())
 
-                    except Exception as e:
-                        st.error(f"Ocorreu um erro durante a geração dos PDFs: {e}")
-                        st.error(traceback.format_exc())
-
-                if 'pdf_final_bytes' in st.session_state:
-                    st.download_button(
-                        label="✅ Baixar Documento Consolidado (.pdf)",
-                        data=st.session_state['pdf_final_bytes'],
-                        file_name="Declaracoes_Auxilio_Transporte.pdf",
-                        mime="application/pdf"
-                    )
+                    if 'pdf_final_bytes' in st.session_state:
+                        st.download_button(
+                            label="✅ Baixar Documento Consolidado (.pdf)",
+                            data=st.session_state['pdf_final_bytes'],
+                            file_name="Declaracoes_Auxilio_Transporte.pdf",
+                            mime="application/pdf"
+                        )
