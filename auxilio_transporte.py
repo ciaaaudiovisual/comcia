@@ -3,7 +3,6 @@ import pandas as pd
 from io import BytesIO
 import traceback
 from PyPDF2 import PdfReader, PdfWriter
-from PyPDF2.generic import AnnotationBuilder
 import re
 from difflib import SequenceMatcher
 
@@ -34,25 +33,26 @@ def get_pdf_form_fields(pdf_bytes: bytes) -> list:
         st.error(f"Erro ao ler os campos do PDF: {e}")
         return []
 
-# --- FUNÇÃO DE PREENCHIMENTO DE PDF ATUALIZADA COM AS CORREÇÕES ---
+# --- FUNÇÃO DE PREENCHIMENTO DE PDF ATUALIZADA COM A CORREÇÃO DO ERRO ---
 def fill_pdf_form(template_bytes: bytes, data_row: pd.Series, mapping: dict, flatten: bool = True) -> BytesIO:
     """
     Preenche um formulário PDF para uma única linha de dados.
-    CORREÇÃO 1: Adicionada a opção 'flatten' para tornar os campos visíveis.
-    CORREÇÃO 2: A lógica interna foi refeita para garantir que cada cópia seja independente.
+    Esta versão corrige o AttributeError.
     """
     reader = PdfReader(BytesIO(template_bytes))
-    # Criar um writer novo a cada chamada garante que não haja "vazamento" de estado
     writer = PdfWriter()
 
-    # CORREÇÃO 2: Clona o leitor para o escritor. Isso cria uma cópia limpa e exata do template.
-    writer.clone_from_reader(reader)
+    # CORREÇÃO: Substituí o método inexistente 'clone_from_reader'
+    # pela forma correta de copiar as páginas do template para o novo ficheiro.
+    # Isso garante que cada PDF gerado comece com uma cópia limpa do template.
+    for page in reader.pages:
+        writer.add_page(page)
 
     # Cria o dicionário com os dados a serem preenchidos
     fill_data = {}
     for pdf_field, csv_column in mapping.items():
         if csv_column != "-- Não Mapear --" and csv_column in data_row:
-            value = str(data_row.get(csv_column, '')) # .get() é mais seguro
+            value = str(data_row.get(csv_column, ''))
             fill_data[pdf_field] = value
 
     # Preenche os campos do formulário no writer para todas as páginas
@@ -62,17 +62,15 @@ def fill_pdf_form(template_bytes: bytes, data_row: pd.Series, mapping: dict, fla
         except Exception as e:
             st.warning(f"Aviso ao preencher a página: {e}")
             
-    # CORREÇÃO 1: Se 'flatten' for True, torna os campos "read-only"
+    # Lógica de "achatar" (flatten) os campos para torná-los visíveis (mantida)
     if flatten:
         for page in writer.pages:
             if "/Annots" in page:
                 for annot in page["/Annots"]:
                     obj = annot.get_object()
-                    # Verifica se é um campo de formulário e tem um valor
                     if obj.get("/T") and obj.get("/V"):
                         obj.update({
-                            # Define o campo como "apenas leitura"
-                            "/Ff": 1
+                            "/Ff": 1 # Define o campo como "apenas leitura"
                         })
 
     # Escreve o resultado em um buffer de memória
@@ -233,7 +231,6 @@ def show_auxilio_transporte():
                             
                             filled_pdfs = []
                             for _, row in df_final.iterrows():
-                                # A chamada da função agora usa a nova versão corrigida
                                 filled_pdf_buffer = fill_pdf_form(template_bytes, row, mapping)
                                 filled_pdfs.append(filled_pdf_buffer)
                             
