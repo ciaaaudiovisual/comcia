@@ -5,39 +5,43 @@ from PyPDF2 import PdfMerger
 def fill_pdf_auxilio(template_bytes, data, mapping):
     """
     Preenche um formulário PDF com base nos dados fornecidos.
-    - template_bytes: O conteúdo do modelo PDF em bytes.
-    - data: Uma linha (Pandas Series) com os dados do aluno.
-    - mapping: Um dicionário que mapeia nomes de campos do PDF para nomes de colunas nos dados.
     """
+    print("\n--- DEBUG: INICIANDO PREENCHIMENTO DE UM PDF ---") # DEBUG
+    
     template_stream = BytesIO(template_bytes)
     template = pdfrw.PdfReader(template_stream)
     
     data_to_fill = {}
     for pdf_field, data_col in mapping.items():
         if data_col != '-- Não Mapear --' and data_col in data:
-            # O nome do campo no PDF é envolvido por parênteses
             data_to_fill[f'({pdf_field})'] = data[data_col]
 
+    print(f"DEBUG: Dicionário de dados criado. Chaves: {list(data_to_fill.keys())}") # DEBUG
+
+    match_found = False
     if template.Root.AcroForm and template.Root.AcroForm.Fields:
         for page in template.pages:
             annotations = page.get('/Annots')
             if annotations:
                 for annotation in annotations:
-                    # --- INÍCIO DA CORREÇÃO ---
-                    # Pega o objeto de nome de campo do PDF
                     field_object = annotation.get('/T')
                     
-                    # Verifica se o campo tem um nome
                     if field_object:
-                        # Converte o nome do campo para um texto normal (str) antes de usar
                         field_key = str(field_object)
+                        # Imprime o campo encontrado no PDF para vermos o seu formato exato
+                        print(f"DEBUG: Campo encontrado no PDF -> '{field_key}'") # DEBUG
                         
                         if field_key in data_to_fill:
-                            # Preenche o valor e define o campo como somente leitura
+                            match_found = True
+                            print(f"    ==> MATCH ENCONTRADO! Preenchendo '{field_key}' com o valor '{data_to_fill[field_key]}'") # DEBUG
                             annotation.update(
                                 pdfrw.PdfDict(V=str(data_to_fill[field_key]), Ff=1)
                             )
-                    # --- FIM DA CORREÇÃO ---
+
+    if not match_found:
+        print("DEBUG: AVISO! Nenhum campo do PDF correspondeu às chaves dos dados a preencher.") # DEBUG
+    
+    print("--- DEBUG: FIM DO PREENCHIMENTO ---\n") # DEBUG
 
     output_buffer = BytesIO()
     pdfrw.PdfWriter().write(output_buffer, template)
@@ -45,11 +49,9 @@ def fill_pdf_auxilio(template_bytes, data, mapping):
     
     return output_buffer
 
-
 def merge_pdfs(pdf_list):
     """
-    Junta vários PDFs (em buffers de memória) num único ficheiro.
-    - pdf_list: Uma lista de buffers BytesIO, cada um contendo um PDF.
+    Junta vários PDFs.
     """
     merger = PdfMerger()
     
