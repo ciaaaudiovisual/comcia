@@ -180,8 +180,7 @@ def show_auxilio_transporte():
                                 st.success("Mapeamento salvo com sucesso!")
                 except Exception as e:
                     st.error(f"Erro ao processar o PDF: {e}")
-
-    with tab3:
+with tab3:
         st.subheader("Gerar Documentos Finais")
         if 'dados_em_memoria' not in st.session_state:
             st.warning("Por favor, carregue um ficheiro na aba '1. Carregar e Editar Dados'.")
@@ -191,7 +190,8 @@ def show_auxilio_transporte():
             df_final = st.session_state['dados_em_memoria'].copy()
             
             with st.spinner("Calculando valores..."):
-                calculos_df = df_final.apply(calculating_transport_allowance, axis=1) # Corrigido para o nome correto da função
+                # --- CORREÇÃO APLICADA AQUI ---
+                calculos_df = df_final.apply(calcular_auxilio_transporte, axis=1)
                 df_com_calculo = pd.concat([df_final, calculos_df], axis=1)
 
             st.markdown("#### Filtro para Seleção")
