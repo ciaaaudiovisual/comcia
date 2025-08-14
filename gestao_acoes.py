@@ -105,17 +105,18 @@ def bulk_edit_dialog(ids_to_update, tipos_acao_df, supabase):
                     st.error(f"Erro ao salvar as alterações em massa: {e}")
 
 @st.dialog("Pré-visualização da FAIA")
-def preview_faia_dialog(aluno_info, acoes_aluno_df):
+def preview_faia_dialog(aluno_info, acoes_aluno_df, incluir_lancador, tipos_a_incluir):
     st.header(f"FAIA de: {aluno_info.get('nome_guerra', 'N/A')}")
-    texto_relatorio = formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df)
+    texto_relatorio = formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df, incluir_lancador, tipos_a_incluir)
     st.text_area("Conteúdo do Relatório:", value=texto_relatorio, height=300)
     nome_arquivo = f"FAIA_{aluno_info.get('numero_interno','SN')}_{aluno_info.get('nome_guerra','N/A')}.txt"
     st.download_button(label="✅ Baixar Relatório .TXT", data=texto_relatorio.encode('utf-8'), file_name=nome_arquivo, mime="text/plain")
 
 # ==============================================================================
-# FUNÇÕES DE APOIO (mantidas inalteradas)
+# FUNÇÕES DE APOIO (COM AS ALTERAÇÕES SOLICITADAS)
 # ==============================================================================
-def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
+def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df, incluir_lancador, tipos_a_incluir):
+    # AJUSTE 2: Função agora aceita os novos parâmetros de exportação
     texto = [
         "============================================================",
         f"FICHA DE ACOMPANHAMENTO INDIVIDUAL DO ALUNO (FAIA)\n",
@@ -127,19 +128,39 @@ def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
         "LANÇAMENTOS (STATUS 'LANÇADO') EM ORDEM CRONOLÓGICA:",
         "------------------------------------------------------------\n"
     ]
+    
     acoes_lancadas = acoes_aluno_df[acoes_aluno_df['status'] == 'Lançado']
-    if acoes_lancadas.empty:
-        texto.append("Nenhum lançamento com status 'Lançado' encontrado para este aluno.")
+
+    # AJUSTE 2: Filtra as ações com base na seleção do usuário (Positivo, Negativo, Neutro)
+    df_filtrado_por_tipo = pd.DataFrame()
+    if not acoes_lancadas.empty:
+        if "Positivos" in tipos_a_incluir:
+            df_filtrado_por_tipo = pd.concat([df_filtrado_por_tipo, acoes_lancadas[acoes_lancadas['pontuacao_efetiva'] > 0]])
+        if "Negativos" in tipos_a_incluir:
+            df_filtrado_por_tipo = pd.concat([df_filtrado_por_tipo, acoes_lancadas[acoes_lancadas['pontuacao_efetiva'] < 0]])
+        if "Neutros" in tipos_a_incluir:
+            df_filtrado_por_tipo = pd.concat([df_filtrado_por_tipo, acoes_lancadas[acoes_lancadas['pontuacao_efetiva'] == 0]])
+
+    if df_filtrado_por_tipo.empty:
+        if acoes_lancadas.empty:
+            texto.append("Nenhum lançamento com status 'Lançado' encontrado para este aluno.")
+        else:
+            texto.append("Nenhum lançamento encontrado para os tipos selecionados (Positivo/Negativo/Neutro).")
     else:
-        for _, acao in acoes_lancadas.sort_values(by='data').iterrows():
-            texto.extend([
+        for _, acao in df_filtrado_por_tipo.sort_values(by='data').iterrows():
+            # AJUSTE 2: Constrói a lista de textos da ação e adiciona o lançador condicionalmente
+            texto_acao = [
                 f"Data: {pd.to_datetime(acao['data']).strftime('%d/%m/%Y %H:%M')}",
                 f"Tipo: {acao.get('nome', 'Tipo Desconhecido')}",
                 f"Pontos: {acao.get('pontuacao_efetiva', 0.0):+.1f}",
                 f"Descrição: {acao.get('descricao', '')}",
-                f"Registrado por: {acao.get('usuario', 'N/A')}",
-                "\n-----------------------------------\n"
-            ])
+            ]
+            if incluir_lancador:
+                texto_acao.append(f"Registrado por: {acao.get('usuario', 'N/A')}")
+            
+            texto_acao.append("\n-----------------------------------\n")
+            texto.extend(texto_acao)
+
     texto.extend([
         "\n============================================================",
         f"Fim do Relatório - Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
@@ -147,48 +168,59 @@ def formatar_relatorio_individual_txt(aluno_info, acoes_aluno_df):
     ])
     return "\n".join(texto)
 
-def render_export_section(df_acoes_para_exportar, alunos_df, pelotao_selecionado, aluno_selecionado):
+def render_export_section(all_actions_df, alunos_df, pelotao_selecionado, aluno_selecionado):
     """
     Renderiza a seção de exportação de relatórios.
-    df_acoes_para_exportar: DataFrame já filtrado pelas seleções do usuário (pelotão, aluno, status, tipo_acao).
+    all_actions_df: DataFrame com TODAS as ações para garantir que a exportação não dependa dos filtros da tela.
     """
-    if not check_permission('pode_exportar_relatorio_faia'):
-        return
+    # AJUSTE 3: A verificação de permissão foi removida para liberar o acesso a todos.
+    
     with st.container(border=True):
         st.subheader("📥 Exportar Relatórios FAIA")
 
-        # Filtro de alunos para exportação (opcional, para exibir apenas os alunos relevantes)
-        alunos_elegivel_exportacao_df = alunos_df.copy()
+        # AJUSTE 2: Adiciona widgets para as opções de exportação
+        st.markdown("##### Opções de Exportação")
+        col_opts1, col_opts2 = st.columns(2)
+        with col_opts1:
+            tipos_a_incluir = st.multiselect(
+                "Incluir tipos de lançamento:",
+                options=["Positivos", "Negativos", "Neutros"],
+                default=["Positivos", "Negativos", "Neutros"],
+                key="export_types"
+            )
+        with col_opts2:
+            incluir_lancador = st.checkbox("Incluir nome de quem lançou?", value=True, key="export_launcher_name")
+        st.divider()
 
-        if pelotao_selecionado != "Todos":
-            alunos_elegivel_exportacao_df = alunos_elegivel_exportacao_df[alunos_elegivel_exportacao_df['pelotao'] == pelotao_selecionado]
-
-        # O botão de exportação individual só é ativado se um aluno específico estiver selecionado
         if aluno_selecionado != "Nenhum" and aluno_selecionado != "Todos":
-            st.info(f"Pré-visualize e exporte o relatório individual para **{aluno_selecionado}**. Serão incluídas apenas as ações com status 'Lançado'.")
+            st.info(f"Pré-visualize e exporte o relatório individual para **{aluno_selecionado}**.")
             aluno_info_df = alunos_df[alunos_df['nome_guerra'] == aluno_selecionado]
             if not aluno_info_df.empty:
                 aluno_info = aluno_info_df.iloc[0]
-                # Ações para este aluno são filtradas do DataFrame 'df_acoes_para_exportar'
-                acoes_do_aluno = df_acoes_para_exportar[df_acoes_para_exportar['aluno_id'] == str(aluno_info['id'])]
+                # AJUSTE 1: Filtra as ações do DataFrame completo, não do pré-filtrado na tela
+                acoes_do_aluno = all_actions_df[all_actions_df['aluno_id'] == str(aluno_info['id'])]
                 if st.button(f"👁️ Pré-visualizar e Exportar FAIA de {aluno_selecionado}"):
-                    preview_faia_dialog(aluno_info, acoes_do_aluno)
+                    # Passa as novas opções para o diálogo
+                    preview_faia_dialog(aluno_info, acoes_do_aluno, incluir_lancador, tipos_a_incluir)
             else:
                 st.warning(f"Aluno '{aluno_selecionado}' não encontrado.")
         elif pelotao_selecionado != "Todos":
-            st.info(f"A exportação gerará um arquivo .ZIP com os relatórios de todos os alunos do pelotão **'{pelotao_selecionado}'**. Serão incluídas apenas as ações com status 'Lançado'.")
-            alunos_do_pelotao = alunos_elegivel_exportacao_df # Já está filtrado por pelotão
+            st.info(f"A exportação gerará um arquivo .ZIP com os relatórios de todos os alunos do pelotão **'{pelotao_selecionado}'**.")
+            alunos_do_pelotao = alunos_df[alunos_df['pelotao'] == pelotao_selecionado]
+            
             with st.expander(f"Ver os {len(alunos_do_pelotao)} alunos que serão incluídos no .ZIP"):
                 for _, aluno_info in alunos_do_pelotao.iterrows():
                     st.write(f"- {aluno_info.get('numero_interno', 'SN')} - {aluno_info.get('nome_guerra', 'N/A')}")
+
             if st.button(f"Gerar e Baixar .ZIP para {pelotao_selecionado}"):
                 with st.spinner("Gerando relatórios..."):
                     zip_buffer = BytesIO()
                     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
                         for _, aluno_info in alunos_do_pelotao.iterrows():
-                            # Filtra as ações de cada aluno do DataFrame 'df_acoes_para_exportar'
-                            acoes_do_aluno = df_acoes_para_exportar[df_acoes_para_exportar['aluno_id'] == str(aluno_info['id'])]
-                            conteudo_txt = formatar_relatorio_individual_txt(aluno_info, acoes_do_aluno)
+                            # AJUSTE 1: Filtra as ações do DataFrame completo para cada aluno
+                            acoes_do_aluno = all_actions_df[all_actions_df['aluno_id'] == str(aluno_info['id'])]
+                            # Passa as novas opções para a função de formatação
+                            conteudo_txt = formatar_relatorio_individual_txt(aluno_info, acoes_do_aluno, incluir_lancador, tipos_a_incluir)
                             nome_arquivo = f"FAIA_{aluno_info.get('numero_interno','SN')}_{aluno_info.get('nome_guerra','S-N')}.txt"
                             zip_file.writestr(nome_arquivo, conteudo_txt)
                     st.download_button(label="Clique para baixar o .ZIP", data=zip_buffer.getvalue(), file_name=f"relatorios_FAIA_{pelotao_selecionado}.zip", mime="application/zip", use_container_width=True)
@@ -210,9 +242,6 @@ def bulk_update_status(ids_to_update, new_status, supabase):
 
 # ==============================================================================
 # PÁGINA PRINCIPAL
-# ==============================================================================
-# ==============================================================================
-# PÁGINA PRINCIPAL (SUBSTITUA ESTA FUNÇÃO INTEIRA)
 # ==============================================================================
 def show_gestao_acoes():
     st.title("Lançamentos de Ações dos Alunos")
@@ -396,36 +425,28 @@ def show_gestao_acoes():
     if df_filtrado_final.empty:
         st.info("Nenhuma ação encontrada para os filtros selecionados.")
     else:
-        # Primeiro, verifica a permissão de edição
         can_edit = check_permission('pode_editar_lancamento_faia')
 
         with st.container(border=True):
-            # Define as colunas dinamicamente com base na permissão de edição
             if can_edit:
-                # Se pode editar, mostra 3 botões + checkbox
                 col_lancar, col_editar, col_arquivar, col_check = st.columns([2, 2, 2, 3])
             else:
-                # Senão, mostra apenas 2 botões + checkbox
                 col_lancar, col_arquivar, col_check = st.columns([2, 2, 3])
 
             ids_visiveis = df_filtrado_final['id_x'].dropna().astype(int).tolist()
             selected_ids = [acao_id for acao_id, is_selected in st.session_state.action_selection.items() if is_selected and acao_id in ids_visiveis]
             
-            # Botão Lançar
             with col_lancar:
                 st.button(f"🚀 Lançar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Lançado', supabase), disabled=not selected_ids, use_container_width=True)
 
-            # Botão Editar (só é criado se o usuário tiver permissão)
             if can_edit:
                 with col_editar:
                     if st.button(f"✏️ Editar Selecionados ({len(selected_ids)})", disabled=not selected_ids, use_container_width=True, key="bulk_edit_button"):
                         bulk_edit_dialog(selected_ids, tipos_acao_df, supabase)
 
-            # Botão Arquivar
             with col_arquivar:
                 st.button(f"🗑️ Arquivar Selecionados ({len(selected_ids)})", on_click=bulk_update_status, args=(selected_ids, 'Arquivado', supabase), disabled=not selected_ids, use_container_width=True)
 
-            # Checkbox para selecionar todos
             def toggle_all_visible():
                 new_state = st.session_state.get('select_all_toggle', False)
                 for acao_id in ids_visiveis:
@@ -459,7 +480,6 @@ def show_gestao_acoes():
                     status_atual = acao.get('status', 'Pendente')
                     can_launch = check_permission('acesso_pagina_lancamentos_faia')
                     can_delete = check_permission('pode_excluir_lancamento_faia')
-                    # A permissão 'can_edit' já foi checada lá em cima
                     
                     if status_atual == 'Pendente' and can_launch:
                         if st.button("🚀 Lançar", key=f"launch_{acao_id}", use_container_width=True, type="primary"):
@@ -481,4 +501,5 @@ def show_gestao_acoes():
                         st.warning("🗄️ Arquivado")
 
     st.divider()
-    render_export_section(df_filtrado_final, alunos_df, filtro_pelotao, filtro_aluno)
+    # AJUSTE 1: Passa o dataframe completo de ações para a função de exportação
+    render_export_section(acoes_com_pontos, alunos_df, filtro_pelotao, filtro_aluno)
