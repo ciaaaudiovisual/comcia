@@ -7,7 +7,7 @@ from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
 from fpdf import FPDF
 
 # ==============================================================================
-# FUNÇÃO DE GERAÇÃO DE PDF (PONTO 3 CORRIGIDO)
+# FUNÇÃO DE GERAÇÃO DE PDF (Sem alterações nesta versão)
 # ==============================================================================
 def gerar_pdf_conselho(aluno, acoes_positivas, acoes_negativas):
     """Gera um relatório PDF horizontal para o aluno selecionado."""
@@ -54,7 +54,6 @@ def gerar_pdf_conselho(aluno, acoes_positivas, acoes_negativas):
     pdf.cell(col_width, 10, "Anotações Positivas", 0, 1)
     pdf.set_font('Arial', '', 10)
     
-    # CORREÇÃO 3: Variáveis renomeadas para 'acoes_positivas' e 'acoes_negativas' para corrigir o NameError.
     if acoes_positivas.empty:
         pdf.cell(col_width, 10, "Nenhuma anotação positiva.", 1)
     else:
@@ -108,14 +107,15 @@ def get_student_list_with_indicators(alunos_df, acoes_com_pontos, config_dict, t
         axis=1
     )
     
-    # CORREÇÃO 1: Ordena pelo número interno numericamente.
+    # ALTERAÇÃO 1: Ordena pelo número interno numericamente.
     alunos_df['numero_interno_num'] = pd.to_numeric(alunos_df['numero_interno'], errors='coerce')
     alunos_df_sorted = alunos_df.sort_values('numero_interno_num')
     
     options = {}
     for _, aluno in alunos_df_sorted.iterrows():
         indicator = "⚠️ " if aluno['conceito_final'] < threshold else ""
-        label = f"{indicator}{aluno['nome_guerra']} ({aluno.get('pelotao', 'N/A')})"
+        # O rótulo agora inclui o número interno para clareza
+        label = f"{indicator}{aluno['numero_interno']} - {aluno['nome_guerra']} ({aluno.get('pelotao', 'N/A')})"
         options[aluno['id']] = label
         
     return options, alunos_df_sorted['id'].tolist(), alunos_df
@@ -245,7 +245,6 @@ def show_conselho_avaliacao():
 
         acoes_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == current_student_id].copy()
         
-        # CORREÇÃO 2: Garante que a coluna de pontuação é numérica antes de filtrar.
         acoes_aluno['pontuacao_efetiva'] = pd.to_numeric(acoes_aluno['pontuacao_efetiva'], errors='coerce').fillna(0)
         
         positivas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] > 0].sort_values('data', ascending=False)
@@ -258,9 +257,18 @@ def show_conselho_avaliacao():
                 st.info("Nenhuma anotação positiva registrada.")
             else:
                 for _, acao in positivas.iterrows():
-                    data_fmt = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
-                    st.markdown(f"**Data:** {data_fmt} | **Pontos:** <span style='color:green;'>{acao['pontuacao_efetiva']:+.3f}</span>", unsafe_allow_html=True)
-                    st.caption(f"Tipo: {acao['nome']}")
+                    # ALTERAÇÃO 2: Adota o layout da tela de histórico
+                    pontos = acao.get('pontuacao_efetiva', 0.0)
+                    data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
+                    cor_ponto = "green"
+                    st.markdown(f"""
+                    <div style="border-bottom: 1px solid #e0e0e0; padding-bottom: 5px; margin-bottom: 5px;">
+                        <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> 
+                        (<span style='color:{cor_ponto};'>{pontos:+.3f} pts</span>)
+                        <br>
+                        <small><i>{acao.get('descricao', 'Sem descrição.')}</i></small>
+                    </div>
+                    """, unsafe_allow_html=True)
         
         with col_neg:
             st.subheader("⚠️ Anotações Negativas")
@@ -268,9 +276,18 @@ def show_conselho_avaliacao():
                 st.info("Nenhuma anotação negativa registrada.")
             else:
                 for _, acao in negativas.iterrows():
-                    data_fmt = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
-                    st.markdown(f"**Data:** {data_fmt} | **Pontos:** <span style='color:red;'>{acao['pontuacao_efetiva']:+.3f}</span>", unsafe_allow_html=True)
-                    st.caption(f"Tipo: {acao['nome']}")
+                    # ALTERAÇÃO 2: Adota o layout da tela de histórico
+                    pontos = acao.get('pontuacao_efetiva', 0.0)
+                    data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
+                    cor_ponto = "red"
+                    st.markdown(f"""
+                    <div style="border-bottom: 1px solid #e0e0e0; padding-bottom: 5px; margin-bottom: 5px;">
+                        <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> 
+                        (<span style='color:{cor_ponto};'>{pontos:+.3f} pts</span>)
+                        <br>
+                        <small><i>{acao.get('descricao', 'Sem descrição.')}</i></small>
+                    </div>
+                    """, unsafe_allow_html=True)
         
         st.divider()
         render_quick_action_form(aluno_selecionado, supabase)
