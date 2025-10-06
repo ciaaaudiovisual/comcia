@@ -25,6 +25,7 @@ FEATURES_LIST = [
     ('acesso_pagina_rancho_pernoite', 'Acesso aos Relatórios de Rancho', 'admin,comcia,rancho_viewer'), 
     ('acesso_pagina_auxilio_transporte', 'Acesso à Página de Auxílio Transporte', 'admin'),
     ('acesso_pagina_pernoite', 'Acesso à Página de Controle de Pernoite', 'admin,comcia,supervisor'),
+    ('acesso_pagina_conselho_avaliacao', 'Acesso à Página do Conselho de Avaliação', 'admin,supervisor,comcia'),
 ]
 
 # ==============================================================================
@@ -248,4 +249,5 @@ def show_config():
             with tabs[i]:
                 if title in tab_map:
                     tab_map[title](supabase)
+
 
