@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 from database import load_data, init_supabase_client
 from auth import check_permission
-from acoes import calcular_pontuacao_efetiva
+from alunos import calcular_pontuacao_efetiva
 from io import BytesIO
 import zipfile
 # Importar o componente de seleção de alunos
