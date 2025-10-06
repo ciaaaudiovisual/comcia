@@ -4,10 +4,10 @@ from datetime import datetime
 from database import load_data, init_supabase_client
 from auth import check_permission
 from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
-from fpdf import FPDF # PONTO 6: Importado para gerar o PDF
+from fpdf import FPDF
 
 # ==============================================================================
-# FUNÇÃO DE GERAÇÃO DE PDF (PONTO 6)
+# FUNÇÃO DE GERAÇÃO DE PDF (PONTO 3 CORRIGIDO)
 # ==============================================================================
 def gerar_pdf_conselho(aluno, acoes_positivas, acoes_negativas):
     """Gera um relatório PDF horizontal para o aluno selecionado."""
@@ -23,20 +23,18 @@ def gerar_pdf_conselho(aluno, acoes_positivas, acoes_negativas):
             self.set_font('Arial', 'I', 8)
             self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
-    pdf = PDF(orientation='L', unit='mm', format='A4') # Orientação horizontal
+    pdf = PDF(orientation='L', unit='mm', format='A4')
     pdf.add_page()
     
-    # --- Cabeçalho do Aluno ---
     pdf.set_font('Arial', 'B', 16)
-    pdf.cell(40, 30, "", border=0) # Espaço para a foto
+    pdf.cell(40, 30, "", border=0)
     pdf.multi_cell(120, 10, f"{aluno['nome_guerra']}\n"
                              f"Nº Interno: {aluno['numero_interno']} | Pelotão: {aluno['pelotao']}", border=0)
     
-    # Métricas (PONTO 7)
-    pdf.set_y(pdf.get_y() - 20) # Recua o cursor Y
+    pdf.set_y(pdf.get_y() - 20)
     pdf.set_x(170)
     pdf.set_font('Arial', '', 10)
-    pdf.multi_cell(40, 7, f"Soma de Pontos:\n{aluno['soma_pontos_acoes']:.3f}", border=1, align='C') # PONTO 8: 3 casas decimais
+    pdf.multi_cell(40, 7, f"Soma de Pontos:\n{aluno['soma_pontos_acoes']:.3f}", border=1, align='C')
     pdf.set_y(pdf.get_y() - 14)
     pdf.set_x(210)
     pdf.multi_cell(40, 7, f"Média Acadêmica:\n{float(aluno.get('media_academica', 0.0)):.3f}", border=1, align='C')
@@ -44,52 +42,49 @@ def gerar_pdf_conselho(aluno, acoes_positivas, acoes_negativas):
     pdf.set_x(250)
     pdf.multi_cell(40, 7, f"Conceito Final:\n{aluno['conceito_final']:.3f}", border=1, align='C')
 
-    # Foto (PONTO 1) - Requer download da imagem, pode ser complexo. Usando placeholder por agora.
-    # Em uma implementação real, seria necessário baixar a URL da foto e passá-la para pdf.image()
-    pdf.rect(10, 20, 40, 40) # Desenha um quadro para a foto
+    pdf.rect(10, 20, 40, 40)
     pdf.set_xy(10, 20)
     pdf.cell(40, 40, "(Foto do Aluno)", align='C')
     pdf.ln(35)
 
-    # --- Listas de Anotações ---
     col_width = (pdf.w - pdf.l_margin - pdf.r_margin) / 2 - 5
     
-    # Anotações Positivas
     y_before = pdf.get_y()
     pdf.set_font('Arial', 'B', 12)
     pdf.cell(col_width, 10, "Anotações Positivas", 0, 1)
     pdf.set_font('Arial', '', 10)
-    if positivas.empty:
+    
+    # CORREÇÃO 3: Variáveis renomeadas para 'acoes_positivas' e 'acoes_negativas' para corrigir o NameError.
+    if acoes_positivas.empty:
         pdf.cell(col_width, 10, "Nenhuma anotação positiva.", 1)
     else:
         pdf.cell(30, 7, "Data", 1, 0, 'C')
         pdf.cell(30, 7, "Pontos", 1, 0, 'C')
         pdf.cell(col_width - 60, 7, "Tipo", 1, 1, 'C')
-        for _, acao in positivas.iterrows():
+        for _, acao in acoes_positivas.iterrows():
             pdf.cell(30, 7, pd.to_datetime(acao['data']).strftime('%d/%m/%Y'), 1, 0, 'C')
-            pdf.cell(30, 7, f"{acao['pontuacao_efetiva']:.3f}", 1, 0, 'C') # PONTO 8: 3 casas decimais
+            pdf.cell(30, 7, f"{acao['pontuacao_efetiva']:.3f}", 1, 0, 'C')
             pdf.cell(col_width - 60, 7, acao['nome'], 1, 1)
 
-    # Anotações Negativas
     pdf.set_xy(pdf.l_margin + col_width + 10, y_before)
     pdf.set_font('Arial', 'B', 12)
     pdf.cell(col_width, 10, "Anotações Negativas", 0, 1, 'L')
     pdf.set_xy(pdf.l_margin + col_width + 10, y_before + 10)
     pdf.set_font('Arial', '', 10)
-    if negativas.empty:
+    
+    if acoes_negativas.empty:
         pdf.cell(col_width, 10, "Nenhuma anotação negativa.", 1, 1, 'C')
     else:
         pdf.cell(30, 7, "Data", 1, 0, 'C')
         pdf.cell(30, 7, "Pontos", 1, 0, 'C')
         pdf.cell(col_width - 60, 7, "Tipo", 1, 1, 'C')
-        for _, acao in negativas.iterrows():
+        for _, acao in acoes_negativas.iterrows():
             pdf.set_xy(pdf.l_margin + col_width + 10, pdf.get_y())
             pdf.cell(30, 7, pd.to_datetime(acao['data']).strftime('%d/%m/%Y'), 1, 0, 'C')
-            pdf.cell(30, 7, f"{acao['pontuacao_efetiva']:.3f}", 1, 0, 'C') # PONTO 8: 3 casas decimais
+            pdf.cell(30, 7, f"{acao['pontuacao_efetiva']:.3f}", 1, 0, 'C')
             pdf.cell(col_width - 60, 7, acao['nome'], 1, 1)
 
     return pdf.output(dest='S').encode('latin-1')
-
 
 # ==============================================================================
 # FUNÇÕES DE APOIO
@@ -113,8 +108,9 @@ def get_student_list_with_indicators(alunos_df, acoes_com_pontos, config_dict, t
         axis=1
     )
     
-    # PONTO 3: Ordena por nome de guerra (ordem alfabética)
-    alunos_df_sorted = alunos_df.sort_values('nome_guerra')
+    # CORREÇÃO 1: Ordena pelo número interno numericamente.
+    alunos_df['numero_interno_num'] = pd.to_numeric(alunos_df['numero_interno'], errors='coerce')
+    alunos_df_sorted = alunos_df.sort_values('numero_interno_num')
     
     options = {}
     for _, aluno in alunos_df_sorted.iterrows():
@@ -125,7 +121,6 @@ def get_student_list_with_indicators(alunos_df, acoes_com_pontos, config_dict, t
     return options, alunos_df_sorted['id'].tolist(), alunos_df
 
 def render_quick_action_form(aluno_selecionado, supabase):
-    # PONTO 4: Formulário agora fica sempre visível
     with st.container(border=True):
         st.subheader("➕ Adicionar Anotação Rápida")
         st.caption("A anotação será enviada para a fila de revisão com status 'Pendente'.")
@@ -170,21 +165,16 @@ def show_conselho_avaliacao():
     
     supabase = init_supabase_client()
 
-    # PONTO 5: Controle de Zoom/Fonte
     st.sidebar.subheader("Opções de Apresentação")
     zoom_level = st.sidebar.slider("Aumentar Fonte/Zoom (%)", min_value=100, max_value=200, value=100, step=10)
-    photo_size = int(100 * (zoom_level / 100)) # Foto aumenta proporcionalmente
+    photo_size = int(250 * (zoom_level / 100))
 
-    # Aplica o CSS para o zoom
     st.markdown(f"""
         <style>
-            .main .block-container {{
-                font-size: {zoom_level}%;
-            }}
+            .main .block-container {{ font-size: {zoom_level}%; }}
         </style>
     """, unsafe_allow_html=True)
 
-    # Carregamento de dados
     alunos_df_orig = load_data("Alunos")
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
@@ -197,7 +187,6 @@ def show_conselho_avaliacao():
     config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
 
-    # PONTO 3: Adiciona filtro de turma (pelotão)
     st.subheader("Filtros de Seleção")
     opcoes_pelotao = ["Todos"] + sorted(alunos_df_orig['pelotao'].dropna().unique().tolist())
     pelotao_selecionado = st.selectbox("Filtrar por Pelotão:", opcoes_pelotao)
@@ -211,8 +200,7 @@ def show_conselho_avaliacao():
     st.divider()
 
     if not student_id_list:
-        st.info("Nenhum aluno encontrado para o pelotão selecionado.")
-        st.stop()
+        st.info("Nenhum aluno encontrado para o pelotão selecionado."); st.stop()
 
     if 'current_student_index' not in st.session_state: st.session_state.current_student_index = 0
     if st.session_state.current_student_index >= len(student_id_list): st.session_state.current_student_index = 0
@@ -240,15 +228,12 @@ def show_conselho_avaliacao():
     aluno_selecionado = alunos_df_com_conceito[alunos_df_com_conceito['id'] == current_student_id].iloc[0]
 
     with st.container(border=True):
-        # PONTO 1 & 7: Colunas ajustadas para foto maior e 3 métricas
         col_img, col_info, col_pontos, col_media, col_conceito = st.columns([2, 3, 1.5, 1.5, 1.5])
         with col_img:
-            # PONTO 1: Foto maior (width=250) e usa o novo slider
-            st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/250?text=Sem+Foto"), width=photo_size)
+            st.image(aluno_selecionado.get('url_foto', f"https://via.placeholder.com/{photo_size}x{photo_size}?text=Sem+Foto"), width=photo_size)
         with col_info:
             st.header(aluno_selecionado['nome_guerra'])
             st.markdown(f"**Nº Interno:** {aluno_selecionado['numero_interno']} | **Pelotão:** {aluno_selecionado['pelotao']}")
-        # PONTO 7 & 8: Três métricas com 3 casas decimais
         with col_pontos:
             st.metric("Soma de Pontos", f"{aluno_selecionado['soma_pontos_acoes']:.3f}")
         with col_media:
@@ -258,12 +243,14 @@ def show_conselho_avaliacao():
         
         st.divider()
 
-        acoes_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == current_student_id]
+        acoes_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == current_student_id].copy()
+        
+        # CORREÇÃO 2: Garante que a coluna de pontuação é numérica antes de filtrar.
+        acoes_aluno['pontuacao_efetiva'] = pd.to_numeric(acoes_aluno['pontuacao_efetiva'], errors='coerce').fillna(0)
         
         positivas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] > 0].sort_values('data', ascending=False)
         negativas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] < 0].sort_values('data', ascending=False)
         
-        # PONTO 2: Lógica de exibição das listas reforçada
         col_pos, col_neg = st.columns(2)
         with col_pos:
             st.subheader("✅ Anotações Positivas")
@@ -272,7 +259,6 @@ def show_conselho_avaliacao():
             else:
                 for _, acao in positivas.iterrows():
                     data_fmt = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
-                    # PONTO 8: 3 casas decimais
                     st.markdown(f"**Data:** {data_fmt} | **Pontos:** <span style='color:green;'>{acao['pontuacao_efetiva']:+.3f}</span>", unsafe_allow_html=True)
                     st.caption(f"Tipo: {acao['nome']}")
         
@@ -283,7 +269,6 @@ def show_conselho_avaliacao():
             else:
                 for _, acao in negativas.iterrows():
                     data_fmt = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
-                    # PONTO 8: 3 casas decimais
                     st.markdown(f"**Data:** {data_fmt} | **Pontos:** <span style='color:red;'>{acao['pontuacao_efetiva']:+.3f}</span>", unsafe_allow_html=True)
                     st.caption(f"Tipo: {acao['nome']}")
         
@@ -291,7 +276,6 @@ def show_conselho_avaliacao():
         render_quick_action_form(aluno_selecionado, supabase)
         
         st.divider()
-        # PONTO 6: Botão para gerar e baixar o PDF
         st.subheader("Exportar")
         if st.button("Gerar PDF do Aluno Atual", use_container_width=True):
             with st.spinner("Gerando PDF..."):
