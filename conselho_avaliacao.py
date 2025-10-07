@@ -104,9 +104,10 @@ def show_conselho_avaliacao():
     
     supabase = init_supabase_client()
     
-    # --- CABEÇALHO COM FILTROS, DADOS E MÉTRICAS ---
-    header_cols = st.columns([2, 2, 3])
+    # --- LAYOUT DO CABEÇALHO EM 4 COLUNAS ---
+    header_cols = st.columns([1.5, 2.5, 2, 3])
     
+    # Coleta de dados
     alunos_df_geral = load_data("Alunos")
     opcoes_pelotao = ["Todos"] + sorted(alunos_df_geral['pelotao'].dropna().unique().tolist())
     opcoes_ordem = ['Número Interno', 'Conceito (Maior > Menor)', 'Ordem Alfabética']
@@ -130,22 +131,29 @@ def show_conselho_avaliacao():
     current_student_id = student_id_list[st.session_state.current_student_index]
     aluno_selecionado = alunos_processados_df[alunos_processados_df['id'] == current_student_id].iloc[0]
 
+    # Coluna 1: Foto
     with header_cols[0]:
-        st.markdown('<div class="student-data-header">', unsafe_allow_html=True)
-        st.header(aluno_selecionado['nome_guerra'])
-        st.subheader(f"Nº: {aluno_selecionado['numero_interno']} | Pelotão: {aluno_selecionado['pelotao']}")
-        st.markdown('</div>', unsafe_allow_html=True)
         st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
 
+    # Coluna 2: Dados do Aluno
     with header_cols[1]:
-        st.subheader("Métricas de Desempenho")
+        st.markdown('<div class="student-data-header">', unsafe_allow_html=True)
+        st.header(aluno_selecionado['nome_guerra'])
+        st.subheader(f"Nº: {aluno_selecionado['numero_interno']}")
+        st.subheader(f"Pelotão: {aluno_selecionado['pelotao']}")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # Coluna 3: Métricas
+    with header_cols[2]:
+        st.subheader("Métricas")
         st.metric("Soma de Pontos", f"{aluno_selecionado['soma_pontos_acoes']:.3f}")
         st.metric("Média Acadêmica", f"{aluno_selecionado['media_academica_num']:.3f}")
         st.metric("Conceito Final", f"{aluno_selecionado['conceito_final']:.3f}")
-        st.metric("Classificação Final (Prevista)", f"{aluno_selecionado['classificacao_final_prevista']:.3f}", 
+        st.metric("Classificação Final", f"{aluno_selecionado['classificacao_final_prevista']:.3f}", 
                   help="Cálculo: (Média Acadêmica * 3 + Conceito Final * 2) / 5")
 
-    with header_cols[2]:
+    # Coluna 4: Filtros e Navegação
+    with header_cols[3]:
         st.selectbox("Filtrar Turma:", opcoes_pelotao, key="filtro_pelotao_conselho")
         st.selectbox("Ordenar por:", opcoes_ordem, key="filtro_ordem_conselho")
         st.selectbox("Selecionar Militar:", options=list(opcoes_alunos.keys()), format_func=lambda x: opcoes_alunos[x],
@@ -161,7 +169,7 @@ def show_conselho_avaliacao():
 
     st.divider()
 
-    # --- BLOCO DE ANOTAÇÕES (AGORA COM 2 COLUNAS) ---
+    # --- BLOCO DE ANOTAÇÕES (2 COLUNAS) ---
     acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
     acoes_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == current_student_id].copy()
     acoes_aluno['pontuacao_efetiva'] = pd.to_numeric(acoes_aluno['pontuacao_efetiva'], errors='coerce').fillna(0)
@@ -195,7 +203,7 @@ def show_conselho_avaliacao():
                 st.markdown(f"""<div style="font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px;">
                     <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> (<span style='color:red;'>{pontos:+.3f}</span>)
                     <br><small><i>{acao.get('descricao', 'Sem descrição.')}</i></small></div>""", unsafe_allow_html=True)
-
+    
     st.divider()
     
     with st.expander("⚪ Anotações Neutras"):
@@ -203,7 +211,7 @@ def show_conselho_avaliacao():
             st.info("Nenhuma anotação neutra registrada.")
         else:
              for _, acao in neutras.iterrows():
-                pontos = acao.get('pontuacao_efetiva', 0.0)
+                pontos = aco.get('pontuacao_efetiva', 0.0)
                 data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
                 st.markdown(f"""<div style="font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px;">
                     <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> (<span style='color:gray;'>{pontos:+.3f} pts</span>)
@@ -229,7 +237,6 @@ def show_conselho_avaliacao():
                 )
 
     st.divider()
-    # ...(Restante do código, como o formulário de anotação rápida e o PDF)
     # ...(Restante do código, como o formulário de anotação rápida e o PDF)
 
     # --- FORMULÁRIO DE ANOTAÇÃO RÁPIDA (agora com cache clear) ---
