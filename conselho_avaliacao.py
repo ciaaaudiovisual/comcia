@@ -86,14 +86,34 @@ def render_quick_action_form(aluno_selecionado, supabase):
 def show_conselho_avaliacao():
     st.set_page_config(layout="wide")
     
+# CSS para ajustes de layout
     st.markdown("""
         <style>
-            h1 { font-size: 1.8rem !important; margin-bottom: 0px !important; }
-            .st-emotion-cache-1y4p8pa { padding-top: 0rem !important; }
-            div[data-testid="stHorizontalBlock"] { align-items: flex-end; }
-            .main-columns > div { align-self: flex-start; }
-            .info-col h2 { font-size: 1.5rem !important; margin-bottom: 0px; }
-            .info-col h3 { font-size: 1.1rem !important; margin-top: 0px; }
+            /* Reduz o tamanho do título principal da página */
+            h1 {
+                font-size: 1.8rem !important;
+                margin-bottom: 0px !important;
+            }
+            /* Remove padding extra no topo da página */
+            .st-emotion-cache-1y4p8pa {
+                 padding-top: 0rem !important;
+            }
+            
+            /* --- ESTA É A CORREÇÃO PRINCIPAL --- */
+            /* Força o container das colunas a alinhar todos os seus filhos (as colunas) no topo. */
+            div[data-testid="stHorizontalBlock"] {
+                align-items: flex-start;
+            }
+
+            /* Reduz o tamanho do nome e dados do militar */
+            .info-col h2 { /* Nome de Guerra */
+                font-size: 1.5rem !important;
+                margin-bottom: 0px;
+            }
+            .info-col h3 { /* Nº e Pelotão */
+                font-size: 1.1rem !important;
+                margin-top: 0px;
+            }
         </style>
     """, unsafe_allow_html=True)
 
