@@ -191,8 +191,13 @@ def show_conselho_avaliacao():
     # BLOCO 2: Foto e Anotações
     with st.container():
         col_foto, col_pos, col_neg = st.columns([1, 3, 3])
-        with col_foto:
-            st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
+        # Bloco Corrigido
+    with col_foto:
+        foto_url = aluno_selecionado.get('url_foto')
+        # Verifica se a URL é inválida (vazia, None, NaN) e usa a imagem padrão se for o caso
+        if pd.isna(foto_url) or not foto_url:
+            foto_url = "https://via.placeholder.com/400x400?text=Sem+Foto"
+        st.image(foto_url, use_container_width=True)
 
         acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
         acoes_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == current_student_id].copy()
