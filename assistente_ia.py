@@ -116,7 +116,7 @@ def gerar_resposta_com_contexto(pergunta: str, chunks_relevantes: list):
     **Pergunta:**
     {pergunta}
     """
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    model = genai.GenerativeModel('gemini-1.5-flash')
     response = model.generate_content(prompt)
     return response.text
 
