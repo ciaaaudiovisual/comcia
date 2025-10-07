@@ -167,7 +167,7 @@ def show_conselho_avaliacao():
 
     st.markdown('<div class="main-columns">', unsafe_allow_html=True)
     # Proporção das colunas alterada para 1, 1, 3, 3
-    col_info, col_metricas, col_pos, col_neg = st.columns([2, 2, 3, 3])
+    col_info, col_metricas, col_pos, col_neg = st.columns([1, 2, 3, 3])
 
     with col_info:
         st.markdown('<div class="info-col">', unsafe_allow_html=True) 
