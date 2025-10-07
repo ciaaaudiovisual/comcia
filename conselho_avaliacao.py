@@ -105,7 +105,7 @@ def show_conselho_avaliacao():
     supabase = init_supabase_client()
     
     # --- LAYOUT DO CABEÇALHO EM 4 COLUNAS ---
-    header_cols = st.columns([1.5, 2.5, 2, 3])
+    header_cols = st.columns([0.5, 2, 2, 3])
     
     # Coleta de dados
     alunos_df_geral = load_data("Alunos")
