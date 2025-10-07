@@ -86,34 +86,12 @@ def render_quick_action_form(aluno_selecionado, supabase):
 def show_conselho_avaliacao():
     st.set_page_config(layout="wide")
     
-# CSS para ajustes de layout
     st.markdown("""
         <style>
-            /* Reduz o tamanho do título principal da página */
-            h1 {
-                font-size: 1.8rem !important;
-                margin-bottom: 0px !important;
-            }
-            /* Remove padding extra no topo da página */
-            .st-emotion-cache-1y4p8pa {
-                 padding-top: 0rem !important;
-            }
-            
-            /* --- ESTA É A CORREÇÃO PRINCIPAL --- */
-            /* Força o container das colunas a alinhar todos os seus filhos (as colunas) no topo. */
-            div[data-testid="stHorizontalBlock"] {
-                align-items: flex-start;
-            }
-
-            /* Reduz o tamanho do nome e dados do militar */
-            .info-col h2 { /* Nome de Guerra */
-                font-size: 1.5rem !important;
-                margin-bottom: 0px;
-            }
-            .info-col h3 { /* Nº e Pelotão */
-                font-size: 1.1rem !important;
-                margin-top: 0px;
-            }
+            h1 { font-size: 1.8rem !important; margin-bottom: 0px !important; }
+            .st-emotion-cache-1y4p8pa { padding-top: 0rem !important; }
+            div[data-testid="stHorizontalBlock"] { align-items: flex-end; }
+            .main-columns > div { align-self: flex-start; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -159,25 +137,26 @@ def show_conselho_avaliacao():
         if st.button("Próx >", use_container_width=True, disabled=(st.session_state.current_student_index == len(student_id_list) - 1)):
             st.session_state.current_student_index += 1; st.rerun()
     
-    # --- Divisor removido ---
-    
-    # --- LAYOUT PRINCIPAL EM 4 COLUNAS ---
+    st.divider()
+
+    # --- NOVA ESTRUTURA DE LAYOUT ---
     current_student_id = student_id_list[st.session_state.current_student_index]
     aluno_selecionado = alunos_processados_df[alunos_processados_df['id'] == current_student_id].iloc[0]
 
-    st.markdown('<div class="main-columns">', unsafe_allow_html=True)
-    # Proporção das colunas alterada para 1, 1, 3, 3
-    col_info, col_metricas, col_pos, col_neg = st.columns([1, 2, 3, 3])
+    # LINHA ÚNICA COM DADOS DO ALUNO NO TOPO
+    st.header(f"{aluno_selecionado['nome_guerra']} - Nº {aluno_selecionado['numero_interno']} ({aluno_selecionado['pelotao']})")
+    st.write("") # Adiciona um pequeno espaço vertical
 
-    with col_info:
-        st.markdown('<div class="info-col">', unsafe_allow_html=True) 
-        st.header(aluno_selecionado['nome_guerra'])
-        st.subheader(f"Nº: {aluno_selecionado['numero_interno']} | {aluno_selecionado['pelotao']}")
-        st.write("")
+    # LAYOUT DE 4 COLUNAS ABAIXO DOS DADOS
+    st.markdown('<div class="main-columns">', unsafe_allow_html=True)
+    col_foto, col_metricas, col_pos, col_neg = st.columns([1, 1, 3, 3])
+
+    with col_foto:
+        # Coluna 1: Apenas a foto
         st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
     with col_metricas:
+        # Coluna 2: Apenas as métricas
         st.subheader("Métricas")
         st.metric("Soma de Pontos", f"{aluno_selecionado['soma_pontos_acoes']:.3f}")
         st.metric("Média Acadêmica", f"{aluno_selecionado['media_academica_num']:.3f}")
@@ -185,6 +164,7 @@ def show_conselho_avaliacao():
         st.metric("Classificação Final (Prevista)", f"{aluno_selecionado['classificacao_final_prevista']:.3f}", 
                   help="Cálculo: (Média Acadêmica * 3 + Conceito Final * 2) / 5")
 
+    # Coleta e filtra os dados das anotações
     acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
     acoes_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == current_student_id].copy()
     acoes_aluno['pontuacao_efetiva'] = pd.to_numeric(acoes_aluno['pontuacao_efetiva'], errors='coerce').fillna(0)
@@ -194,6 +174,7 @@ def show_conselho_avaliacao():
     neutras = acoes_aluno[acoes_aluno['pontuacao_efetiva'] == 0].sort_values('data', ascending=False)
 
     with col_pos:
+        # Coluna 3: Anotações Positivas
         st.subheader("✅ Positivas")
         if positivas.empty:
             st.info("Nenhuma anotação positiva.")
@@ -206,6 +187,7 @@ def show_conselho_avaliacao():
                     <br><small><i>{acao.get('descricao', 'Sem descrição.')}</i></small></div>""", unsafe_allow_html=True)
 
     with col_neg:
+        # Coluna 4: Anotações Negativas
         st.subheader("⚠️ Negativas")
         if negativas.empty:
             st.info("Nenhuma anotação negativa.")
