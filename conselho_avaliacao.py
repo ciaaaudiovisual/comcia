@@ -86,17 +86,35 @@ def render_quick_action_form(aluno_selecionado, supabase):
 def show_conselho_avaliacao():
     st.set_page_config(layout="wide")
     
-    # CSS para ajustes de layout
+# CSS para ajustes de layout
     st.markdown("""
         <style>
-            h1 { font-size: 1.8rem !important; margin-bottom: 0px !important; }
-            .st-emotion-cache-1y4p8pa { padding-top: 0rem !important; }
-            div[data-testid="stHorizontalBlock"] { align-items: flex-end; }
-            .main-columns > div { align-self: flex-start; }
+            /* Reduz o tamanho do título principal da página */
+            h1 {
+                font-size: 1.8rem !important;
+                margin-bottom: 0px !important;
+            }
+            /* Remove padding extra no topo da página */
+            .st-emotion-cache-1y4p8pa {
+                 padding-top: 0rem !important;
+            }
             
-            /* Ajusta fontes nos dados do aluno para ficarem mais uniformes */
-            .student-data-header h2 { font-size: 1.6rem !important; margin-bottom: 0px !important; }
-            .student-data-header h3 { font-size: 1.2rem !important; margin-top: 0px !important; color: #555; }
+            /* --- ESTA É A CORREÇÃO PRINCIPAL --- */
+            /* Garante que os blocos de colunas alinhem seus itens pelo TOPO (flex-start) */
+            div[data-testid="stHorizontalBlock"] {
+                align-items: flex-start;
+            }
+
+            /* Reduz o tamanho do nome e dados do militar */
+            .student-data-header h2 { /* Nome de Guerra */
+                font-size: 1.6rem !important;
+                margin-bottom: 0px !important;
+            }
+            .student-data-header h3 { /* Nº e Pelotão */
+                font-size: 1.2rem !important;
+                margin-top: 0px !important;
+                color: #555;
+            }
         </style>
     """, unsafe_allow_html=True)
 
