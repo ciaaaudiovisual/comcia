@@ -190,7 +190,7 @@ def show_conselho_avaliacao():
 
     # BLOCO 2: Foto e Anotações
     with st.container():
-        col_foto, col_pos, col_neg = st.columns([1.5, 3, 3])
+        col_foto, col_pos, col_neg = st.columns([1, 3, 3])
         with col_foto:
             st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
 
