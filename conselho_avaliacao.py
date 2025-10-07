@@ -81,22 +81,41 @@ def gerar_pdf_conselho(aluno, acoes_positivas, acoes_negativas, acoes_neutras):
 # ==============================================================================
 def show_conselho_avaliacao():
     st.set_page_config(layout="wide")
-    st.title("Conselho de Avaliação")
+
+    # --- AJUSTES DE CSS ---
+    st.markdown("""
+        <style>
+            /* Reduz o tamanho do título principal da página */
+            h1 {
+                font-size: 1.8rem !important;
+            }
+            /* Filtros no topo */
+            .filter-container .stSelectbox label, .filter-container .stButton button {
+                font-size: 0.8rem !important;
+            }
+            /* Alinha as colunas principais pelo topo */
+            div[data-testid="stHorizontalBlock"] > div {
+                align-self: flex-start;
+            }
+            /* Reduz o tamanho do nome e dados do militar */
+            .info-col h2 { /* Nome de Guerra */
+                font-size: 1.5rem !important;
+                margin-bottom: 0px;
+            }
+            .info-col h3 { /* Nº e Pelotão */
+                font-size: 1.1rem !important;
+                margin-top: 0px;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # CORREÇÃO 1: Título principal reduzido
+    st.header("Conselho de Avaliação")
 
     if not check_permission('acesso_pagina_conselho_avaliacao'):
         st.error("Acesso negado."); st.stop()
     
     supabase = init_supabase_client()
-
-    st.markdown("""
-        <style>
-            .filter-container { display: flex; flex-wrap: nowrap; align-items: flex-end; gap: 10px; }
-            .filter-container .stSelectbox, .filter-container .stButton { font-size: 0.8rem !important; min-width: 150px; }
-            .filter-container .stSelectbox label { font-size: 0.8rem !important; margin-bottom: 0px !important; padding-bottom: 5px !important; }
-            .st-emotion-cache-1y4p8pa { padding-top: 0rem !important; }
-            div[data-testid="stHorizontalBlock"] { align-items: flex-end; }
-        </style>
-    """, unsafe_allow_html=True)
 
     # --- FILTROS HORIZONTAIS NO TOPO ---
     alunos_df_geral = load_data("Alunos")
@@ -104,6 +123,7 @@ def show_conselho_avaliacao():
     opcoes_ordem = ['Número Interno', 'Conceito (Maior > Menor)', 'Ordem Alfabética']
     
     col_f1, col_f2, col_f3, col_b1, col_b2 = st.columns([2, 2, 4, 1, 1])
+
     with col_f1:
         pelotao_selecionado = st.selectbox("Turma:", opcoes_pelotao, key="filtro_pelotao")
     with col_f2:
@@ -134,22 +154,22 @@ def show_conselho_avaliacao():
     
     st.divider()
 
-    # --- LAYOUT PRINCIPAL EM 4 COLUNAS (NOVO ARRANJO) ---
+    # --- LAYOUT PRINCIPAL EM 4 COLUNAS ---
     current_student_id = student_id_list[st.session_state.current_student_index]
     aluno_selecionado = alunos_processados_df[alunos_processados_df['id'] == current_student_id].iloc[0]
 
-    # Define a proporção das 4 colunas
-    col_info, col_metricas, col_pos, col_neg = st.columns([2, 1.5, 3, 3])
+    col_info, col_metricas, col_pos, col_neg = st.columns([2.5, 1.5, 3, 3])
 
     with col_info:
-        # Coluna 1: Dados do militar e, abaixo, a foto
+        # CORREÇÃO 3: CSS aplicado para diminuir as fontes
+        st.markdown('<div class="info-col">', unsafe_allow_html=True) 
         st.header(aluno_selecionado['nome_guerra'])
         st.subheader(f"Nº: {aluno_selecionado['numero_interno']} | {aluno_selecionado['pelotao']}")
-        st.write("") # Espaçamento
+        st.write("")
         st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
     with col_metricas:
-        # Coluna 2: Apenas as métricas
         st.subheader("Métricas")
         st.metric("Soma de Pontos", f"{aluno_selecionado['soma_pontos_acoes']:.3f}")
         st.metric("Média Acadêmica", f"{aluno_selecionado['media_academica_num']:.3f}")
@@ -165,6 +185,22 @@ def show_conselho_avaliacao():
     positivas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] > 0].sort_values('data', ascending=False)
     negativas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] < 0].sort_values('data', ascending=False)
     neutras = acoes_aluno[acoes_aluno['pontuacao_efetiva'] == 0].sort_values('data', ascending=False)
+
+    with col_pos:
+        # CORREÇÃO 2: A injeção de CSS garante que as colunas alinhem pelo topo
+        st.subheader("✅ Positivas")
+        # ...(Restante do código das anotações permanece igual)
+        
+    with col_neg:
+        st.subheader("⚠️ Negativas")
+        # ...(Restante do código das anotações permanece igual)
+    
+    st.divider()
+
+    with st.expander("⚪ Anotações Neutras (Observações, Presenças, etc.)"):
+        # ...(Restante do código das anotações permanece igual)
+    
+    # ... (Restante do código, como o formulário de anotação rápida e o PDF, permanece igual)
 
     with col_pos:
         # Coluna 3: Anotações Positivas
