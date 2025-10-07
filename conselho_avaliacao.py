@@ -86,12 +86,17 @@ def render_quick_action_form(aluno_selecionado, supabase):
 def show_conselho_avaliacao():
     st.set_page_config(layout="wide")
     
+    # CSS para ajustes de layout
     st.markdown("""
         <style>
             h1 { font-size: 1.8rem !important; margin-bottom: 0px !important; }
             .st-emotion-cache-1y4p8pa { padding-top: 0rem !important; }
             div[data-testid="stHorizontalBlock"] { align-items: flex-end; }
             .main-columns > div { align-self: flex-start; }
+            
+            /* Ajusta fontes nos dados do aluno para ficarem mais uniformes */
+            .student-data-header h2 { font-size: 1.6rem !important; margin-bottom: 0px !important; }
+            .student-data-header h3 { font-size: 1.2rem !important; margin-top: 0px !important; color: #555; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -139,66 +144,69 @@ def show_conselho_avaliacao():
     
     st.divider()
 
-    # --- NOVA ESTRUTURA DE LAYOUT ---
+    # --- INÍCIO DO NOVO LAYOUT DE BLOCOS ---
     current_student_id = student_id_list[st.session_state.current_student_index]
     aluno_selecionado = alunos_processados_df[alunos_processados_df['id'] == current_student_id].iloc[0]
 
-    # LINHA ÚNICA COM DADOS DO ALUNO NO TOPO
-    st.header(f"{aluno_selecionado['nome_guerra']} - Nº {aluno_selecionado['numero_interno']} ({aluno_selecionado['pelotao']})")
-    st.write("") # Adiciona um pequeno espaço vertical
+    # BLOCO 1: Dados do Aluno e Métricas
+    with st.container():
+        col_dados, col_metricas = st.columns([3, 2])
+        with col_dados:
+            st.markdown('<div class="student-data-header">', unsafe_allow_html=True)
+            st.header(aluno_selecionado['nome_guerra'])
+            st.subheader(f"Nº: {aluno_selecionado['numero_interno']} | Pelotão: {aluno_selecionado['pelotao']}")
+            st.markdown('</div>', unsafe_allow_html=True)
+        with col_metricas:
+            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+            with m_col1:
+                st.metric("Soma de Pontos", f"{aluno_selecionado['soma_pontos_acoes']:.3f}")
+            with m_col2:
+                st.metric("Média Acadêmica", f"{aluno_selecionado['media_academica_num']:.3f}")
+            with m_col3:
+                st.metric("Conceito Final", f"{aluno_selecionado['conceito_final']:.3f}")
+            with m_col4:
+                st.metric("Classificação (Prev.)", f"{aluno_selecionado['classificacao_final_prevista']:.3f}", 
+                          help="Cálculo: (Média Acadêmica * 3 + Conceito Final * 2) / 5")
 
-    # LAYOUT DE 4 COLUNAS ABAIXO DOS DADOS
-    st.markdown('<div class="main-columns">', unsafe_allow_html=True)
-    col_foto, col_metricas, col_pos, col_neg = st.columns([1, 1, 3, 3])
+    st.write("") # Espaçamento
 
-    with col_foto:
-        # Coluna 1: Apenas a foto
-        st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
+    # BLOCO 2: Foto e Anotações
+    with st.container():
+        col_foto, col_pos, col_neg = st.columns([1.5, 3, 3])
+        with col_foto:
+            st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
 
-    with col_metricas:
-        # Coluna 2: Apenas as métricas
-        st.subheader("Métricas")
-        st.metric("Soma de Pontos", f"{aluno_selecionado['soma_pontos_acoes']:.3f}")
-        st.metric("Média Acadêmica", f"{aluno_selecionado['media_academica_num']:.3f}")
-        st.metric("Conceito Final", f"{aluno_selecionado['conceito_final']:.3f}")
-        st.metric("Classificação Final (Prevista)", f"{aluno_selecionado['classificacao_final_prevista']:.3f}", 
-                  help="Cálculo: (Média Acadêmica * 3 + Conceito Final * 2) / 5")
+        acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
+        acoes_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == current_student_id].copy()
+        acoes_aluno['pontuacao_efetiva'] = pd.to_numeric(acoes_aluno['pontuacao_efetiva'], errors='coerce').fillna(0)
+        
+        positivas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] > 0].sort_values('data', ascending=False)
+        negativas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] < 0].sort_values('data', ascending=False)
+        neutras = acoes_aluno[acoes_aluno['pontuacao_efetiva'] == 0].sort_values('data', ascending=False)
 
-    # Coleta e filtra os dados das anotações
-    acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
-    acoes_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == current_student_id].copy()
-    acoes_aluno['pontuacao_efetiva'] = pd.to_numeric(acoes_aluno['pontuacao_efetiva'], errors='coerce').fillna(0)
-    
-    positivas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] > 0].sort_values('data', ascending=False)
-    negativas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] < 0].sort_values('data', ascending=False)
-    neutras = acoes_aluno[acoes_aluno['pontuacao_efetiva'] == 0].sort_values('data', ascending=False)
+        with col_pos:
+            st.subheader("✅ Anotações Positivas")
+            if positivas.empty:
+                st.info("Nenhuma anotação positiva.")
+            else:
+                for _, acao in positivas.iterrows():
+                    pontos = acao.get('pontuacao_efetiva', 0.0)
+                    data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
+                    st.markdown(f"""<div style="font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px;">
+                        <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> (<span style='color:green;'>{pontos:+.3f}</span>)
+                        <br><small><i>{acao.get('descricao', 'Sem descrição.')}</i></small></div>""", unsafe_allow_html=True)
 
-    with col_pos:
-        # Coluna 3: Anotações Positivas
-        st.subheader("✅ Positivas")
-        if positivas.empty:
-            st.info("Nenhuma anotação positiva.")
-        else:
-            for _, acao in positivas.iterrows():
-                pontos = acao.get('pontuacao_efetiva', 0.0)
-                data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
-                st.markdown(f"""<div style="font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px;">
-                    <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> (<span style='color:green;'>{pontos:+.3f}</span>)
-                    <br><small><i>{acao.get('descricao', 'Sem descrição.')}</i></small></div>""", unsafe_allow_html=True)
-
-    with col_neg:
-        # Coluna 4: Anotações Negativas
-        st.subheader("⚠️ Negativas")
-        if negativas.empty:
-            st.info("Nenhuma anotação negativa.")
-        else:
-            for _, acao in negativas.iterrows():
-                pontos = acao.get('pontuacao_efetiva', 0.0)
-                data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
-                st.markdown(f"""<div style="font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px;">
-                    <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> (<span style='color:red;'>{pontos:+.3f}</span>)
-                    <br><small><i>{acao.get('descricao', 'Sem descrição.')}</i></small></div>""", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+        with col_neg:
+            st.subheader("⚠️ Anotações Negativas")
+            if negativas.empty:
+                st.info("Nenhuma anotação negativa.")
+            else:
+                for _, acao in negativas.iterrows():
+                    pontos = acao.get('pontuacao_efetiva', 0.0)
+                    data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
+                    st.markdown(f"""<div style="font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px;">
+                        <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> (<span style='color:red;'>{pontos:+.3f}</span>)
+                        <br><small><i>{acao.get('descricao', 'Sem descrição.')}</i></small></div>""", unsafe_allow_html=True)
     
     st.divider()
 
