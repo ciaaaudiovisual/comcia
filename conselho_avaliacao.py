@@ -86,34 +86,14 @@ def render_quick_action_form(aluno_selecionado, supabase):
 def show_conselho_avaliacao():
     st.set_page_config(layout="wide")
     
-    # CSS para ajustes de layout
     st.markdown("""
         <style>
-            /* Reduz o tamanho do título principal da página */
-            h1 {
-                font-size: 1.8rem !important;
-                margin-bottom: 0px !important;
-            }
-            /* Filtros no topo */
-            .st-emotion-cache-1y4p8pa {
-                 padding-top: 0rem !important;
-            }
-            div[data-testid="stHorizontalBlock"] {
-                align-items: flex-end;
-            }
-            /* Alinha as colunas principais pelo topo */
-            .main-columns > div {
-                align-self: flex-start;
-            }
-            /* Reduz o tamanho do nome e dados do militar */
-            .info-col h2 { /* Nome de Guerra */
-                font-size: 1.5rem !important;
-                margin-bottom: 0px;
-            }
-            .info-col h3 { /* Nº e Pelotão */
-                font-size: 1.1rem !important;
-                margin-top: 0px;
-            }
+            h1 { font-size: 1.8rem !important; margin-bottom: 0px !important; }
+            .st-emotion-cache-1y4p8pa { padding-top: 0rem !important; }
+            div[data-testid="stHorizontalBlock"] { align-items: flex-end; }
+            .main-columns > div { align-self: flex-start; }
+            .info-col h2 { font-size: 1.5rem !important; margin-bottom: 0px; }
+            .info-col h3 { font-size: 1.1rem !important; margin-top: 0px; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -159,13 +139,14 @@ def show_conselho_avaliacao():
         if st.button("Próx >", use_container_width=True, disabled=(st.session_state.current_student_index == len(student_id_list) - 1)):
             st.session_state.current_student_index += 1; st.rerun()
     
-    st.divider()
-
+    # --- Divisor removido ---
+    
     # --- LAYOUT PRINCIPAL EM 4 COLUNAS ---
     current_student_id = student_id_list[st.session_state.current_student_index]
     aluno_selecionado = alunos_processados_df[alunos_processados_df['id'] == current_student_id].iloc[0]
 
     st.markdown('<div class="main-columns">', unsafe_allow_html=True)
+    # Proporção das colunas alterada para 1, 1, 3, 3
     col_info, col_metricas, col_pos, col_neg = st.columns([1, 1, 3, 3])
 
     with col_info:
@@ -223,9 +204,13 @@ def show_conselho_avaliacao():
         if neutras.empty:
             st.info("Nenhuma anotação neutra registrada.")
         else:
-            # (Código para exibir anotações neutras...)
-            pass
-    
+             for _, acao in neutras.iterrows():
+                pontos = acao.get('pontuacao_efetiva', 0.0)
+                data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
+                st.markdown(f"""<div style="font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px;">
+                    <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> (<span style='color:gray;'>{pontos:+.3f} pts</span>)
+                    <br><small><i>{acao.get('descricao', 'Sem descrição.')}</i></small></div>""", unsafe_allow_html=True)
+
     # ... (Restante do código, como o formulário de anotação rápida e o PDF)
 
     # --- FORMULÁRIO DE ANOTAÇÃO RÁPIDA (agora com cache clear) ---
