@@ -105,7 +105,7 @@ def show_conselho_avaliacao():
     supabase = init_supabase_client()
     
     # --- CABEÇALHO COM FILTROS, DADOS E MÉTRICAS ---
-    header_cols = st.columns([1, 3, 3])
+    header_cols = st.columns([2, 2, 3])
     
     alunos_df_geral = load_data("Alunos")
     opcoes_pelotao = ["Todos"] + sorted(alunos_df_geral['pelotao'].dropna().unique().tolist())
@@ -229,6 +229,7 @@ def show_conselho_avaliacao():
                 )
 
     st.divider()
+    # ...(Restante do código, como o formulário de anotação rápida e o PDF)
     # ...(Restante do código, como o formulário de anotação rápida e o PDF)
 
     # --- FORMULÁRIO DE ANOTAÇÃO RÁPIDA (agora com cache clear) ---
