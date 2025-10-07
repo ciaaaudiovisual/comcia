@@ -92,8 +92,19 @@ def show_conselho_avaliacao():
             h1 { font-size: 1.8rem !important; margin-bottom: 0px !important; }
             .st-emotion-cache-1y4p8pa { padding-top: 1rem !important; }
             div[data-testid="stHorizontalBlock"] { align-items: flex-start; }
+            
+            /* Centraliza o texto nos headers */
+            .student-data-header, .metrics-header { text-align: center; }
             .student-data-header h2 { font-size: 1.6rem !important; margin-bottom: 0px !important; }
             .student-data-header h3 { font-size: 1.2rem !important; margin-top: 0px !important; color: #555; }
+            
+            /* Centraliza o conteúdo das métricas */
+            div[data-testid="stMetric"] {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+            }
         </style>
     """, unsafe_allow_html=True)
 
@@ -105,9 +116,8 @@ def show_conselho_avaliacao():
     supabase = init_supabase_client()
     
     # --- LAYOUT DO CABEÇALHO EM 4 COLUNAS ---
-    header_cols = st.columns([0.5, 2, 2, 3])
+    header_cols = st.columns([1.5, 2.5, 2.5, 3])
     
-    # Coleta de dados
     alunos_df_geral = load_data("Alunos")
     opcoes_pelotao = ["Todos"] + sorted(alunos_df_geral['pelotao'].dropna().unique().tolist())
     opcoes_ordem = ['Número Interno', 'Conceito (Maior > Menor)', 'Ordem Alfabética']
@@ -145,12 +155,17 @@ def show_conselho_avaliacao():
 
     # Coluna 3: Métricas
     with header_cols[2]:
-        st.subheader("Métricas")
-        st.metric("Soma de Pontos", f"{aluno_selecionado['soma_pontos_acoes']:.3f}")
-        st.metric("Média Acadêmica", f"{aluno_selecionado['media_academica_num']:.3f}")
-        st.metric("Conceito Final", f"{aluno_selecionado['conceito_final']:.3f}")
-        st.metric("Classificação Final", f"{aluno_selecionado['classificacao_final_prevista']:.3f}", 
-                  help="Cálculo: (Média Acadêmica * 3 + Conceito Final * 2) / 5")
+        st.markdown('<div class="metrics-header"><h3>Métricas</h3></div>', unsafe_allow_html=True)
+        metric_cols = st.columns(4)
+        with metric_cols[0]:
+            st.metric("Pontos", f"{aluno_selecionado['soma_pontos_acoes']:.3f}")
+        with metric_cols[1]:
+            st.metric("Acadêmica", f"{aluno_selecionado['media_academica_num']:.3f}")
+        with metric_cols[2]:
+            st.metric("Conceito", f"{aluno_selecionado['conceito_final']:.3f}")
+        with metric_cols[3]:
+            st.metric("Final", f"{aluno_selecionado['classificacao_final_prevista']:.3f}", 
+                      help="Cálculo: (Média Acadêmica * 3 + Conceito Final * 2) / 5")
 
     # Coluna 4: Filtros e Navegação
     with header_cols[3]:
@@ -211,7 +226,7 @@ def show_conselho_avaliacao():
             st.info("Nenhuma anotação neutra registrada.")
         else:
              for _, acao in neutras.iterrows():
-                pontos = aco.get('pontuacao_efetiva', 0.0)
+                pontos = acao.get('pontuacao_efetiva', 0.0)
                 data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
                 st.markdown(f"""<div style="font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px;">
                     <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> (<span style='color:gray;'>{pontos:+.3f} pts</span>)
@@ -229,16 +244,24 @@ def show_conselho_avaliacao():
     partes = np.array_split(df_classificacao, num_colunas_ranking)
     cols_ranking = st.columns(num_colunas_ranking)
 
+    # NOVO: Slider para controlar o tamanho da fonte da tabela de classificação
+    st.sidebar.subheader("Opções de Visualização")
+    ranking_font_size = st.sidebar.slider(
+        "Tamanho da Fonte (Classificação)", 
+        min_value=0.7, max_value=1.2, value=0.9, step=0.05,
+        help="Ajuste o tamanho da fonte da tabela de classificação no final da página."
+    )
+    st.markdown(f'<div class="ranking-table" style="font-size: {ranking_font_size}rem !important;">', unsafe_allow_html=True)
     for i, coluna in enumerate(cols_ranking):
         with coluna:
             for _, aluno_rank in partes[i].iterrows():
                 st.markdown(
                     f"**{aluno_rank['Class.']}º:** {aluno_rank['nome_guerra']} ({aluno_rank['numero_interno']}) - **{aluno_rank['classificacao_final_prevista']:.3f}**"
                 )
+    st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
     # ...(Restante do código, como o formulário de anotação rápida e o PDF)
-
     # --- FORMULÁRIO DE ANOTAÇÃO RÁPIDA (agora com cache clear) ---
     with st.container(border=True):
         st.subheader("➕ Adicionar Anotação Rápida")
