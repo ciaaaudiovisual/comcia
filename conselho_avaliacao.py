@@ -104,15 +104,13 @@ def show_conselho_avaliacao():
     
     supabase = init_supabase_client()
     
-    # --- NOVO LAYOUT DO CABEÇALHO ---
+    # --- CABEÇALHO COM FILTROS, DADOS E MÉTRICAS ---
     header_cols = st.columns([2, 2, 3])
     
-    # Coleta de dados
     alunos_df_geral = load_data("Alunos")
     opcoes_pelotao = ["Todos"] + sorted(alunos_df_geral['pelotao'].dropna().unique().tolist())
     opcoes_ordem = ['Número Interno', 'Conceito (Maior > Menor)', 'Ordem Alfabética']
     
-    # Lógica de seleção dos filtros
     pelotao_selecionado = st.session_state.get('filtro_pelotao_conselho', 'Todos')
     sort_order = st.session_state.get('filtro_ordem_conselho', 'Número Interno')
     
@@ -132,7 +130,6 @@ def show_conselho_avaliacao():
     current_student_id = student_id_list[st.session_state.current_student_index]
     aluno_selecionado = alunos_processados_df[alunos_processados_df['id'] == current_student_id].iloc[0]
 
-    # Coluna 1: Dados do Aluno + Foto
     with header_cols[0]:
         st.markdown('<div class="student-data-header">', unsafe_allow_html=True)
         st.header(aluno_selecionado['nome_guerra'])
@@ -140,7 +137,6 @@ def show_conselho_avaliacao():
         st.markdown('</div>', unsafe_allow_html=True)
         st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
 
-    # Coluna 2: Métricas
     with header_cols[1]:
         st.subheader("Métricas de Desempenho")
         st.metric("Soma de Pontos", f"{aluno_selecionado['soma_pontos_acoes']:.3f}")
@@ -149,7 +145,6 @@ def show_conselho_avaliacao():
         st.metric("Classificação Final (Prevista)", f"{aluno_selecionado['classificacao_final_prevista']:.3f}", 
                   help="Cálculo: (Média Acadêmica * 3 + Conceito Final * 2) / 5")
 
-    # Coluna 3: Filtros e Navegação
     with header_cols[2]:
         st.selectbox("Filtrar Turma:", opcoes_pelotao, key="filtro_pelotao_conselho")
         st.selectbox("Ordenar por:", opcoes_ordem, key="filtro_ordem_conselho")
@@ -166,14 +161,7 @@ def show_conselho_avaliacao():
 
     st.divider()
 
-    # --- BLOCO DE ANOTAÇÕES (3 COLUNAS) ---
-    col_foto_dummy, col_pos, col_neg = st.columns([1.5, 3, 3])
-    
-    with col_foto_dummy:
-        # A foto já está no cabeçalho, este espaço pode ser usado para algo mais ou a proporção pode ser ajustada.
-        # Para manter a estrutura solicitada, colocamos a foto novamente, menor.
-        st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
-
+    # --- BLOCO DE ANOTAÇÕES (AGORA COM 2 COLUNAS) ---
     acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
     acoes_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == current_student_id].copy()
     acoes_aluno['pontuacao_efetiva'] = pd.to_numeric(acoes_aluno['pontuacao_efetiva'], errors='coerce').fillna(0)
@@ -181,6 +169,8 @@ def show_conselho_avaliacao():
     positivas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] > 0].sort_values('data', ascending=False)
     negativas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] < 0].sort_values('data', ascending=False)
     neutras = acoes_aluno[acoes_aluno['pontuacao_efetiva'] == 0].sort_values('data', ascending=False)
+    
+    col_pos, col_neg = st.columns(2)
 
     with col_pos:
         st.subheader("✅ Anotações Positivas")
@@ -223,16 +213,10 @@ def show_conselho_avaliacao():
     st.divider()
     st.header("Classificação Final da Turma (sem QTPA)")
     
-    # Filtra para não incluir a turma QTPA
     df_classificacao = alunos_processados_df[~alunos_processados_df['numero_interno'].astype(str).str.startswith('Q')].copy()
-    
-    # Ordena pela classificação final
     df_classificacao = df_classificacao.sort_values('classificacao_final_prevista', ascending=False)
-    
-    # Adiciona a coluna de colocação
     df_classificacao.insert(0, 'Class.', range(1, 1 + len(df_classificacao)))
     
-    # Divide o dataframe em 5 partes para as 5 colunas
     num_colunas_ranking = 5
     partes = np.array_split(df_classificacao, num_colunas_ranking)
     cols_ranking = st.columns(num_colunas_ranking)
