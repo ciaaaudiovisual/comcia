@@ -58,7 +58,7 @@ if check_permission('acesso_pagina_geracao_documentos'):
 if check_permission('acesso_pagina_revisao_geral'):
     menu_options["Revisão Geral"] = show_revisao_geral
 
-if check_permission('acesso_pagina_conselho_avaliacao'):
+
     menu_options["Conselho de Avaliação"] = show_conselho_avaliacao
     
 if check_permission('acesso_pagina_relatorios'):
