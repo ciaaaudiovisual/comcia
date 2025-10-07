@@ -166,7 +166,7 @@ def show_conselho_avaliacao():
     aluno_selecionado = alunos_processados_df[alunos_processados_df['id'] == current_student_id].iloc[0]
 
     st.markdown('<div class="main-columns">', unsafe_allow_html=True)
-    col_info, col_metricas, col_pos, col_neg = st.columns([2.5, 1.5, 3, 3])
+    col_info, col_metricas, col_pos, col_neg = st.columns([1, 1, 3, 3])
 
     with col_info:
         st.markdown('<div class="info-col">', unsafe_allow_html=True) 
