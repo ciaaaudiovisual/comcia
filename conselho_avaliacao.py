@@ -7,7 +7,7 @@ from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
 from fpdf import FPDF
 
 # ==============================================================================
-# FUNÇÃO DE GERAÇÃO DE PDF (Sem alterações nesta versão)
+# FUNÇÃO DE GERAÇÃO DE PDF (Sem alterações)
 # ==============================================================================
 def gerar_pdf_conselho(aluno, acoes_positivas, acoes_negativas):
     """Gera um relatório PDF horizontal para o aluno selecionado."""
@@ -107,15 +107,13 @@ def get_student_list_with_indicators(alunos_df, acoes_com_pontos, config_dict, t
         axis=1
     )
     
-    # ALTERAÇÃO 1: Ordena pelo número interno numericamente.
     alunos_df['numero_interno_num'] = pd.to_numeric(alunos_df['numero_interno'], errors='coerce')
     alunos_df_sorted = alunos_df.sort_values('numero_interno_num')
     
     options = {}
     for _, aluno in alunos_df_sorted.iterrows():
         indicator = "⚠️ " if aluno['conceito_final'] < threshold else ""
-        # O rótulo agora inclui o número interno para clareza
-        label = f"{indicator}{aluno['numero_interno']} - {aluno['nome_guerra']} ({aluno.get('pelotao', 'N/A')})"
+        label = f"{aluno['numero_interno']} - {aluno['nome_guerra']} ({aluno.get('pelotao', 'N/A')})"
         options[aluno['id']] = label
         
     return options, alunos_df_sorted['id'].tolist(), alunos_df
@@ -243,6 +241,11 @@ def show_conselho_avaliacao():
         
         st.divider()
 
+        # <<< ESTA É A CORREÇÃO CRÍTICA >>>
+        # Garante que a coluna 'aluno_id' em 'acoes_com_pontos' seja do tipo texto,
+        # para que a comparação com 'current_student_id' (que também é texto) funcione corretamente.
+        acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
+
         acoes_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == current_student_id].copy()
         
         acoes_aluno['pontuacao_efetiva'] = pd.to_numeric(acoes_aluno['pontuacao_efetiva'], errors='coerce').fillna(0)
@@ -257,7 +260,6 @@ def show_conselho_avaliacao():
                 st.info("Nenhuma anotação positiva registrada.")
             else:
                 for _, acao in positivas.iterrows():
-                    # ALTERAÇÃO 2: Adota o layout da tela de histórico
                     pontos = acao.get('pontuacao_efetiva', 0.0)
                     data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
                     cor_ponto = "green"
@@ -276,7 +278,6 @@ def show_conselho_avaliacao():
                 st.info("Nenhuma anotação negativa registrada.")
             else:
                 for _, acao in negativas.iterrows():
-                    # ALTERAÇÃO 2: Adota o layout da tela de histórico
                     pontos = acao.get('pontuacao_efetiva', 0.0)
                     data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
                     cor_ponto = "red"
