@@ -7,10 +7,14 @@ from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
 from fpdf import FPDF
 
 # ==============================================================================
-# FUNÇÃO DE CACHE E PROCESSAMENTO DE DADOS (COM CORREÇÃO DE ORDENAÇÃO)
+# FUNÇÃO DE CACHE E PROCESSAMENTO DE DADOS (COM NOVOS CÁLCULOS E ORDENAÇÃO)
 # ==============================================================================
 @st.cache_data(ttl=3600)
 def process_turma_data(pelotao_selecionado, sort_order):
+    """
+    Função otimizada que carrega, calcula e processa TODOS os dados para a turma
+    selecionada de uma só vez. O resultado é guardado em cache para navegação instantânea.
+    """
     alunos_df_orig = load_data("Alunos")
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
@@ -42,15 +46,19 @@ def process_turma_data(pelotao_selecionado, sort_order):
         lambda row: calcular_conceito_final(
             row['soma_pontos_acoes'],
             float(row.get('media_academica', 0.0)),
-            alunos_df_orig,
+            alunos_df_orig, # Usa o DF original para a média da turma
             config_dict
         ),
         axis=1
     )
+    
+    # NOVO CÁLCULO: Média Final Ponderada
+    alunos_df['media_academica_num'] = pd.to_numeric(alunos_df['media_academica'], errors='coerce').fillna(0.0)
+    alunos_df['classificacao_final_prevista'] = ((alunos_df['media_academica_num'] * 3) + (alunos_df['conceito_final'] * 2)) / 5
 
     # CORREÇÃO 3: Ordenação robusta do Número Interno
     # Extrai apenas os dígitos do número interno para uma ordenação puramente numérica.
-    alunos_df['numero_interno_num'] = pd.to_numeric(alunos_df['numero_interno'].str.extract('(\d+)', expand=False), errors='coerce')
+    alunos_df['numero_interno_num'] = pd.to_numeric(alunos_df['numero_interno'].str.extract('(\d+)', expand=False), errors='coerce').fillna(9999)
 
     if sort_order == 'Conceito (Maior > Menor)':
         alunos_df = alunos_df.sort_values('conceito_final', ascending=False)
@@ -72,8 +80,80 @@ def process_turma_data(pelotao_selecionado, sort_order):
 # FUNÇÕES DE RENDERIZAÇÃO E GERAÇÃO DE PDF (SEM ALTERAÇÕES)
 # ==============================================================================
 def gerar_pdf_conselho(aluno, acoes_positivas, acoes_negativas, acoes_neutras):
-    pass # (A função de PDF continua a mesma da versão anterior)
+    """Gera um relatório PDF horizontal para o aluno selecionado."""
+    
+    class PDF(FPDF):
+        def header(self):
+            self.set_font('Arial', 'B', 12)
+            self.cell(0, 10, 'Relatório para Conselho de Avaliação', 0, 1, 'C')
+            self.ln(5)
 
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('Arial', 'I', 8)
+            self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
+
+    pdf = PDF(orientation='L', unit='mm', format='A4')
+    pdf.add_page()
+    
+    pdf.set_font('Arial', 'B', 16)
+    pdf.cell(40, 30, "", border=0)
+    pdf.multi_cell(120, 10, f"{aluno['nome_guerra']}\n"
+                             f"Nº Interno: {aluno['numero_interno']} | Pelotão: {aluno['pelotao']}", border=0)
+    
+    pdf.set_y(pdf.get_y() - 20)
+    pdf.set_x(170)
+    pdf.set_font('Arial', '', 10)
+    pdf.multi_cell(40, 7, f"Soma de Pontos:\n{aluno['soma_pontos_acoes']:.3f}", border=1, align='C')
+    pdf.set_y(pdf.get_y() - 14)
+    pdf.set_x(210)
+    pdf.multi_cell(40, 7, f"Média Acadêmica:\n{float(aluno.get('media_academica', 0.0)):.3f}", border=1, align='C')
+    pdf.set_y(pdf.get_y() - 14)
+    pdf.set_x(250)
+    pdf.multi_cell(40, 7, f"Conceito Final:\n{aluno['conceito_final']:.3f}", border=1, align='C')
+
+    pdf.rect(10, 20, 40, 40)
+    pdf.set_xy(10, 20)
+    pdf.cell(40, 40, "(Foto do Aluno)", align='C')
+    pdf.ln(35)
+
+    col_width = (pdf.w - pdf.l_margin - pdf.r_margin) / 2 - 5
+    
+    y_before = pdf.get_y()
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(col_width, 10, "Anotações Positivas", 0, 1)
+    pdf.set_font('Arial', '', 10)
+    
+    if acoes_positivas.empty:
+        pdf.cell(col_width, 10, "Nenhuma anotação positiva.", 1)
+    else:
+        pdf.cell(30, 7, "Data", 1, 0, 'C')
+        pdf.cell(30, 7, "Pontos", 1, 0, 'C')
+        pdf.cell(col_width - 60, 7, "Tipo", 1, 1, 'C')
+        for _, acao in acoes_positivas.iterrows():
+            pdf.cell(30, 7, pd.to_datetime(acao['data']).strftime('%d/%m/%Y'), 1, 0, 'C')
+            pdf.cell(30, 7, f"{acao['pontuacao_efetiva']:.3f}", 1, 0, 'C')
+            pdf.cell(col_width - 60, 7, acao['nome'], 1, 1)
+
+    pdf.set_xy(pdf.l_margin + col_width + 10, y_before)
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(col_width, 10, "Anotações Negativas", 0, 1, 'L')
+    pdf.set_xy(pdf.l_margin + col_width + 10, y_before + 10)
+    pdf.set_font('Arial', '', 10)
+    
+    if acoes_negativas.empty:
+        pdf.cell(col_width, 10, "Nenhuma anotação negativa.", 1, 1, 'C')
+    else:
+        pdf.cell(30, 7, "Data", 1, 0, 'C')
+        pdf.cell(30, 7, "Pontos", 1, 0, 'C')
+        pdf.cell(col_width - 60, 7, "Tipo", 1, 1, 'C')
+        for _, acao in acoes_negativas.iterrows():
+            pdf.set_xy(pdf.l_margin + col_width + 10, pdf.get_y())
+            pdf.cell(30, 7, pd.to_datetime(acao['data']).strftime('%d/%m/%Y'), 1, 0, 'C')
+            pdf.cell(30, 7, f"{acao['pontuacao_efetiva']:.3f}", 1, 0, 'C')
+            pdf.cell(col_width - 60, 7, acao['nome'], 1, 1)
+
+    return pdf.output(dest='S').encode('latin-1')
 # ==============================================================================
 # PÁGINA PRINCIPAL
 # ==============================================================================
@@ -86,87 +166,96 @@ def show_conselho_avaliacao():
     
     supabase = init_supabase_client()
 
-    # CORREÇÃO 4: CSS para diminuir a fonte e espaçamento dos filtros no topo
+    # CSS para compactar o cabeçalho/filtros
     st.markdown("""
         <style>
             .filter-container {
-                padding-top: 0rem !important;
-                padding-bottom: 0rem !important;
+                display: flex;
+                flex-wrap: nowrap;
+                align-items: flex-end;
+                gap: 10px;
             }
-            .filter-container .stSelectbox label {
-                font-size: 0.9rem !important;
-                padding-bottom: 2px !important;
+            .filter-container .stSelectbox, .filter-container .stButton {
+                font-size: 0.8rem !important;
+                min-width: 150px;
             }
-            .filter-container .stButton button {
-                padding-top: 4px !important;
-                padding-bottom: 4px !important;
-                font-size: 0.9rem !important;
+             .filter-container .stSelectbox label {
+                font-size: 0.8rem !important;
+                margin-bottom: 0px !important;
+                padding-bottom: 5px !important;
+            }
+            .st-emotion-cache-1y4p8pa {
+                 padding-top: 0rem !important;
+            }
+            div[data-testid="stHorizontalBlock"] {
+                align-items: flex-end;
             }
         </style>
     """, unsafe_allow_html=True)
 
-    # --- FILTROS HORIZONTAIS NO TOPO ---
-    st.subheader("Filtros e Navegação")
-    with st.container(border=True):
-        st.markdown('<div class="filter-container">', unsafe_allow_html=True) # Inicia o container para aplicar o CSS
-        col_f1, col_f2, col_f3 = st.columns([2, 2, 4])
-        
-        with col_f1:
-            alunos_df_geral = load_data("Alunos")
-            opcoes_pelotao = ["Todos"] + sorted(alunos_df_geral['pelotao'].dropna().unique().tolist())
-            pelotao_selecionado = st.selectbox("Filtrar por Turma:", opcoes_pelotao, key="filtro_pelotao")
-        
-        with col_f2:
-            opcoes_ordem = ['Número Interno', 'Conceito (Maior > Menor)', 'Ordem Alfabética']
-            sort_order = st.selectbox("Ordenar por:", opcoes_ordem, key="filtro_ordem")
+    # --- FILTROS HORIZONTAIS EM LINHA ÚNICA ---
+    
+    # Carrega os dados necessários para os filtros antes de chamar a função de cache
+    alunos_df_geral = load_data("Alunos")
+    opcoes_pelotao = ["Todos"] + sorted(alunos_df_geral['pelotao'].dropna().unique().tolist())
+    opcoes_ordem = ['Número Interno', 'Conceito (Maior > Menor)', 'Ordem Alfabética']
+    
+    # Define os filtros em colunas para forçar o layout em linha
+    col_f1, col_f2, col_f3, col_b1, col_b2 = st.columns([2, 2, 4, 1, 1])
 
-        opcoes_alunos, student_id_list, alunos_processados_df, acoes_com_pontos = process_turma_data(pelotao_selecionado, sort_order)
-        
-        if not student_id_list:
-            st.warning("Nenhum aluno encontrado para os filtros selecionados."); st.stop()
+    with col_f1:
+        pelotao_selecionado = st.selectbox("Turma:", opcoes_pelotao, key="filtro_pelotao")
+    with col_f2:
+        sort_order = st.selectbox("Ordenar por:", opcoes_ordem, key="filtro_ordem")
 
-        if 'current_student_index' not in st.session_state: st.session_state.current_student_index = 0
-        if st.session_state.current_student_index >= len(student_id_list): st.session_state.current_student_index = 0
+    # Chama a função otimizada para carregar e processar os dados da turma
+    opcoes_alunos, student_id_list, alunos_processados_df, acoes_com_pontos = process_turma_data(pelotao_selecionado, sort_order)
+    
+    if not student_id_list:
+        st.warning("Nenhum aluno encontrado para os filtros selecionados."); st.stop()
 
-        def on_select_change():
-            selected_id = st.session_state.student_selector
-            if selected_id in student_id_list:
-                st.session_state.current_student_index = student_id_list.index(selected_id)
+    if 'current_student_index' not in st.session_state: st.session_state.current_student_index = 0
+    if st.session_state.current_student_index >= len(student_id_list): st.session_state.current_student_index = 0
 
-        current_student_id = student_id_list[st.session_state.current_student_index]
-        
-        with col_f3:
-            st.selectbox("Selecionar Militar:", options=list(opcoes_alunos.keys()), format_func=lambda x: opcoes_alunos[x],
-                         key="student_selector", index=st.session_state.current_student_index, on_change=on_select_change)
-        
-        col_n1, col_n2 = st.columns(2)
-        with col_n1:
-            if st.button("< Aluno Anterior", use_container_width=True, disabled=(st.session_state.current_student_index == 0)):
-                st.session_state.current_student_index -= 1; st.rerun()
-        with col_n2:
-            if st.button("Próximo Aluno >", use_container_width=True, disabled=(st.session_state.current_student_index == len(student_id_list) - 1)):
-                st.session_state.current_student_index += 1; st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True) # Fecha o container do CSS
+    def on_select_change():
+        selected_id = st.session_state.student_selector
+        if selected_id in student_id_list:
+            st.session_state.current_student_index = student_id_list.index(selected_id)
 
+    with col_f3:
+        st.selectbox("Selecionar Militar:", options=list(opcoes_alunos.keys()), format_func=lambda x: opcoes_alunos[x],
+                     key="student_selector", index=st.session_state.current_student_index, on_change=on_select_change)
+    with col_b1:
+        if st.button("< Ant", use_container_width=True, disabled=(st.session_state.current_student_index == 0)):
+            st.session_state.current_student_index -= 1; st.rerun()
+    with col_b2:
+        if st.button("Próx >", use_container_width=True, disabled=(st.session_state.current_student_index == len(student_id_list) - 1)):
+            st.session_state.current_student_index += 1; st.rerun()
+    
     st.divider()
 
+    # --- NOVO LAYOUT PRINCIPAL (HEADER e depois ANOTAÇÕES) ---
+    current_student_id = student_id_list[st.session_state.current_student_index]
     aluno_selecionado = alunos_processados_df[alunos_processados_df['id'] == current_student_id].iloc[0]
 
-    # CORREÇÃO 2: Proporção das colunas ajustada para 1, 3, 3
-    col_info, col_pos, col_neg = st.columns([1, 3, 3])
+    # Header do Aluno
+    with st.container(border=True):
+        col_foto, col_dados, col_metricas = st.columns([1.2, 3, 1.5]) # Proporção ajustada
+        with col_foto:
+            st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
+        with col_dados:
+            st.header(aluno_selecionado['nome_guerra'])
+            st.subheader(f"Nº Interno: {aluno_selecionado['numero_interno']} | Pelotão: {aluno_selecionado['pelotao']}")
+        with col_metricas:
+            st.metric("Soma de Pontos", f"{aluno_selecionado['soma_pontos_acoes']:.3f}")
+            st.metric("Média Acadêmica", f"{aluno_selecionado['media_academica_num']:.3f}")
+            st.metric("Conceito Final", f"{aluno_selecionado['conceito_final']:.3f}")
+            st.metric("Classificação Final (Prevista)", f"{aluno_selecionado['classificacao_final_prevista']:.3f}", 
+                      help="Cálculo: (Média Acadêmica * 3 + Conceito Final * 2) / 5")
 
-    with col_info:
-        st.header("Dados do Militar")
-        # CORREÇÃO 1: 'use_column_width' trocado por 'use_container_width'
-        st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
-        st.subheader(aluno_selecionado['nome_guerra'])
-        st.markdown(f"**Nº Interno:** {aluno_selecionado['numero_interno']} | **Pelotão:** {aluno_selecionado['pelotao']}")
-        st.divider()
-        st.metric("Conceito Final", f"{aluno_selecionado['conceito_final']:.3f}")
-        st.metric("Média Acadêmica", f"{float(aluno_selecionado.get('media_academica', 0.0)):.3f}")
-        st.metric("Soma de Pontos", f"{aluno_selecionado['soma_pontos_acoes']:.3f}")
+    st.write("") # Espaçamento
 
+    # Colunas de Anotações
     acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
     acoes_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == current_student_id].copy()
     acoes_aluno['pontuacao_efetiva'] = pd.to_numeric(acoes_aluno['pontuacao_efetiva'], errors='coerce').fillna(0)
@@ -175,6 +264,7 @@ def show_conselho_avaliacao():
     negativas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] < 0].sort_values('data', ascending=False)
     neutras = acoes_aluno[acoes_aluno['pontuacao_efetiva'] == 0].sort_values('data', ascending=False)
 
+    col_pos, col_neg = st.columns(2)
     with col_pos:
         st.subheader("✅ Anotações Positivas")
         if positivas.empty:
@@ -221,6 +311,8 @@ def show_conselho_avaliacao():
                     <br><small><i>{acao.get('descricao', 'Sem descrição.')}</i></small>
                 </div>
                 """, unsafe_allow_html=True)
+    
+    st.divider()
 
     # --- FORMULÁRIO DE ANOTAÇÃO RÁPIDA (agora com cache clear) ---
     with st.container(border=True):
