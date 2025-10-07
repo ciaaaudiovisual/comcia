@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import numpy as np
 from database import load_data, init_supabase_client
 from auth import check_permission
 from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
@@ -86,35 +87,13 @@ def render_quick_action_form(aluno_selecionado, supabase):
 def show_conselho_avaliacao():
     st.set_page_config(layout="wide")
     
-# CSS para ajustes de layout
     st.markdown("""
         <style>
-            /* Reduz o tamanho do título principal da página */
-            h1 {
-                font-size: 1.8rem !important;
-                margin-bottom: 0px !important;
-            }
-            /* Remove padding extra no topo da página */
-            .st-emotion-cache-1y4p8pa {
-                 padding-top: 0rem !important;
-            }
-            
-            /* --- ESTA É A CORREÇÃO PRINCIPAL --- */
-            /* Garante que os blocos de colunas alinhem seus itens pelo TOPO (flex-start) */
-            div[data-testid="stHorizontalBlock"] {
-                align-items: flex-start;
-            }
-
-            /* Reduz o tamanho do nome e dados do militar */
-            .student-data-header h2 { /* Nome de Guerra */
-                font-size: 1.6rem !important;
-                margin-bottom: 0px !important;
-            }
-            .student-data-header h3 { /* Nº e Pelotão */
-                font-size: 1.2rem !important;
-                margin-top: 0px !important;
-                color: #555;
-            }
+            h1 { font-size: 1.8rem !important; margin-bottom: 0px !important; }
+            .st-emotion-cache-1y4p8pa { padding-top: 1rem !important; }
+            div[data-testid="stHorizontalBlock"] { align-items: flex-start; }
+            .student-data-header h2 { font-size: 1.6rem !important; margin-bottom: 0px !important; }
+            .student-data-header h3 { font-size: 1.2rem !important; margin-top: 0px !important; color: #555; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -124,19 +103,19 @@ def show_conselho_avaliacao():
         st.error("Acesso negado."); st.stop()
     
     supabase = init_supabase_client()
-
-    # --- FILTROS HORIZONTAIS NO TOPO ---
+    
+    # --- NOVO LAYOUT DO CABEÇALHO ---
+    header_cols = st.columns([2, 2, 3])
+    
+    # Coleta de dados
     alunos_df_geral = load_data("Alunos")
     opcoes_pelotao = ["Todos"] + sorted(alunos_df_geral['pelotao'].dropna().unique().tolist())
     opcoes_ordem = ['Número Interno', 'Conceito (Maior > Menor)', 'Ordem Alfabética']
     
-    col_f1, col_f2, col_f3, col_b1, col_b2 = st.columns([2, 2, 4, 1, 1])
-
-    with col_f1:
-        pelotao_selecionado = st.selectbox("Turma:", opcoes_pelotao, key="filtro_pelotao")
-    with col_f2:
-        sort_order = st.selectbox("Ordenar por:", opcoes_ordem, key="filtro_ordem")
-
+    # Lógica de seleção dos filtros
+    pelotao_selecionado = st.session_state.get('filtro_pelotao_conselho', 'Todos')
+    sort_order = st.session_state.get('filtro_ordem_conselho', 'Número Interno')
+    
     opcoes_alunos, student_id_list, alunos_processados_df, acoes_com_pontos = process_turma_data(pelotao_selecionado, sort_order)
     
     if not student_id_list:
@@ -146,94 +125,90 @@ def show_conselho_avaliacao():
     if st.session_state.current_student_index >= len(student_id_list): st.session_state.current_student_index = 0
 
     def on_select_change():
-        selected_id = st.session_state.student_selector
+        selected_id = st.session_state.student_selector_conselho
         if selected_id in student_id_list:
             st.session_state.current_student_index = student_id_list.index(selected_id)
-
-    with col_f3:
-        st.selectbox("Selecionar Militar:", options=list(opcoes_alunos.keys()), format_func=lambda x: opcoes_alunos[x],
-                     key="student_selector", index=st.session_state.current_student_index, on_change=on_select_change)
-    with col_b1:
-        if st.button("< Ant", use_container_width=True, disabled=(st.session_state.current_student_index == 0)):
-            st.session_state.current_student_index -= 1; st.rerun()
-    with col_b2:
-        if st.button("Próx >", use_container_width=True, disabled=(st.session_state.current_student_index == len(student_id_list) - 1)):
-            st.session_state.current_student_index += 1; st.rerun()
-    
-    st.divider()
-
-    # --- INÍCIO DO NOVO LAYOUT DE BLOCOS ---
+            
     current_student_id = student_id_list[st.session_state.current_student_index]
     aluno_selecionado = alunos_processados_df[alunos_processados_df['id'] == current_student_id].iloc[0]
 
-    # BLOCO 1: Dados do Aluno e Métricas
-    with st.container():
-        col_dados, col_metricas = st.columns([3, 2])
-        with col_dados:
-            st.markdown('<div class="student-data-header">', unsafe_allow_html=True)
-            st.header(aluno_selecionado['nome_guerra'])
-            st.subheader(f"Nº: {aluno_selecionado['numero_interno']} | Pelotão: {aluno_selecionado['pelotao']}")
-            st.markdown('</div>', unsafe_allow_html=True)
-        with col_metricas:
-            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-            with m_col1:
-                st.metric("Soma de Pontos", f"{aluno_selecionado['soma_pontos_acoes']:.3f}")
-            with m_col2:
-                st.metric("Média Acadêmica", f"{aluno_selecionado['media_academica_num']:.3f}")
-            with m_col3:
-                st.metric("Conceito Final", f"{aluno_selecionado['conceito_final']:.3f}")
-            with m_col4:
-                st.metric("Classificação (Prev.)", f"{aluno_selecionado['classificacao_final_prevista']:.3f}", 
-                          help="Cálculo: (Média Acadêmica * 3 + Conceito Final * 2) / 5")
+    # Coluna 1: Dados do Aluno + Foto
+    with header_cols[0]:
+        st.markdown('<div class="student-data-header">', unsafe_allow_html=True)
+        st.header(aluno_selecionado['nome_guerra'])
+        st.subheader(f"Nº: {aluno_selecionado['numero_interno']} | Pelotão: {aluno_selecionado['pelotao']}")
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
 
-    st.write("") # Espaçamento
+    # Coluna 2: Métricas
+    with header_cols[1]:
+        st.subheader("Métricas de Desempenho")
+        st.metric("Soma de Pontos", f"{aluno_selecionado['soma_pontos_acoes']:.3f}")
+        st.metric("Média Acadêmica", f"{aluno_selecionado['media_academica_num']:.3f}")
+        st.metric("Conceito Final", f"{aluno_selecionado['conceito_final']:.3f}")
+        st.metric("Classificação Final (Prevista)", f"{aluno_selecionado['classificacao_final_prevista']:.3f}", 
+                  help="Cálculo: (Média Acadêmica * 3 + Conceito Final * 2) / 5")
 
-    # BLOCO 2: Foto e Anotações
-    with st.container():
-        col_foto, col_pos, col_neg = st.columns([1, 3, 3])
-        # Bloco Corrigido
-    with col_foto:
-        foto_url = aluno_selecionado.get('url_foto')
-        # Verifica se a URL é inválida (vazia, None, NaN) e usa a imagem padrão se for o caso
-        if pd.isna(foto_url) or not foto_url:
-            foto_url = "https://via.placeholder.com/400x400?text=Sem+Foto"
-        st.image(foto_url, use_container_width=True)
-
-        acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
-        acoes_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == current_student_id].copy()
-        acoes_aluno['pontuacao_efetiva'] = pd.to_numeric(acoes_aluno['pontuacao_efetiva'], errors='coerce').fillna(0)
+    # Coluna 3: Filtros e Navegação
+    with header_cols[2]:
+        st.selectbox("Filtrar Turma:", opcoes_pelotao, key="filtro_pelotao_conselho")
+        st.selectbox("Ordenar por:", opcoes_ordem, key="filtro_ordem_conselho")
+        st.selectbox("Selecionar Militar:", options=list(opcoes_alunos.keys()), format_func=lambda x: opcoes_alunos[x],
+                     key="student_selector_conselho", index=st.session_state.current_student_index, on_change=on_select_change)
         
-        positivas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] > 0].sort_values('data', ascending=False)
-        negativas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] < 0].sort_values('data', ascending=False)
-        neutras = acoes_aluno[acoes_aluno['pontuacao_efetiva'] == 0].sort_values('data', ascending=False)
+        btn_cols = st.columns(2)
+        with btn_cols[0]:
+            if st.button("< Anterior", use_container_width=True, disabled=(st.session_state.current_student_index == 0)):
+                st.session_state.current_student_index -= 1; st.rerun()
+        with btn_cols[1]:
+            if st.button("Próximo >", use_container_width=True, disabled=(st.session_state.current_student_index == len(student_id_list) - 1)):
+                st.session_state.current_student_index += 1; st.rerun()
 
-        with col_pos:
-            st.subheader("✅ Anotações Positivas")
-            if positivas.empty:
-                st.info("Nenhuma anotação positiva.")
-            else:
-                for _, acao in positivas.iterrows():
-                    pontos = acao.get('pontuacao_efetiva', 0.0)
-                    data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
-                    st.markdown(f"""<div style="font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px;">
-                        <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> (<span style='color:green;'>{pontos:+.3f}</span>)
-                        <br><small><i>{acao.get('descricao', 'Sem descrição.')}</i></small></div>""", unsafe_allow_html=True)
-
-        with col_neg:
-            st.subheader("⚠️ Anotações Negativas")
-            if negativas.empty:
-                st.info("Nenhuma anotação negativa.")
-            else:
-                for _, acao in negativas.iterrows():
-                    pontos = acao.get('pontuacao_efetiva', 0.0)
-                    data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
-                    st.markdown(f"""<div style="font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px;">
-                        <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> (<span style='color:red;'>{pontos:+.3f}</span>)
-                        <br><small><i>{acao.get('descricao', 'Sem descrição.')}</i></small></div>""", unsafe_allow_html=True)
-    
     st.divider()
 
-    with st.expander("⚪ Anotações Neutras (Observações, Presenças, etc.)"):
+    # --- BLOCO DE ANOTAÇÕES (3 COLUNAS) ---
+    col_foto_dummy, col_pos, col_neg = st.columns([1.5, 3, 3])
+    
+    with col_foto_dummy:
+        # A foto já está no cabeçalho, este espaço pode ser usado para algo mais ou a proporção pode ser ajustada.
+        # Para manter a estrutura solicitada, colocamos a foto novamente, menor.
+        st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
+
+    acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
+    acoes_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == current_student_id].copy()
+    acoes_aluno['pontuacao_efetiva'] = pd.to_numeric(acoes_aluno['pontuacao_efetiva'], errors='coerce').fillna(0)
+    
+    positivas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] > 0].sort_values('data', ascending=False)
+    negativas = acoes_aluno[acoes_aluno['pontuacao_efetiva'] < 0].sort_values('data', ascending=False)
+    neutras = acoes_aluno[acoes_aluno['pontuacao_efetiva'] == 0].sort_values('data', ascending=False)
+
+    with col_pos:
+        st.subheader("✅ Anotações Positivas")
+        if positivas.empty:
+            st.info("Nenhuma anotação positiva.")
+        else:
+            for _, acao in positivas.iterrows():
+                pontos = acao.get('pontuacao_efetiva', 0.0)
+                data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
+                st.markdown(f"""<div style="font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px;">
+                    <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> (<span style='color:green;'>{pontos:+.3f}</span>)
+                    <br><small><i>{acao.get('descricao', 'Sem descrição.')}</i></small></div>""", unsafe_allow_html=True)
+        
+    with col_neg:
+        st.subheader("⚠️ Anotações Negativas")
+        if negativas.empty:
+            st.info("Nenhuma anotação negativa.")
+        else:
+            for _, acao in negativas.iterrows():
+                pontos = acao.get('pontuacao_efetiva', 0.0)
+                data_formatada = pd.to_datetime(acao['data']).strftime('%d/%m/%Y')
+                st.markdown(f"""<div style="font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px;">
+                    <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> (<span style='color:red;'>{pontos:+.3f}</span>)
+                    <br><small><i>{acao.get('descricao', 'Sem descrição.')}</i></small></div>""", unsafe_allow_html=True)
+
+    st.divider()
+    
+    with st.expander("⚪ Anotações Neutras"):
         if neutras.empty:
             st.info("Nenhuma anotação neutra registrada.")
         else:
@@ -244,7 +219,33 @@ def show_conselho_avaliacao():
                     <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> (<span style='color:gray;'>{pontos:+.3f} pts</span>)
                     <br><small><i>{acao.get('descricao', 'Sem descrição.')}</i></small></div>""", unsafe_allow_html=True)
 
-    # ... (Restante do código, como o formulário de anotação rápida e o PDF)
+    # --- TABELA DE CLASSIFICAÇÃO FINAL ---
+    st.divider()
+    st.header("Classificação Final da Turma (sem QTPA)")
+    
+    # Filtra para não incluir a turma QTPA
+    df_classificacao = alunos_processados_df[~alunos_processados_df['numero_interno'].astype(str).str.startswith('Q')].copy()
+    
+    # Ordena pela classificação final
+    df_classificacao = df_classificacao.sort_values('classificacao_final_prevista', ascending=False)
+    
+    # Adiciona a coluna de colocação
+    df_classificacao.insert(0, 'Class.', range(1, 1 + len(df_classificacao)))
+    
+    # Divide o dataframe em 5 partes para as 5 colunas
+    num_colunas_ranking = 5
+    partes = np.array_split(df_classificacao, num_colunas_ranking)
+    cols_ranking = st.columns(num_colunas_ranking)
+
+    for i, coluna in enumerate(cols_ranking):
+        with coluna:
+            for _, aluno_rank in partes[i].iterrows():
+                st.markdown(
+                    f"**{aluno_rank['Class.']}º:** {aluno_rank['nome_guerra']} ({aluno_rank['numero_interno']}) - **{aluno_rank['classificacao_final_prevista']:.3f}**"
+                )
+
+    st.divider()
+    # ...(Restante do código, como o formulário de anotação rápida e o PDF)
 
     # --- FORMULÁRIO DE ANOTAÇÃO RÁPIDA (agora com cache clear) ---
     with st.container(border=True):
