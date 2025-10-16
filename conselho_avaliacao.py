@@ -30,25 +30,37 @@ def process_turma_data(pelotao_selecionado, sort_order):
 
     # --- INÍCIO DA CORREÇÃO ---
 
-    # Garante que a coluna é do tipo string para evitar erros
+ # Garante que a coluna é do tipo string para evitar erros
     alunos_df['numero_interno_str'] = alunos_df['numero_interno'].astype(str)
 
-    # 1. Criamos uma coluna para o PREFIXO (letras)
-    #    Extrai qualquer texto que não seja dígito
-    alunos_df['prefixo_interno'] = alunos_df['numero_interno_str'].str.extract('([^0-9]*)', expand=False).str.strip()
+    # 1. Quebra o 'numero_interno' em várias colunas usando o traço '-' como separador
+    #    'M-1-106' vira ['M', '1', '106']
+    split_cols = alunos_df['numero_interno_str'].str.split('-', expand=True)
 
-    # 2. Criamos uma coluna para o NÚMERO
-    #    Extrai apenas os dígitos e converte para numérico
-    alunos_df['numero_interno_num'] = pd.to_numeric(alunos_df['numero_interno_str'].str.extract('(\d+)', expand=False), errors='coerce').fillna(9999)
+    # 2. Cria colunas de ordenação no DataFrame principal
+    #    A primeira parte (letra)
+    alunos_df['sort_part_1'] = split_cols[0]
+    
+    #    A segunda parte (primeiro número), convertida para tipo numérico
+    if len(split_cols.columns) > 1:
+        alunos_df['sort_part_2'] = pd.to_numeric(split_cols[1], errors='coerce').fillna(0)
+    else:
+        alunos_df['sort_part_2'] = 0
 
-    # 3. A ordenação padrão agora usa as DUAS colunas
-    #    Primeiro ordena pelo prefixo, depois pelo número.
+    #    A terceira parte (segundo número), convertida para tipo numérico
+    if len(split_cols.columns) > 2:
+        alunos_df['sort_part_3'] = pd.to_numeric(split_cols[2], errors='coerce').fillna(0)
+    else:
+        alunos_df['sort_part_3'] = 0
+
+    # 3. A ordenação padrão agora usa as TRÊS colunas em sequência
     if sort_order == 'Conceito (Maior > Menor)':
         alunos_df = alunos_df.sort_values('conceito_final', ascending=False)
     elif sort_order == 'Ordem Alfabética':
         alunos_df = alunos_df.sort_values('nome_guerra')
-    else:  # Padrão: Número Interno (AGORA CORRIGIDO)
-        alunos_df = alunos_df.sort_values(by=['prefixo_interno', 'numero_interno_num'])
+    else:  # Padrão: Número Interno (AGORA CORRIGIDO PARA O FORMATO M-1-106)
+        # Ordena pela parte 1, depois pela 2, depois pela 3
+        alunos_df = alunos_df.sort_values(by=['sort_part_1', 'sort_part_2', 'sort_part_3'])
 
     config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
