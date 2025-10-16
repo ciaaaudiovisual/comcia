@@ -28,6 +28,28 @@ def process_turma_data(pelotao_selecionado, sort_order):
     if alunos_df.empty:
         return {}, [], pd.DataFrame(), pd.DataFrame()
 
+    # --- INÍCIO DA CORREÇÃO ---
+
+    # Garante que a coluna é do tipo string para evitar erros
+    alunos_df['numero_interno_str'] = alunos_df['numero_interno'].astype(str)
+
+    # 1. Criamos uma coluna para o PREFIXO (letras)
+    #    Extrai qualquer texto que não seja dígito
+    alunos_df['prefixo_interno'] = alunos_df['numero_interno_str'].str.extract('([^0-9]*)', expand=False).str.strip()
+
+    # 2. Criamos uma coluna para o NÚMERO
+    #    Extrai apenas os dígitos e converte para numérico
+    alunos_df['numero_interno_num'] = pd.to_numeric(alunos_df['numero_interno_str'].str.extract('(\d+)', expand=False), errors='coerce').fillna(9999)
+
+    # 3. A ordenação padrão agora usa as DUAS colunas
+    #    Primeiro ordena pelo prefixo, depois pelo número.
+    if sort_order == 'Conceito (Maior > Menor)':
+        alunos_df = alunos_df.sort_values('conceito_final', ascending=False)
+    elif sort_order == 'Ordem Alfabética':
+        alunos_df = alunos_df.sort_values('nome_guerra')
+    else:  # Padrão: Número Interno (AGORA CORRIGIDO)
+        alunos_df = alunos_df.sort_values(by=['prefixo_interno', 'numero_interno_num'])
+
     config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
     acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
