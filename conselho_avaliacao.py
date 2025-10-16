@@ -188,17 +188,25 @@ def show_conselho_avaliacao():
         st.markdown('</div>', unsafe_allow_html=True)
 
     # Coluna 3: Métricas
+# CÓDIGO NOVO E CORRIGIDO
+
+# Coluna 3: Métricas
     with header_cols[2]:
         st.markdown('<div class="metrics-header"><h3>Métricas</h3></div>', unsafe_allow_html=True)
-        metric_cols = st.columns(4)
-        with metric_cols[0]:
+    
+        # --- PRIMEIRA LINHA DE MÉTRICAS ---
+        metric_row1_cols = st.columns(2)
+        with metric_row1_cols[0]:
             st.metric("Pontos", f"{aluno_selecionado['soma_pontos_acoes']:.3f}")
-        with metric_cols[1]:
-            st.metric("Acadêmica", f"{aluno_selecionado['media_academica_num']:.3f}")
-        with metric_cols[2]:
+        with metric_row1_cols[1]:
             st.metric("Conceito", f"{aluno_selecionado['conceito_final']:.3f}")
-        with metric_cols[3]:
-            st.metric("Final", f"{aluno_selecionado['classificacao_final_prevista']:.3f}", 
+    
+        # --- SEGUNDA LINHA DE MÉTRICAS ---
+        metric_row2_cols = st.columns(2)
+        with metric_row2_cols[0]:
+            st.metric("Acadêmica", f"{aluno_selecionado['media_academica_num']:.3f}")
+        with metric_row2_cols[1]:
+            st.metric("Final", f"{aluno_selecionado['classificacao_final_prevista']:.3f}",
                       help="Cálculo: (Média Acadêmica * 3 + Conceito Final * 2) / 5")
 
     # Coluna 4: Filtros e Navegação
