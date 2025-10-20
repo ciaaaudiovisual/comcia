@@ -58,6 +58,20 @@ if check_permission('acesso_pagina_geracao_documentos'):
 if check_permission('acesso_pagina_revisao_geral'):
     menu_options["Revisão Geral"] = show_revisao_geral
 
+    # A linha abaixo parece estar no lugar errado na sua versão,
+    # mas mantive a lógica de permissão
+    menu_options["Conselho de Avaliação"] = show_conselho_avaliacao
+    
+if check_permission('acesso_pagina_relatorios'):
+    menu_options["Relatórios"] = show_relatorios
+    menu_options["Relatório Geral"] = show_relatorio_geral # <-- NOVA PÁGINA ADICIONADA
+
+if check_permission('acesso_pagina_configuracoes'):
+    menu_options["Configurações"] = show_config
+    
+if check_permission('acesso_pagina_geracao_documentos'):
+    menu_options["Geração de Documentos"] = show_geracao_documentos
+
 
     menu_options["Conselho de Avaliação"] = show_conselho_avaliacao
     
