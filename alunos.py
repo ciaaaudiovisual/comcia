@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from database import load_data, init_supabase_client # load_data is already imported here
+from database import load_data, init_supabase_client
 from auth import check_permission
 import math
 import re 
@@ -282,8 +282,6 @@ def show_alunos():
         acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
         soma_pontos_por_aluno = acoes_com_pontos.groupby('aluno_id')['pontuacao_efetiva'].sum()
         
-        # CORREÇÃO: Garante que ambas as chaves são do tipo string ANTES do mapeamento
-        # Isso protege o código independentemente do tipo de dado que vem do BD.
         alunos_df['id'] = alunos_df['id'].astype(str)
         soma_pontos_por_aluno.index = soma_pontos_por_aluno.index.astype(str)
         
@@ -377,13 +375,11 @@ def show_alunos():
                 try:
                     new_alunos_df = pd.read_csv(uploaded_file, sep=';', dtype=str).fillna('')
                     
-                    # Verifica apenas se o ficheiro tem colunas, sem exigir nomes específicos
                     if new_alunos_df.empty or len(new_alunos_df.columns) == 0:
                         st.error("Erro: O ficheiro CSV está vazio ou formatado incorretamente.")
                     else:
                         records_to_upsert = new_alunos_df.to_dict(orient='records')
                         with st.spinner("A processar e importar alunos..."):
-                            # A chave 'numero_interno' é mantida pois é a regra de negócio da aplicação
                             supabase.table("Alunos").upsert(records_to_upsert, on_conflict='numero_interno').execute()
                         st.success(f"Importação concluída! {len(records_to_upsert)} registos foram processados.")
                         load_data.clear()
@@ -412,8 +408,9 @@ def show_alunos():
                 conceito_final_aluno = aluno['conceito_final_calculado']
 
                 with col_img:
-                image_source = get_student_photo_url(aluno.get('numero_interno'))
-                                    st.image(image_source, width=100)
+                    foto_url = aluno.get('url_foto')
+                    image_source = foto_url if isinstance(foto_url, str) and foto_url.startswith('http') else "https://via.placeholder.com/100?text=Sem+Foto"
+                    st.image(image_source, width=100)
                 
                 with col_info:
                     st.markdown(f"**{aluno.get('nome_guerra', 'N/A')}** (`{aluno.get('numero_interno', 'N/A')}`) | **NIP:** `{aluno.get('nip', 'N/A')}`")
@@ -447,4 +444,3 @@ def show_alunos():
         with col_next:
             if st.button("Próxima ➡️", use_container_width=True, disabled=(st.session_state.page_num >= total_pages)):
                 st.session_state.page_num += 1; st.rerun()
-
