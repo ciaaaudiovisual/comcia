@@ -1,4 +1,4 @@
-# relatorio_geral.py (v5 - Adicionada a descrição das anotações)
+# relatorio_geral.py (v6 - Função de gerar PDF corrigida)
 
 import streamlit as st
 import pandas as pd
@@ -61,7 +61,10 @@ def processar_dados_relatorio_geral(alunos_selecionados_df, todos_alunos_df, sor
             
     return df_final
 
-# (As funções de geração de PDF e Excel permanecem as mesmas)
+# ==============================================================================
+# FUNÇÕES DE GERAÇÃO DE ARQUIVOS
+# ==============================================================================
+
 def to_excel(df: pd.DataFrame) -> bytes:
     output = BytesIO()
     df_export = df[['numero_interno', 'nome_guerra', 'pelotao', 'conceito_final', 'soma_pontos_acoes']].copy()
@@ -77,9 +80,69 @@ def to_excel(df: pd.DataFrame) -> bytes:
             writer.sheets['Relatorio_Geral'].set_column(i, i, column_len + 2)
     return output.getvalue()
 
+# --- INÍCIO DA CORREÇÃO ---
+# A função de gerar o PDF estava incompleta. Abaixo está a versão correta e completa.
 def generate_summary_pdf(df: pd.DataFrame) -> bytes:
-    # (Código do PDF sem alterações)
-    pass
+    """Gera um PDF com o resumo dos alunos."""
+    class PDF(FPDF):
+        def header(self):
+            self.set_font('Arial', 'B', 12)
+            self.cell(0, 10, 'Relatório Geral de Alunos', 0, 1, 'C')
+            self.ln(5)
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('Arial', 'I', 8)
+            self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
+
+    pdf = PDF()
+    pdf.add_page()
+    
+    for _, aluno in df.iterrows():
+        if pdf.get_y() > 220: # Adiciona nova página se o conteúdo estiver chegando ao fim
+            pdf.add_page()
+            
+        pdf.set_font('Arial', 'B', 11)
+        pdf.cell(0, 8, f"{aluno['nome_guerra']} (Nº {aluno['numero_interno']} | Pel: {aluno['pelotao']})", 1, 1, 'L')
+        
+        pdf.set_font('Arial', '', 10)
+        pdf.cell(95, 8, f"Conceito Final: {aluno['conceito_final']:.3f}", 1, 0, 'C')
+        pdf.cell(95, 8, f"Saldo de Pontos: {aluno['soma_pontos_acoes']:.2f}", 1, 1, 'C')
+        
+        y_before_notes = pdf.get_y()
+        pdf.set_font('Arial', 'B', 9)
+        pdf.multi_cell(95, 6, "Anotações Positivas:", 1, 'L')
+        
+        pdf.set_y(y_before_notes)
+        pdf.set_x(105) # Posição X da segunda coluna
+        pdf.multi_cell(95, 6, "Anotações Negativas:", 1, 'L')
+        
+        y_pos = pdf.get_y()
+        y_neg = pdf.get_y()
+        
+        pdf.set_font('Arial', '', 8)
+        # Anotações Positivas
+        if not aluno['anotacoes_positivas'].empty:
+            for _, an in aluno['anotacoes_positivas'].iterrows():
+                pdf.set_xy(10, y_pos)
+                # Adiciona a descrição da anotação no PDF
+                descricao = f" - {an.get('descricao', '')}" if pd.notna(an.get('descricao')) and an.get('descricao').strip() else ""
+                pdf.multi_cell(95, 5, f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f}){descricao}", 0, 'L')
+                y_pos += 5
+        
+        # Anotações Negativas
+        if not aluno['anotacoes_negativas'].empty:
+            for _, an in aluno['anotacoes_negativas'].iterrows():
+                pdf.set_xy(105, y_neg)
+                # Adiciona a descrição da anotação no PDF
+                descricao = f" - {an.get('descricao', '')}" if pd.notna(an.get('descricao')) and an.get('descricao').strip() else ""
+                pdf.multi_cell(95, 5, f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f}){descricao}", 0, 'L')
+                y_neg += 5
+        
+        pdf.set_y(max(y_pos, y_neg) + 5) # Pula para a próxima linha
+        pdf.ln(5)
+
+    return pdf.output(dest='S').encode('latin-1')
+# --- FIM DA CORREÇÃO ---
 
 # ==============================================================================
 # PÁGINA PRINCIPAL
@@ -125,8 +188,6 @@ def show_relatorio_geral():
                     with col_metricas:
                         st.metric("Conceito Final", f"{aluno_data['conceito_final']:.3f}")
                         st.metric("Saldo de Pontos", f"{aluno_data['soma_pontos_acoes']:.2f}", delta_color="off")
-                    
-                    # --- INÍCIO DA ALTERAÇÃO ---
                     with col_pos:
                         st.markdown("✅ **Positivas**")
                         anotacoes = aluno_data['anotacoes_positivas']
@@ -134,13 +195,10 @@ def show_relatorio_geral():
                             st.caption("Nenhuma anotação.")
                         else:
                             for _, an in anotacoes.sort_values('data', ascending=False).iterrows():
-                                # Exibe o nome da ação e os pontos
                                 st.markdown(f"**- {an['nome']} ({an['pontuacao_efetiva']:+.1f})**")
-                                # Se houver descrição, a exibe abaixo em itálico
                                 descricao = an.get('descricao')
                                 if pd.notna(descricao) and descricao.strip():
                                     st.markdown(f"<p style='font-size: 0.9em; color: #666; margin-left: 15px;'><i>{descricao}</i></p>", unsafe_allow_html=True)
-
                     with col_neg:
                         st.markdown("⚠️ **Negativas**")
                         anotacoes = aluno_data['anotacoes_negativas']
@@ -148,13 +206,10 @@ def show_relatorio_geral():
                             st.caption("Nenhuma anotação.")
                         else:
                             for _, an in anotacoes.sort_values('data', ascending=False).iterrows():
-                                # Exibe o nome da ação e os pontos
                                 st.markdown(f"**- {an['nome']} ({an['pontuacao_efetiva']:+.1f})**")
-                                # Se houver descrição, a exibe abaixo em itálico
                                 descricao = an.get('descricao')
                                 if pd.notna(descricao) and descricao.strip():
                                     st.markdown(f"<p style='font-size: 0.9em; color: #666; margin-left: 15px;'><i>{descricao}</i></p>", unsafe_allow_html=True)
-                    # --- FIM DA ALTERAÇÃO ---
             
             st.divider()
             st.subheader("3. Exportar Relatório")
