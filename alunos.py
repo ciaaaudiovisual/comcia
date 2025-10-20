@@ -412,9 +412,8 @@ def show_alunos():
                 conceito_final_aluno = aluno['conceito_final_calculado']
 
                 with col_img:
-                    foto_url = aluno.get('url_foto')
-                    image_source = foto_url if isinstance(foto_url, str) and foto_url.startswith('http') else "https://via.placeholder.com/100?text=Sem+Foto"
-                    st.image(image_source, width=100)
+                image_source = get_student_photo_url(aluno.get('numero_interno'))
+                                    st.image(image_source, width=100)
                 
                 with col_info:
                     st.markdown(f"**{aluno.get('nome_guerra', 'N/A')}** (`{aluno.get('numero_interno', 'N/A')}`) | **NIP:** `{aluno.get('nip', 'N/A')}`")
@@ -448,3 +447,4 @@ def show_alunos():
         with col_next:
             if st.button("Próxima ➡️", use_container_width=True, disabled=(st.session_state.page_num >= total_pages)):
                 st.session_state.page_num += 1; st.rerun()
+
