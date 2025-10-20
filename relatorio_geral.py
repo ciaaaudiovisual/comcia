@@ -82,43 +82,41 @@ def to_excel(df: pd.DataFrame) -> bytes:
 
 # --- INÍCIO DA CORREÇÃO ---
 def generate_summary_pdf(df: pd.DataFrame) -> bytes:
-    """Gera um PDF com o resumo dos alunos, tratando caracteres especiais."""
-    
-    # Função auxiliar para limpar o texto para o PDF
-    def sanitize_text(text):
-        if not isinstance(text, str):
-            text = str(text)
-        # Codifica para latin-1, substituindo caracteres problemáticos, e depois decodifica de volta
-        return text.encode('latin-1', 'replace').decode('latin-1')
-
+    """Gera um PDF com o resumo dos alunos, usando uma fonte que suporta UTF-8."""
     class PDF(FPDF):
         def header(self):
-            self.set_font('Arial', 'B', 12)
+            self.set_font('DejaVu', 'B', 12)
             self.cell(0, 10, 'Relatório Geral de Alunos', 0, 1, 'C')
             self.ln(5)
         def footer(self):
             self.set_y(-15)
-            self.set_font('Arial', 'I', 8)
+            self.set_font('DejaVu', 'I', 8)
             self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
     pdf = PDF()
+    # Adiciona a fonte DejaVu que suporta caracteres especiais
+    # Certifique-se de que o arquivo 'DejaVuSans.ttf' está na mesma pasta
+    try:
+        pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)
+    except RuntimeError:
+        st.error("ERRO: O arquivo da fonte 'DejaVuSans.ttf' não foi encontrado. Faça o download e coloque-o na pasta do projeto.")
+        return b"" # Retorna bytes vazios se a fonte não for encontrada
+
     pdf.add_page()
     
     for _, aluno in df.iterrows():
         if pdf.get_y() > 220:
             pdf.add_page()
             
-        pdf.set_font('Arial', 'B', 11)
-        # Aplica a sanitização nos textos
-        header_text = f"{aluno['nome_guerra']} (Nº {aluno['numero_interno']} | Pel: {aluno['pelotao']})"
-        pdf.cell(0, 8, sanitize_text(header_text), 1, 1, 'L')
+        pdf.set_font('DejaVu', 'B', 11)
+        pdf.cell(0, 8, f"{aluno['nome_guerra']} (Nº {aluno['numero_interno']} | Pel: {aluno['pelotao']})", 1, 1, 'L')
         
-        pdf.set_font('Arial', '', 10)
+        pdf.set_font('DejaVu', '', 10)
         pdf.cell(95, 8, f"Conceito Final: {aluno['conceito_final']:.3f}", 1, 0, 'C')
         pdf.cell(95, 8, f"Saldo de Pontos: {aluno['soma_pontos_acoes']:.2f}", 1, 1, 'C')
         
         y_before_notes = pdf.get_y()
-        pdf.set_font('Arial', 'B', 9)
+        pdf.set_font('DejaVu', 'B', 9)
         pdf.multi_cell(95, 6, "Anotações Positivas:", 1, 'L')
         
         pdf.set_y(y_before_notes)
@@ -127,14 +125,14 @@ def generate_summary_pdf(df: pd.DataFrame) -> bytes:
         
         y_pos, y_neg = pdf.get_y(), pdf.get_y()
         
-        pdf.set_font('Arial', '', 8)
+        pdf.set_font('DejaVu', '', 8)
         # Anotações Positivas
         if not aluno['anotacoes_positivas'].empty:
             for _, an in aluno['anotacoes_positivas'].iterrows():
                 descricao = f" - {an.get('descricao', '')}" if pd.notna(an.get('descricao')) and an.get('descricao').strip() else ""
                 note_text = f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f}){descricao}"
                 pdf.set_xy(10, y_pos)
-                pdf.multi_cell(95, 5, sanitize_text(note_text), 0, 'L')
+                pdf.multi_cell(95, 5, note_text, 0, 'L')
                 y_pos += 5
         
         # Anotações Negativas
@@ -143,14 +141,14 @@ def generate_summary_pdf(df: pd.DataFrame) -> bytes:
                 descricao = f" - {an.get('descricao', '')}" if pd.notna(an.get('descricao')) and an.get('descricao').strip() else ""
                 note_text = f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f}){descricao}"
                 pdf.set_xy(105, y_neg)
-                pdf.multi_cell(95, 5, sanitize_text(note_text), 0, 'L')
+                pdf.multi_cell(95, 5, note_text, 0, 'L')
                 y_neg += 5
         
         pdf.set_y(max(y_pos, y_neg) + 5)
         pdf.ln(5)
 
-    # A linha final que causava o erro foi mantida, mas a sanitização prévia resolve o problema
-    return pdf.output(dest='S').encode('latin-1')
+    # A saída agora é diretamente em bytes, sem a necessidade do .encode('latin-1')
+    return pdf.output(dest='S').encode('latin-1') if FPDF.VERSION < "2.4.6" else pdf.output()
 # --- FIM DA CORREÇÃO ---
 
 # ==============================================================================
