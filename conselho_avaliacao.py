@@ -122,7 +122,6 @@ def show_conselho_avaliacao():
     alunos_df_geral = load_data("Alunos")
     opcoes_pelotao = ["Todos"] + sorted(alunos_df_geral['pelotao'].dropna().unique().tolist())
     
-    # <-- ALTERAÇÃO: Adicionada nova opção de ordenação
     opcoes_ordem = [
         'Número Interno', 
         'Conceito (Maior > Menor)', 
@@ -237,15 +236,38 @@ def show_conselho_avaliacao():
                     <br><small><i>{acao.get('descricao', 'Sem descrição.')}</i></small></div>""", unsafe_allow_html=True)
 
     st.divider()
-    st.header("Classificação Final da Turma (sem QTPA)")
+
+    # --- INÍCIO DAS NOVAS SEÇÕES DE CLASSIFICAÇÃO ---
+
+    # Filtra alunos que não são QTPA para ambas as classificações
+    df_para_classificar = alunos_processados_df[~alunos_processados_df['numero_interno'].astype(str).str.startswith('Q')].copy()
+
+    # Seção 1: Classificação por Conceito Militar (Colapsável)
+    with st.expander("🏆 Classificação por Conceito Final (Militar)"):
+        df_classificacao_conceito = df_para_classificar.sort_values('conceito_final', ascending=False)
+        df_classificacao_conceito.insert(0, 'Class.', range(1, 1 + len(df_classificacao_conceito)))
+        
+        num_colunas_ranking_conceito = 5
+        partes_conceito = np.array_split(df_classificacao_conceito, num_colunas_ranking_conceito)
+        cols_ranking_conceito = st.columns(num_colunas_ranking_conceito)
+
+        for i, coluna in enumerate(cols_ranking_conceito):
+            with coluna:
+                for _, aluno_rank in partes_conceito[i].iterrows():
+                    st.markdown(
+                        f"**{aluno_rank['Class.']}º:** {aluno_rank['nome_guerra']} - **{aluno_rank['conceito_final']:.3f}**"
+                    )
+
+    st.write("") # Adiciona um espaço
+
+    # Seção 2: Classificação Final Prevista (Fórmula)
+    st.header("Classificação Final Prevista (Fórmula)")
+    df_classificacao_final = df_para_classificar.sort_values('classificacao_final_prevista', ascending=False)
+    df_classificacao_final.insert(0, 'Class.', range(1, 1 + len(df_classificacao_final)))
     
-    df_classificacao = alunos_processados_df[~alunos_processados_df['numero_interno'].astype(str).str.startswith('Q')].copy()
-    df_classificacao = df_classificacao.sort_values('classificacao_final_prevista', ascending=False)
-    df_classificacao.insert(0, 'Class.', range(1, 1 + len(df_classificacao)))
-    
-    num_colunas_ranking = 5
-    partes = np.array_split(df_classificacao, num_colunas_ranking)
-    cols_ranking = st.columns(num_colunas_ranking)
+    num_colunas_ranking_final = 5
+    partes_final = np.array_split(df_classificacao_final, num_colunas_ranking_final)
+    cols_ranking_final = st.columns(num_colunas_ranking_final)
 
     st.sidebar.subheader("Opções de Visualização")
     ranking_font_size = st.sidebar.slider(
@@ -254,13 +276,15 @@ def show_conselho_avaliacao():
         help="Ajuste o tamanho da fonte da tabela de classificação no final da página."
     )
     st.markdown(f'<div class="ranking-table" style="font-size: {ranking_font_size}rem !important;">', unsafe_allow_html=True)
-    for i, coluna in enumerate(cols_ranking):
+    for i, coluna in enumerate(cols_ranking_final):
         with coluna:
-            for _, aluno_rank in partes[i].iterrows():
+            for _, aluno_rank in partes_final[i].iterrows():
                 st.markdown(
                     f"**{aluno_rank['Class.']}º:** {aluno_rank['nome_guerra']} ({aluno_rank['numero_interno']}) - **{aluno_rank['classificacao_final_prevista']:.3f}**"
                 )
     st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- FIM DAS NOVAS SEÇÕES DE CLASSIFICAÇÃO ---
 
     st.divider()
     with st.container(border=True):
