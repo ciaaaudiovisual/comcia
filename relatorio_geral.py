@@ -81,9 +81,16 @@ def to_excel(df: pd.DataFrame) -> bytes:
     return output.getvalue()
 
 # --- INÍCIO DA CORREÇÃO ---
-# A função de gerar o PDF estava incompleta. Abaixo está a versão correta e completa.
 def generate_summary_pdf(df: pd.DataFrame) -> bytes:
-    """Gera um PDF com o resumo dos alunos."""
+    """Gera um PDF com o resumo dos alunos, tratando caracteres especiais."""
+    
+    # Função auxiliar para limpar o texto para o PDF
+    def sanitize_text(text):
+        if not isinstance(text, str):
+            text = str(text)
+        # Codifica para latin-1, substituindo caracteres problemáticos, e depois decodifica de volta
+        return text.encode('latin-1', 'replace').decode('latin-1')
+
     class PDF(FPDF):
         def header(self):
             self.set_font('Arial', 'B', 12)
@@ -98,11 +105,13 @@ def generate_summary_pdf(df: pd.DataFrame) -> bytes:
     pdf.add_page()
     
     for _, aluno in df.iterrows():
-        if pdf.get_y() > 220: # Adiciona nova página se o conteúdo estiver chegando ao fim
+        if pdf.get_y() > 220:
             pdf.add_page()
             
         pdf.set_font('Arial', 'B', 11)
-        pdf.cell(0, 8, f"{aluno['nome_guerra']} (Nº {aluno['numero_interno']} | Pel: {aluno['pelotao']})", 1, 1, 'L')
+        # Aplica a sanitização nos textos
+        header_text = f"{aluno['nome_guerra']} (Nº {aluno['numero_interno']} | Pel: {aluno['pelotao']})"
+        pdf.cell(0, 8, sanitize_text(header_text), 1, 1, 'L')
         
         pdf.set_font('Arial', '', 10)
         pdf.cell(95, 8, f"Conceito Final: {aluno['conceito_final']:.3f}", 1, 0, 'C')
@@ -113,34 +122,34 @@ def generate_summary_pdf(df: pd.DataFrame) -> bytes:
         pdf.multi_cell(95, 6, "Anotações Positivas:", 1, 'L')
         
         pdf.set_y(y_before_notes)
-        pdf.set_x(105) # Posição X da segunda coluna
+        pdf.set_x(105)
         pdf.multi_cell(95, 6, "Anotações Negativas:", 1, 'L')
         
-        y_pos = pdf.get_y()
-        y_neg = pdf.get_y()
+        y_pos, y_neg = pdf.get_y(), pdf.get_y()
         
         pdf.set_font('Arial', '', 8)
         # Anotações Positivas
         if not aluno['anotacoes_positivas'].empty:
             for _, an in aluno['anotacoes_positivas'].iterrows():
-                pdf.set_xy(10, y_pos)
-                # Adiciona a descrição da anotação no PDF
                 descricao = f" - {an.get('descricao', '')}" if pd.notna(an.get('descricao')) and an.get('descricao').strip() else ""
-                pdf.multi_cell(95, 5, f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f}){descricao}", 0, 'L')
+                note_text = f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f}){descricao}"
+                pdf.set_xy(10, y_pos)
+                pdf.multi_cell(95, 5, sanitize_text(note_text), 0, 'L')
                 y_pos += 5
         
         # Anotações Negativas
         if not aluno['anotacoes_negativas'].empty:
             for _, an in aluno['anotacoes_negativas'].iterrows():
-                pdf.set_xy(105, y_neg)
-                # Adiciona a descrição da anotação no PDF
                 descricao = f" - {an.get('descricao', '')}" if pd.notna(an.get('descricao')) and an.get('descricao').strip() else ""
-                pdf.multi_cell(95, 5, f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f}){descricao}", 0, 'L')
+                note_text = f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f}){descricao}"
+                pdf.set_xy(105, y_neg)
+                pdf.multi_cell(95, 5, sanitize_text(note_text), 0, 'L')
                 y_neg += 5
         
-        pdf.set_y(max(y_pos, y_neg) + 5) # Pula para a próxima linha
+        pdf.set_y(max(y_pos, y_neg) + 5)
         pdf.ln(5)
 
+    # A linha final que causava o erro foi mantida, mas a sanitização prévia resolve o problema
     return pdf.output(dest='S').encode('latin-1')
 # --- FIM DA CORREÇÃO ---
 
