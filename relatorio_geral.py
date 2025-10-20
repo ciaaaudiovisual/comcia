@@ -32,12 +32,14 @@ def processar_dados_alunos(alunos_selecionados_df, todos_alunos_df):
     dados_processados = []
     for _, aluno in alunos_selecionados_df.iterrows():
         aluno_id_str = str(aluno['id'])
+        # CORREÇÃO: Assegura que a filtragem de ações para o aluno é feita corretamente
         acoes_do_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == aluno_id_str].copy()
         soma_pontos = acoes_do_aluno['pontuacao_efetiva'].sum()
         media_academica = float(aluno.get('media_academica', 0.0))
         
         conceito_final = calcular_conceito_final(soma_pontos, media_academica, todos_alunos_df, config_dict)
         
+        # CORREÇÃO: Garante que os DataFrames de anotações sejam armazenados corretamente
         anotacoes_positivas = acoes_do_aluno[acoes_do_aluno['pontuacao_efetiva'] > 0]
         anotacoes_negativas = acoes_do_aluno[acoes_do_aluno['pontuacao_efetiva'] < 0]
 
@@ -152,14 +154,13 @@ def show_relatorio_geral():
         st.info("Utilize os filtros acima para selecionar os alunos que deseja analisar.")
     else:
         with st.spinner("Processando dados dos alunos selecionados..."):
+            # Passando o DataFrame completo de todos os alunos para o cálculo correto do conceito
             df_relatorio = processar_dados_alunos(alunos_selecionados_df, alunos_df)
 
         st.info(f"Exibindo relatório para **{len(df_relatorio)}** aluno(s) selecionado(s).")
         
-        # NOVO: Seletor de Ordenação
         sort_option = st.radio("Ordenar por:", ["Número Interno", "Maior Conceito"], horizontal=True, index=0)
 
-        # CORREÇÃO: Lógica de Ordenação
         if sort_option == "Número Interno":
             df_relatorio['numero_interno_str'] = df_relatorio['numero_interno'].astype(str)
             split_cols = df_relatorio['numero_interno_str'].str.split('-', expand=True)
