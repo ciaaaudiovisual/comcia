@@ -74,17 +74,14 @@ def to_excel(df: pd.DataFrame) -> bytes:
 
 # --- INÍCIO DA CORREÇÃO ---
 def generate_summary_pdf(df: pd.DataFrame) -> bytes:
-    """Gera um PDF com o resumo dos alunos, usando fontes padrão e tratando caracteres."""
+    """Gera um PDF com o resumo dos alunos, corrigindo a sobreposição de texto."""
     
-    # Função auxiliar para limpar o texto para o PDF, evitando erros de codificação
     def sanitize_text(text):
-        if not isinstance(text, str):
-            text = str(text)
+        if not isinstance(text, str): text = str(text)
         return text.encode('latin-1', 'replace').decode('latin-1')
 
     class PDF(FPDF):
         def header(self):
-            # ALTERAÇÃO: Voltando para a fonte padrão 'Arial'
             self.set_font('Arial', 'B', 12)
             self.cell(0, 10, 'Relatório Geral de Alunos', 0, 1, 'C')
             self.ln(5)
@@ -111,36 +108,39 @@ def generate_summary_pdf(df: pd.DataFrame) -> bytes:
         y_before_notes = pdf.get_y()
         pdf.set_font('Arial', 'B', 9)
         pdf.multi_cell(95, 6, "Anotações Positivas:", 1, 'L')
-        
         pdf.set_y(y_before_notes)
         pdf.set_x(105)
         pdf.multi_cell(95, 6, "Anotações Negativas:", 1, 'L')
         
-        y_pos, y_neg = pdf.get_y(), pdf.get_y()
-        
+        # Posição Y inicial para as listas de anotações
+        y_after_headers = pdf.get_y()
+
+        # --- Coluna de Anotações Positivas ---
+        pdf.set_xy(10, y_after_headers)
         pdf.set_font('Arial', '', 8)
-        # Anotações Positivas
         if not aluno['anotacoes_positivas'].empty:
             for _, an in aluno['anotacoes_positivas'].iterrows():
                 descricao = f" - {an.get('descricao', '')}" if pd.notna(an.get('descricao')) and an.get('descricao').strip() else ""
                 note_text = f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f}){descricao}"
-                pdf.set_xy(10, y_pos)
                 pdf.multi_cell(95, 5, sanitize_text(note_text), 0, 'L')
-                y_pos += 5
-        
-        # Anotações Negativas
+                pdf.set_x(10) # Garante o alinhamento X para o próximo item
+        final_y_pos = pdf.get_y()
+
+        # --- Coluna de Anotações Negativas ---
+        pdf.set_xy(105, y_after_headers) # Volta para o topo e para a segunda coluna
+        pdf.set_font('Arial', '', 8)
         if not aluno['anotacoes_negativas'].empty:
             for _, an in aluno['anotacoes_negativas'].iterrows():
                 descricao = f" - {an.get('descricao', '')}" if pd.notna(an.get('descricao')) and an.get('descricao').strip() else ""
                 note_text = f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f}){descricao}"
-                pdf.set_xy(105, y_neg)
                 pdf.multi_cell(95, 5, sanitize_text(note_text), 0, 'L')
-                y_neg += 5
+                pdf.set_x(105) # Garante o alinhamento X para o próximo item
+        final_y_neg = pdf.get_y()
         
-        pdf.set_y(max(y_pos, y_neg) + 5)
+        # Move o cursor para baixo da coluna mais longa
+        pdf.set_y(max(final_y_pos, final_y_neg) + 5)
         pdf.ln(5)
 
-    # ALTERAÇÃO: A saída agora usa a codificação 'latin-1' que é compatível com as fontes padrão
     return pdf.output(dest='S').encode('latin-1')
 # --- FIM DA CORREÇÃO ---
 
