@@ -17,8 +17,6 @@ from controle_pernoite import show_controle_pernoite
 from previa_rancho import show_previa_rancho
 from auxilio_transporte import show_auxilio_transporte
 from conselho_avaliacao import show_conselho_avaliacao
-from conselho_avaliacao import show_conselho_avaliacao
-from relatorio_geral import show_relatorio_geral # <-- NOVA IMPORTAÇÃO
 
 
 if not check_authentication():
@@ -60,20 +58,6 @@ if check_permission('acesso_pagina_geracao_documentos'):
 if check_permission('acesso_pagina_revisao_geral'):
     menu_options["Revisão Geral"] = show_revisao_geral
 
-    # A linha abaixo parece estar no lugar errado na sua versão,
-    # mas mantive a lógica de permissão
-    menu_options["Conselho de Avaliação"] = show_conselho_avaliacao
-    
-if check_permission('acesso_pagina_relatorios'):
-    menu_options["Relatórios"] = show_relatorios
-    menu_options["Relatório Geral"] = show_relatorio_geral # <-- NOVA PÁGINA ADICIONADA
-
-if check_permission('acesso_pagina_configuracoes'):
-    menu_options["Configurações"] = show_config
-    
-if check_permission('acesso_pagina_geracao_documentos'):
-    menu_options["Geração de Documentos"] = show_geracao_documentos
-
 
     menu_options["Conselho de Avaliação"] = show_conselho_avaliacao
     
@@ -105,4 +89,3 @@ if selected_page in menu_options:
     menu_options[selected_page]()
 else:
     st.error("Página não encontrada ou você não tem permissão para acessá-la.")
-
