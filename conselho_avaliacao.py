@@ -8,7 +8,7 @@ from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
 from fpdf import FPDF
 
 # ==============================================================================
-# FUNÇÃO DE CACHE E PROCESSAMENTO DE DADOS
+# FUNÇÃO DE CACHE E PROCESSAMENTO DE DADOS (COM CORREÇÕES)
 # ==============================================================================
 @st.cache_data(ttl=3600)
 def process_turma_data(pelotao_selecionado, sort_order):
@@ -28,40 +28,7 @@ def process_turma_data(pelotao_selecionado, sort_order):
     if alunos_df.empty:
         return {}, [], pd.DataFrame(), pd.DataFrame()
 
-    # --- INÍCIO DA CORREÇÃO ---
-
- # Garante que a coluna é do tipo string para evitar erros
-    alunos_df['numero_interno_str'] = alunos_df['numero_interno'].astype(str)
-
-    # 1. Quebra o 'numero_interno' em várias colunas usando o traço '-' como separador
-    #    'M-1-106' vira ['M', '1', '106']
-    split_cols = alunos_df['numero_interno_str'].str.split('-', expand=True)
-
-    # 2. Cria colunas de ordenação no DataFrame principal
-    #    A primeira parte (letra)
-    alunos_df['sort_part_1'] = split_cols[0]
-    
-    #    A segunda parte (primeiro número), convertida para tipo numérico
-    if len(split_cols.columns) > 1:
-        alunos_df['sort_part_2'] = pd.to_numeric(split_cols[1], errors='coerce').fillna(0)
-    else:
-        alunos_df['sort_part_2'] = 0
-
-    #    A terceira parte (segundo número), convertida para tipo numérico
-    if len(split_cols.columns) > 2:
-        alunos_df['sort_part_3'] = pd.to_numeric(split_cols[2], errors='coerce').fillna(0)
-    else:
-        alunos_df['sort_part_3'] = 0
-
-    # 3. A ordenação padrão agora usa as TRÊS colunas em sequência
-    if sort_order == 'Conceito (Maior > Menor)':
-        alunos_df = alunos_df.sort_values('conceito_final', ascending=False)
-    elif sort_order == 'Ordem Alfabética':
-        alunos_df = alunos_df.sort_values('nome_guerra')
-    else:  # Padrão: Número Interno (AGORA CORRIGIDO PARA O FORMATO M-1-106)
-        # Ordena pela parte 1, depois pela 2, depois pela 3
-        alunos_df = alunos_df.sort_values(by=['sort_part_1', 'sort_part_2', 'sort_part_3'])
-
+    # --- ETAPA 1: CÁLCULO DE TODAS AS MÉTRICAS PRIMEIRO ---
     config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
     acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
@@ -86,14 +53,19 @@ def process_turma_data(pelotao_selecionado, sort_order):
     alunos_df['media_academica_num'] = pd.to_numeric(alunos_df['media_academica'], errors='coerce').fillna(0.0)
     alunos_df['classificacao_final_prevista'] = ((alunos_df['media_academica_num'] * 3) + (alunos_df['conceito_final'] * 2)) / 5
 
-    alunos_df['numero_interno_num'] = pd.to_numeric(alunos_df['numero_interno'].str.extract('(\d+)', expand=False), errors='coerce').fillna(9999)
-
-    if sort_order == 'Conceito (Maior > Menor)':
-        alunos_df = alunos_df.sort_values('conceito_final', ascending=False)
+    # --- ETAPA 2: APLICAÇÃO DA ORDENAÇÃO (AGORA NO FINAL) ---
+    if 'Conceito' in sort_order:
+        ascending_flag = (sort_order == 'Conceito (Menor > Maior)')
+        alunos_df = alunos_df.sort_values('conceito_final', ascending=ascending_flag)
     elif sort_order == 'Ordem Alfabética':
         alunos_df = alunos_df.sort_values('nome_guerra')
-    else: # Padrão: Número Interno
-        alunos_df = alunos_df.sort_values('numero_interno_num')
+    else:  # Padrão: Número Interno (LÓGICA CORRIGIDA)
+        alunos_df['numero_interno_str'] = alunos_df['numero_interno'].astype(str)
+        split_cols = alunos_df['numero_interno_str'].str.split('-', expand=True)
+        alunos_df['sort_part_1'] = split_cols[0]
+        alunos_df['sort_part_2'] = pd.to_numeric(split_cols.get(1), errors='coerce').fillna(0)
+        alunos_df['sort_part_3'] = pd.to_numeric(split_cols.get(2), errors='coerce').fillna(0)
+        alunos_df = alunos_df.sort_values(by=['sort_part_1', 'sort_part_2', 'sort_part_3'])
 
     student_id_list = alunos_df['id'].tolist()
     options = {}
@@ -126,13 +98,9 @@ def show_conselho_avaliacao():
             h1 { font-size: 1.8rem !important; margin-bottom: 0px !important; }
             .st-emotion-cache-1y4p8pa { padding-top: 1rem !important; }
             div[data-testid="stHorizontalBlock"] { align-items: flex-start; }
-            
-            /* Centraliza o texto nos headers */
             .student-data-header, .metrics-header { text-align: center; }
             .student-data-header h2 { font-size: 1.6rem !important; margin-bottom: 0px !important; }
             .student-data-header h3 { font-size: 1.2rem !important; margin-top: 0px !important; color: #555; }
-            
-            /* Centraliza o conteúdo das métricas */
             div[data-testid="stMetric"] {
                 display: flex;
                 flex-direction: column;
@@ -149,12 +117,18 @@ def show_conselho_avaliacao():
     
     supabase = init_supabase_client()
     
-    # --- LAYOUT DO CABEÇALHO EM 4 COLUNAS ---
     header_cols = st.columns([1.5, 2.5, 2.5, 3])
     
     alunos_df_geral = load_data("Alunos")
     opcoes_pelotao = ["Todos"] + sorted(alunos_df_geral['pelotao'].dropna().unique().tolist())
-    opcoes_ordem = ['Número Interno', 'Conceito (Maior > Menor)', 'Ordem Alfabética']
+    
+    # <-- ALTERAÇÃO: Adicionada nova opção de ordenação
+    opcoes_ordem = [
+        'Número Interno', 
+        'Conceito (Maior > Menor)', 
+        'Conceito (Menor > Maior)', 
+        'Ordem Alfabética'
+    ]
     
     pelotao_selecionado = st.session_state.get('filtro_pelotao_conselho', 'Todos')
     sort_order = st.session_state.get('filtro_ordem_conselho', 'Número Interno')
@@ -175,11 +149,9 @@ def show_conselho_avaliacao():
     current_student_id = student_id_list[st.session_state.current_student_index]
     aluno_selecionado = alunos_processados_df[alunos_processados_df['id'] == current_student_id].iloc[0]
 
-    # Coluna 1: Foto
     with header_cols[0]:
         st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
 
-    # Coluna 2: Dados do Aluno
     with header_cols[1]:
         st.markdown('<div class="student-data-header">', unsafe_allow_html=True)
         st.header(aluno_selecionado['nome_guerra'])
@@ -187,21 +159,13 @@ def show_conselho_avaliacao():
         st.subheader(f"Pelotão: {aluno_selecionado['pelotao']}")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # Coluna 3: Métricas
-# CÓDIGO NOVO E CORRIGIDO
-
-# Coluna 3: Métricas
     with header_cols[2]:
         st.markdown('<div class="metrics-header"><h3>Métricas</h3></div>', unsafe_allow_html=True)
-    
-        # --- PRIMEIRA LINHA DE MÉTRICAS ---
         metric_row1_cols = st.columns(2)
         with metric_row1_cols[0]:
             st.metric("Pontos", f"{aluno_selecionado['soma_pontos_acoes']:.3f}")
         with metric_row1_cols[1]:
             st.metric("Conceito", f"{aluno_selecionado['conceito_final']:.3f}")
-    
-        # --- SEGUNDA LINHA DE MÉTRICAS ---
         metric_row2_cols = st.columns(2)
         with metric_row2_cols[0]:
             st.metric("Acadêmica", f"{aluno_selecionado['media_academica_num']:.3f}")
@@ -209,7 +173,6 @@ def show_conselho_avaliacao():
             st.metric("Final", f"{aluno_selecionado['classificacao_final_prevista']:.3f}",
                       help="Cálculo: (Média Acadêmica * 3 + Conceito Final * 2) / 5")
 
-    # Coluna 4: Filtros e Navegação
     with header_cols[3]:
         st.selectbox("Filtrar Turma:", opcoes_pelotao, key="filtro_pelotao_conselho")
         st.selectbox("Ordenar por:", opcoes_ordem, key="filtro_ordem_conselho")
@@ -226,7 +189,6 @@ def show_conselho_avaliacao():
 
     st.divider()
 
-    # --- BLOCO DE ANOTAÇÕES (2 COLUNAS) ---
     acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
     acoes_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == current_student_id].copy()
     acoes_aluno['pontuacao_efetiva'] = pd.to_numeric(acoes_aluno['pontuacao_efetiva'], errors='coerce').fillna(0)
@@ -274,7 +236,6 @@ def show_conselho_avaliacao():
                     <b>{data_formatada} - {acao.get('nome', 'N/A')}</b> (<span style='color:gray;'>{pontos:+.3f} pts</span>)
                     <br><small><i>{acao.get('descricao', 'Sem descrição.')}</i></small></div>""", unsafe_allow_html=True)
 
-    # --- TABELA DE CLASSIFICAÇÃO FINAL ---
     st.divider()
     st.header("Classificação Final da Turma (sem QTPA)")
     
@@ -286,7 +247,6 @@ def show_conselho_avaliacao():
     partes = np.array_split(df_classificacao, num_colunas_ranking)
     cols_ranking = st.columns(num_colunas_ranking)
 
-    # NOVO: Slider para controlar o tamanho da fonte da tabela de classificação
     st.sidebar.subheader("Opções de Visualização")
     ranking_font_size = st.sidebar.slider(
         "Tamanho da Fonte (Classificação)", 
@@ -303,8 +263,6 @@ def show_conselho_avaliacao():
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
-    # ...(Restante do código, como o formulário de anotação rápida e o PDF)
-    # --- FORMULÁRIO DE ANOTAÇÃO RÁPIDA (agora com cache clear) ---
     with st.container(border=True):
         st.subheader("➕ Adicionar Anotação Rápida")
         st.caption("A anotação será enviada para a fila de revisão com status 'Pendente'.")
@@ -332,9 +290,8 @@ def show_conselho_avaliacao():
                         }
                         supabase.table("Acoes").insert(nova_acao).execute()
                         st.toast("Anotação rápida registrada com sucesso!", icon="✅")
-                        # Limpa os caches para forçar o recarregamento dos dados
                         load_data.clear()
-                        process_turma_data.clear() # Limpa o cache específico desta página
+                        process_turma_data.clear()
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao registrar anotação: {e}")
