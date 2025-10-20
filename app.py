@@ -17,7 +17,8 @@ from controle_pernoite import show_controle_pernoite
 from previa_rancho import show_previa_rancho
 from auxilio_transporte import show_auxilio_transporte
 from conselho_avaliacao import show_conselho_avaliacao
-from relatorio_geral import show_relatorio_geral
+from relatorio_geral import show_relatorio_geral # <-- ADICIONE ESTA LINHA
+
 
 if not check_authentication():
     st.stop()
@@ -63,8 +64,7 @@ if check_permission('acesso_pagina_revisao_geral'):
     
 if check_permission('acesso_pagina_relatorios'):
     menu_options["Relatórios"] = show_relatorios
-    menu_options["Relatório Geral"] = show_relatorio_geral
-    menu_options["Exportar Conceitos"] = show_exporta_conceitos
+    menu_options["Relatório Geral"] = show_relatorio_geral # Esta linha agora funcionará
 
 if check_permission('acesso_pagina_configuracoes'):
     menu_options["Configurações"] = show_config
@@ -77,10 +77,6 @@ if check_permission('acesso_pagina_pernoite'):
 
 if check_permission('acesso_pagina_rancho_pernoite'):
     menu_options["Prévia de Rancho (Sheets)"] = show_previa_rancho
-
-if check_permission('acesso_pagina_relatorios'):
-    menu_options["Relatórios"] = show_relatorios
-
 
 if check_permission('acesso_pagina_auxilio_transporte'):
     menu_options["Auxílio Transporte"] = show_auxilio_transporte
