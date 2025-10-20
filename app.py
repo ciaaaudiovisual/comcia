@@ -17,6 +17,8 @@ from controle_pernoite import show_controle_pernoite
 from previa_rancho import show_previa_rancho
 from auxilio_transporte import show_auxilio_transporte
 from conselho_avaliacao import show_conselho_avaliacao
+from conselho_avaliacao import show_conselho_avaliacao
+from relatorio_geral import show_relatorio_geral # <-- NOVA IMPORTAÇÃO
 
 
 if not check_authentication():
