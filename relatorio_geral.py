@@ -1,4 +1,4 @@
-# relatorio_geral.py (versão corrigida e com exportação)
+# relatorio_geral.py (versão com correção definitiva de carregamento de dados)
 
 import streamlit as st
 import pandas as pd
@@ -13,12 +13,14 @@ from aluno_selection_components import render_alunos_filter_and_selection
 # FUNÇÕES DE PROCESSAMENTO E GERAÇÃO DE ARQUIVOS
 # ==============================================================================
 
-@st.cache_data(ttl=300)
+# CORREÇÃO: Removido o @st.cache_data daqui. A função agora sempre processará
+# os dados mais recentes que forem carregados pelo load_data().
 def processar_dados_alunos(alunos_selecionados_df, todos_alunos_df):
     """
     Calcula as métricas e coleta as anotações para os alunos selecionados.
     Retorna um DataFrame pronto para exibição.
     """
+    # As ações agora são carregadas dentro da função para garantir que os dados sejam sempre os mais recentes.
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
@@ -32,14 +34,13 @@ def processar_dados_alunos(alunos_selecionados_df, todos_alunos_df):
     dados_processados = []
     for _, aluno in alunos_selecionados_df.iterrows():
         aluno_id_str = str(aluno['id'])
-        # CORREÇÃO: Assegura que a filtragem de ações para o aluno é feita corretamente
         acoes_do_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == aluno_id_str].copy()
+        
         soma_pontos = acoes_do_aluno['pontuacao_efetiva'].sum()
         media_academica = float(aluno.get('media_academica', 0.0))
         
         conceito_final = calcular_conceito_final(soma_pontos, media_academica, todos_alunos_df, config_dict)
         
-        # CORREÇÃO: Garante que os DataFrames de anotações sejam armazenados corretamente
         anotacoes_positivas = acoes_do_aluno[acoes_do_aluno['pontuacao_efetiva'] > 0]
         anotacoes_negativas = acoes_do_aluno[acoes_do_aluno['pontuacao_efetiva'] < 0]
 
@@ -55,7 +56,6 @@ def processar_dados_alunos(alunos_selecionados_df, todos_alunos_df):
 def to_excel(df: pd.DataFrame) -> bytes:
     """Converte um DataFrame para um arquivo Excel em memória."""
     output = BytesIO()
-    # Selecionar e renomear colunas para exportação
     df_export = df[['numero_interno', 'nome_guerra', 'pelotao', 'conceito_final', 'soma_pontos_acoes']].copy()
     df_export.rename(columns={
         'numero_interno': 'Nº Interno', 'nome_guerra': 'Nome de Guerra', 'pelotao': 'Pelotão',
@@ -64,7 +64,6 @@ def to_excel(df: pd.DataFrame) -> bytes:
     
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df_export.to_excel(writer, index=False, sheet_name='Relatorio_Geral')
-        # Auto-ajuste da largura das colunas
         for i, col in enumerate(df_export.columns):
             column_len = max(df_export[col].astype(str).map(len).max(), len(col))
             writer.sheets['Relatorio_Geral'].set_column(i, i, column_len + 2)
@@ -86,7 +85,6 @@ def generate_summary_pdf(df: pd.DataFrame) -> bytes:
     pdf.add_page()
     
     for _, aluno in df.iterrows():
-        # Verifica se há espaço suficiente para o bloco, senão adiciona nova página
         if pdf.get_y() > 220:
             pdf.add_page()
             
@@ -97,34 +95,31 @@ def generate_summary_pdf(df: pd.DataFrame) -> bytes:
         pdf.cell(95, 8, f"Conceito Final: {aluno['conceito_final']:.3f}", 1, 0, 'C')
         pdf.cell(95, 8, f"Saldo de Pontos: {aluno['soma_pontos_acoes']:.2f}", 1, 1, 'C')
         
-        # Anotações
         y_before_notes = pdf.get_y()
         pdf.set_font('Arial', 'B', 9)
         pdf.multi_cell(95, 6, "Anotações Positivas:", 1, 'L')
         
         pdf.set_y(y_before_notes)
-        pdf.set_x(105) # Posição X da segunda coluna
+        pdf.set_x(105)
         pdf.multi_cell(95, 6, "Anotações Negativas:", 1, 'L')
         
         y_pos = pdf.get_y()
         y_neg = pdf.get_y()
         
         pdf.set_font('Arial', '', 8)
-        # Positivas
         if not aluno['anotacoes_positivas'].empty:
             for _, an in aluno['anotacoes_positivas'].iterrows():
                 pdf.set_xy(10, y_pos)
                 pdf.multi_cell(95, 5, f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f})", 0, 'L')
                 y_pos += 5
         
-        # Negativas
         if not aluno['anotacoes_negativas'].empty:
             for _, an in aluno['anotacoes_negativas'].iterrows():
                 pdf.set_xy(105, y_neg)
                 pdf.multi_cell(95, 5, f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f})", 0, 'L')
                 y_neg += 5
         
-        pdf.set_y(max(y_pos, y_neg) + 5) # Pula para a próxima linha após o maior bloco de anotações
+        pdf.set_y(max(y_pos, y_neg) + 5)
         pdf.ln(5)
 
     return pdf.output(dest='S').encode('latin-1')
@@ -154,7 +149,6 @@ def show_relatorio_geral():
         st.info("Utilize os filtros acima para selecionar os alunos que deseja analisar.")
     else:
         with st.spinner("Processando dados dos alunos selecionados..."):
-            # Passando o DataFrame completo de todos os alunos para o cálculo correto do conceito
             df_relatorio = processar_dados_alunos(alunos_selecionados_df, alunos_df)
 
         st.info(f"Exibindo relatório para **{len(df_relatorio)}** aluno(s) selecionado(s).")
