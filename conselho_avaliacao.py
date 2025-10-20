@@ -151,8 +151,8 @@ def show_conselho_avaliacao():
     with header_cols[0]:
 # --- ALTERAÇÃO AQUI ---
         # Usamos a nova função para obter a URL da imagem
-        image_source = get_student_photo_url(aluno_selecionado.get('numero_interno'))
-        st.image(image_source, use_container_width=True)
+    image_source = get_student_photo_url(aluno_selecionado.get('numero_interno'))
+    st.image(image_source, use_container_width=True)
 
     with header_cols[1]:
         st.markdown('<div class="student-data-header">', unsafe_allow_html=True)
