@@ -1,4 +1,4 @@
-# relatorio_geral.py (v3 - Estrutura de dados unificada, espelhada no conselho_avaliacao.py)
+# relatorio_geral.py (v4 - Com depuração e tipos de dados reforçados)
 
 import streamlit as st
 import pandas as pd
@@ -10,33 +10,35 @@ from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
 from aluno_selection_components import render_alunos_filter_and_selection
 
 # ==============================================================================
-# NOVA ESTRUTURA: FUNÇÃO ÚNICA PARA PROCESSAMENTO DE DADOS COM CACHE
+# FUNÇÃO ÚNICA PARA PROCESSAMENTO DE DADOS COM CACHE
 # ==============================================================================
 
 @st.cache_data(ttl=60)
 def processar_dados_relatorio_geral(alunos_selecionados_df, todos_alunos_df, sort_option):
-    """
-    Função unificada que carrega todos os dados necessários, processa métricas,
-    coleta anotações e aplica a ordenação. Otimizada com cache.
-    """
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
+
+    # LINHA DE DEPURAÇÃO: Mostra quantas ações foram carregadas
+    st.info(f"DEPURAÇÃO: {len(acoes_df)} ações totais foram carregadas do banco de dados para processamento.")
 
     if alunos_selecionados_df.empty or acoes_df.empty or tipos_acao_df.empty:
         return pd.DataFrame()
 
     acoes_com_pontos = calcular_pontuacao_efetiva(acoes_df, tipos_acao_df, config_df)
+    
+    # REFORÇO DE TIPO DE DADO: Garante que os IDs são strings antes da comparação
+    acoes_com_pontos['aluno_id'] = acoes_com_pontos['aluno_id'].astype(str)
+    
     config_dict = pd.Series(config_df.valor.values, index=config_df.chave).to_dict() if not config_df.empty else {}
 
     dados_processados = []
     for _, aluno in alunos_selecionados_df.iterrows():
-        aluno_id_str = str(aluno['id'])
+        aluno_id_str = str(aluno['id']) # Garante que o ID do aluno também é string
         acoes_do_aluno = acoes_com_pontos[acoes_com_pontos['aluno_id'] == aluno_id_str].copy()
         
         soma_pontos = acoes_do_aluno['pontuacao_efetiva'].sum()
         media_academica = float(aluno.get('media_academica', 0.0))
-        
         conceito_final = calcular_conceito_final(soma_pontos, media_academica, todos_alunos_df, config_dict)
         
         anotacoes_positivas = acoes_do_aluno[acoes_do_aluno['pontuacao_efetiva'] > 0]
@@ -51,7 +53,6 @@ def processar_dados_relatorio_geral(alunos_selecionados_df, todos_alunos_df, sor
     
     df_final = pd.DataFrame(dados_processados)
 
-    # LÓGICA DE ORDENAÇÃO AGORA AQUI DENTRO
     if not df_final.empty:
         if sort_option == "Número Interno":
             df_final['numero_interno_str'] = df_final['numero_interno'].astype(str)
@@ -60,15 +61,12 @@ def processar_dados_relatorio_geral(alunos_selecionados_df, todos_alunos_df, sor
             df_final['sort_part_2'] = pd.to_numeric(split_cols.get(1), errors='coerce').fillna(0)
             df_final['sort_part_3'] = pd.to_numeric(split_cols.get(2), errors='coerce').fillna(0)
             df_final = df_final.sort_values(by=['sort_part_1', 'sort_part_2', 'sort_part_3'])
-        else: # Maior Conceito
+        else:
             df_final = df_final.sort_values(by='conceito_final', ascending=False)
             
     return df_final
 
-# ==============================================================================
-# FUNÇÕES DE GERAÇÃO DE ARQUIVOS (sem alterações)
-# ==============================================================================
-
+# (O restante das funções to_excel e generate_summary_pdf permanecem iguais)
 def to_excel(df: pd.DataFrame) -> bytes:
     output = BytesIO()
     df_export = df[['numero_interno', 'nome_guerra', 'pelotao', 'conceito_final', 'soma_pontos_acoes']].copy()
