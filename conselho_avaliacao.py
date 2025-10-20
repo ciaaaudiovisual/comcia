@@ -98,7 +98,7 @@ def show_conselho_avaliacao():
             h1 { font-size: 1.8rem !important; margin-bottom: 0px !important; }
             .st-emotion-cache-1y4p8pa { padding-top: 1rem !important; }
             div[data-testid="stHorizontalBlock"] { align-items: flex-start; }
-            .student-data-header, .metrics-header { text-align: center; }
+            .ent-data-header, .metrics-header { text-align: center; }
             .student-data-header h2 { font-size: 1.6rem !important; margin-bottom: 0px !important; }
             .student-data-header h3 { font-size: 1.2rem !important; margin-top: 0px !important; color: #555; }
             div[data-testid="stMetric"] {
@@ -149,7 +149,10 @@ def show_conselho_avaliacao():
     aluno_selecionado = alunos_processados_df[alunos_processados_df['id'] == current_student_id].iloc[0]
 
     with header_cols[0]:
-        st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
+# --- ALTERAÇÃO AQUI ---
+        # Usamos a nova função para obter a URL da imagem
+        image_source = get_student_photo_url(aluno_selecionado.get('numero_interno'))
+        st.image(image_source, use_container_width=True)
 
     with header_cols[1]:
         st.markdown('<div class="student-data-header">', unsafe_allow_html=True)
