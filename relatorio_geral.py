@@ -13,14 +13,13 @@ from aluno_selection_components import render_alunos_filter_and_selection
 # FUNÇÕES DE PROCESSAMENTO E GERAÇÃO DE ARQUIVOS
 # ==============================================================================
 
-# CORREÇÃO: Removido o @st.cache_data daqui. A função agora sempre processará
-# os dados mais recentes que forem carregados pelo load_data().
+# Esta função NÃO usa cache para garantir que sempre processe os dados mais recentes
 def processar_dados_alunos(alunos_selecionados_df, todos_alunos_df):
     """
     Calcula as métricas e coleta as anotações para os alunos selecionados.
     Retorna um DataFrame pronto para exibição.
     """
-    # As ações agora são carregadas dentro da função para garantir que os dados sejam sempre os mais recentes.
+    # As ações são carregadas aqui dentro para garantir que os dados sejam sempre os mais recentes
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
