@@ -1,4 +1,4 @@
-# relatorio_geral.py (versão com correção definitiva de carregamento de dados)
+# relatorio_geral.py (v3 - Estrutura de dados unificada, espelhada no conselho_avaliacao.py)
 
 import streamlit as st
 import pandas as pd
@@ -10,16 +10,15 @@ from alunos import calcular_pontuacao_efetiva, calcular_conceito_final
 from aluno_selection_components import render_alunos_filter_and_selection
 
 # ==============================================================================
-# FUNÇÕES DE PROCESSAMENTO E GERAÇÃO DE ARQUIVOS
+# NOVA ESTRUTURA: FUNÇÃO ÚNICA PARA PROCESSAMENTO DE DADOS COM CACHE
 # ==============================================================================
 
-# Esta função NÃO usa cache para garantir que sempre processe os dados mais recentes
-def processar_dados_alunos(alunos_selecionados_df, todos_alunos_df):
+@st.cache_data(ttl=60)
+def processar_dados_relatorio_geral(alunos_selecionados_df, todos_alunos_df, sort_option):
     """
-    Calcula as métricas e coleta as anotações para os alunos selecionados.
-    Retorna um DataFrame pronto para exibição.
+    Função unificada que carrega todos os dados necessários, processa métricas,
+    coleta anotações e aplica a ordenação. Otimizada com cache.
     """
-    # As ações são carregadas aqui dentro para garantir que os dados sejam sempre os mais recentes
     acoes_df = load_data("Acoes")
     tipos_acao_df = load_data("Tipos_Acao")
     config_df = load_data("Config")
@@ -49,11 +48,28 @@ def processar_dados_alunos(alunos_selecionados_df, todos_alunos_df):
             'soma_pontos_acoes': soma_pontos, 'conceito_final': conceito_final,
             'anotacoes_positivas': anotacoes_positivas, 'anotacoes_negativas': anotacoes_negativas
         })
-        
-    return pd.DataFrame(dados_processados)
+    
+    df_final = pd.DataFrame(dados_processados)
+
+    # LÓGICA DE ORDENAÇÃO AGORA AQUI DENTRO
+    if not df_final.empty:
+        if sort_option == "Número Interno":
+            df_final['numero_interno_str'] = df_final['numero_interno'].astype(str)
+            split_cols = df_final['numero_interno_str'].str.split('-', expand=True)
+            df_final['sort_part_1'] = split_cols[0]
+            df_final['sort_part_2'] = pd.to_numeric(split_cols.get(1), errors='coerce').fillna(0)
+            df_final['sort_part_3'] = pd.to_numeric(split_cols.get(2), errors='coerce').fillna(0)
+            df_final = df_final.sort_values(by=['sort_part_1', 'sort_part_2', 'sort_part_3'])
+        else: # Maior Conceito
+            df_final = df_final.sort_values(by='conceito_final', ascending=False)
+            
+    return df_final
+
+# ==============================================================================
+# FUNÇÕES DE GERAÇÃO DE ARQUIVOS (sem alterações)
+# ==============================================================================
 
 def to_excel(df: pd.DataFrame) -> bytes:
-    """Converte um DataFrame para um arquivo Excel em memória."""
     output = BytesIO()
     df_export = df[['numero_interno', 'nome_guerra', 'pelotao', 'conceito_final', 'soma_pontos_acoes']].copy()
     df_export.rename(columns={
@@ -69,7 +85,6 @@ def to_excel(df: pd.DataFrame) -> bytes:
     return output.getvalue()
 
 def generate_summary_pdf(df: pd.DataFrame) -> bytes:
-    """Gera um PDF com o resumo dos alunos."""
     class PDF(FPDF):
         def header(self):
             self.set_font('Arial', 'B', 12)
@@ -86,41 +101,31 @@ def generate_summary_pdf(df: pd.DataFrame) -> bytes:
     for _, aluno in df.iterrows():
         if pdf.get_y() > 220:
             pdf.add_page()
-            
         pdf.set_font('Arial', 'B', 11)
         pdf.cell(0, 8, f"{aluno['nome_guerra']} (Nº {aluno['numero_interno']} | Pel: {aluno['pelotao']})", 1, 1, 'L')
-        
         pdf.set_font('Arial', '', 10)
         pdf.cell(95, 8, f"Conceito Final: {aluno['conceito_final']:.3f}", 1, 0, 'C')
         pdf.cell(95, 8, f"Saldo de Pontos: {aluno['soma_pontos_acoes']:.2f}", 1, 1, 'C')
-        
         y_before_notes = pdf.get_y()
         pdf.set_font('Arial', 'B', 9)
         pdf.multi_cell(95, 6, "Anotações Positivas:", 1, 'L')
-        
         pdf.set_y(y_before_notes)
         pdf.set_x(105)
         pdf.multi_cell(95, 6, "Anotações Negativas:", 1, 'L')
-        
-        y_pos = pdf.get_y()
-        y_neg = pdf.get_y()
-        
+        y_pos, y_neg = pdf.get_y(), pdf.get_y()
         pdf.set_font('Arial', '', 8)
         if not aluno['anotacoes_positivas'].empty:
             for _, an in aluno['anotacoes_positivas'].iterrows():
                 pdf.set_xy(10, y_pos)
                 pdf.multi_cell(95, 5, f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f})", 0, 'L')
                 y_pos += 5
-        
         if not aluno['anotacoes_negativas'].empty:
             for _, an in aluno['anotacoes_negativas'].iterrows():
                 pdf.set_xy(105, y_neg)
                 pdf.multi_cell(95, 5, f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f})", 0, 'L')
                 y_neg += 5
-        
         pdf.set_y(max(y_pos, y_neg) + 5)
         pdf.ln(5)
-
     return pdf.output(dest='S').encode('latin-1')
 
 # ==============================================================================
@@ -147,55 +152,47 @@ def show_relatorio_geral():
     if alunos_selecionados_df.empty:
         st.info("Utilize os filtros acima para selecionar os alunos que deseja analisar.")
     else:
-        with st.spinner("Processando dados dos alunos selecionados..."):
-            df_relatorio = processar_dados_alunos(alunos_selecionados_df, alunos_df)
-
-        st.info(f"Exibindo relatório para **{len(df_relatorio)}** aluno(s) selecionado(s).")
-        
         sort_option = st.radio("Ordenar por:", ["Número Interno", "Maior Conceito"], horizontal=True, index=0)
 
-        if sort_option == "Número Interno":
-            df_relatorio['numero_interno_str'] = df_relatorio['numero_interno'].astype(str)
-            split_cols = df_relatorio['numero_interno_str'].str.split('-', expand=True)
-            df_relatorio['sort_part_1'] = split_cols[0]
-            df_relatorio['sort_part_2'] = pd.to_numeric(split_cols.get(1), errors='coerce').fillna(0)
-            df_relatorio['sort_part_3'] = pd.to_numeric(split_cols.get(2), errors='coerce').fillna(0)
-            df_relatorio = df_relatorio.sort_values(by=['sort_part_1', 'sort_part_2', 'sort_part_3'])
-        else:
-            df_relatorio = df_relatorio.sort_values(by='conceito_final', ascending=False)
+        # A chamada da função de processamento agora acontece DEPOIS de obter os filtros
+        with st.spinner("Processando dados dos alunos selecionados..."):
+            df_relatorio = processar_dados_relatorio_geral(alunos_selecionados_df, alunos_df, sort_option)
 
+        st.info(f"Exibindo relatório para **{len(df_relatorio)}** aluno(s) selecionado(s).")
         st.write("")
 
-        for _, aluno_data in df_relatorio.iterrows():
-            with st.container(border=True):
-                col_info, col_metricas, col_pos, col_neg = st.columns([1.5, 1, 2, 2])
-                with col_info:
-                    st.markdown(f"**{aluno_data['nome_guerra']}**")
-                    st.caption(f"Nº {aluno_data['numero_interno']} | Pel: {aluno_data['pelotao']}")
-                with col_metricas:
-                    st.metric("Conceito Final", f"{aluno_data['conceito_final']:.3f}")
-                    st.metric("Saldo de Pontos", f"{aluno_data['soma_pontos_acoes']:.2f}", delta_color="off")
-                with col_pos:
-                    st.markdown("✅ **Positivas**")
-                    anotacoes = aluno_data['anotacoes_positivas']
-                    if anotacoes.empty:
-                        st.caption("Nenhuma anotação.")
-                    else:
-                        for _, an in anotacoes.sort_values('data', ascending=False).iterrows():
-                            st.caption(f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f})")
-                with col_neg:
-                    st.markdown("⚠️ **Negativas**")
-                    anotacoes = aluno_data['anotacoes_negativas']
-                    if anotacoes.empty:
-                        st.caption("Nenhuma anotação.")
-                    else:
-                        for _, an in anotacoes.sort_values('data', ascending=False).iterrows():
-                            st.caption(f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f})")
-        
-        st.divider()
-        st.subheader("3. Exportar Relatório")
-        
-        if not df_relatorio.empty:
+        if df_relatorio.empty:
+            st.warning("Nenhuma anotação ou dado de conceito encontrado para os alunos selecionados.")
+        else:
+            for _, aluno_data in df_relatorio.iterrows():
+                with st.container(border=True):
+                    col_info, col_metricas, col_pos, col_neg = st.columns([1.5, 1, 2, 2])
+                    with col_info:
+                        st.markdown(f"**{aluno_data['nome_guerra']}**")
+                        st.caption(f"Nº {aluno_data['numero_interno']} | Pel: {aluno_data['pelotao']}")
+                    with col_metricas:
+                        st.metric("Conceito Final", f"{aluno_data['conceito_final']:.3f}")
+                        st.metric("Saldo de Pontos", f"{aluno_data['soma_pontos_acoes']:.2f}", delta_color="off")
+                    with col_pos:
+                        st.markdown("✅ **Positivas**")
+                        anotacoes = aluno_data['anotacoes_positivas']
+                        if anotacoes.empty:
+                            st.caption("Nenhuma anotação.")
+                        else:
+                            for _, an in anotacoes.sort_values('data', ascending=False).iterrows():
+                                st.caption(f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f})")
+                    with col_neg:
+                        st.markdown("⚠️ **Negativas**")
+                        anotacoes = aluno_data['anotacoes_negativas']
+                        if anotacoes.empty:
+                            st.caption("Nenhuma anotação.")
+                        else:
+                            for _, an in anotacoes.sort_values('data', ascending=False).iterrows():
+                                st.caption(f"- {an['nome']} ({an['pontuacao_efetiva']:+.1f})")
+            
+            st.divider()
+            st.subheader("3. Exportar Relatório")
+            
             col_pdf, col_excel = st.columns(2)
             with col_pdf:
                 pdf_bytes = generate_summary_pdf(df_relatorio)
