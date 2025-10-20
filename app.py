@@ -17,7 +17,7 @@ from controle_pernoite import show_controle_pernoite
 from previa_rancho import show_previa_rancho
 from auxilio_transporte import show_auxilio_transporte
 from conselho_avaliacao import show_conselho_avaliacao
-from exporta_conceitos import show_exporta_conceitos
+from relatorio_geral import show_relatorio_geral
 
 if not check_authentication():
     st.stop()
