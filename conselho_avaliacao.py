@@ -140,8 +140,16 @@ def show_conselho_avaliacao():
     current_student_id = student_id_list[st.session_state.current_student_index]
     aluno_selecionado = alunos_processados_df[alunos_processados_df['id'] == current_student_id].iloc[0]
 
+# Bloco Corrigido
     with header_cols[0]:
-        st.image(aluno_selecionado.get('url_foto', "https://via.placeholder.com/400x400?text=Sem+Foto"), use_container_width=True)
+        foto_url = aluno_selecionado.get('url_foto')
+        # Verifica se a URL é uma string válida começando com http/https
+        if isinstance(foto_url, str) and foto_url.startswith(('http://', 'https://')):
+            image_source = foto_url
+        else:
+            # Se a URL for inválida (vazia, NaN, None, ou não começa com http), usa o placeholder
+            image_source = "https://via.placeholder.com/400x400?text=Sem+Foto"
+        st.image(image_source, use_container_width=True)
 
     with header_cols[1]:
         st.markdown('<div class="student-data-header">', unsafe_allow_html=True)
